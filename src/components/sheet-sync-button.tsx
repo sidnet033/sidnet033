@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { summaryText, type ImportSummary } from "@/lib/item-import";
 
 export function SheetSyncButton({ onDone }: { onDone: () => void }) {
   const [busy, setBusy] = useState(false);
@@ -15,8 +16,9 @@ export function SheetSyncButton({ onDone }: { onDone: () => void }) {
       if (!res.ok) {
         setMessage(body.error || "Sync failed.");
       } else {
-        setMessage(`Synced ${body.count} item(s) from Google Sheet.`);
-        onDone();
+        const summary = body as ImportSummary;
+        setMessage(summaryText(summary));
+        if (summary.created > 0 || summary.updated > 0) onDone();
       }
     } catch {
       setMessage("Sync failed — check your connection.");
@@ -35,7 +37,7 @@ export function SheetSyncButton({ onDone }: { onDone: () => void }) {
         {busy ? "Syncing..." : "Sync Google Sheet"}
       </button>
       {message && (
-        <div className="absolute right-0 top-full z-10 mt-1 w-72 rounded-md border border-slate-200 bg-white p-2 text-xs text-slate-600 shadow-sm">
+        <div className="absolute right-0 top-full z-10 mt-1 w-80 whitespace-pre-line rounded-md border border-slate-200 bg-white p-2 text-xs text-slate-600 shadow-sm">
           {message}
         </div>
       )}

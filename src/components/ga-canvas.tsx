@@ -14,8 +14,12 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { createClient } from "@/lib/supabase/client";
-import type { PlacedFeeder, Project, Vertical } from "@/types/database";
-import type { VerticalWithFeeders } from "@/app/(app)/projects/[id]/ga/page";
+import type { ItemMaster, PlacedFeeder, Project, Vertical } from "@/types/database";
+import type { SiblingRevision, VerticalWithFeeders } from "@/app/(app)/projects/[id]/ga/page";
+import { ProjectLockControls, type LockState } from "@/components/project-lock-controls";
+import { AdHocFeederPanel } from "@/components/ad-hoc-feeder-panel";
+import { findDuplicateLibraryFeeder } from "@/lib/feeder-duplicate";
+import { Icon } from "@/components/icon";
 
 type FeederWithCost = VerticalWithFeeders["placed"][number]["feeder"];
 type PlacedWithFeeder = VerticalWithFeeders["placed"][number];
@@ -24,10 +28,22 @@ export function GaCanvas({
   project,
   initialVerticals,
   feederLibrary,
+  allItems,
+  currentUserId,
+  currentUserName,
+  isAdmin,
+  lockedByName,
+  siblingRevisions,
 }: {
   project: Project;
   initialVerticals: VerticalWithFeeders[];
   feederLibrary: FeederWithCost[];
+  allItems: ItemMaster[];
+  currentUserId: string;
+  currentUserName: string | null;
+  isAdmin: boolean;
+  lockedByName: string | null;
+  siblingRevisions: SiblingRevision[];
 }) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -35,12 +51,19 @@ export function GaCanvas({
   const [customer, setCustomer] = useState(project.customer_name ?? "");
   const [status, setStatus] = useState(project.status);
   const [verticals, setVerticals] = useState<VerticalWithFeeders[]>(initialVerticals);
+  const [library, setLibrary] = useState<FeederWithCost[]>(feederLibrary);
   const [search, setSearch] = useState("");
   const [draggingFeeder, setDraggingFeeder] = useState<FeederWithCost | null>(null);
+  const [lockState, setLockState] = useState<LockState>({
+    locked_by: project.locked_by,
+    archived: project.archived,
+  });
+
+  const readOnly = lockState.archived || (lockState.locked_by !== null && lockState.locked_by !== currentUserId);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
-  const filteredLibrary = feederLibrary.filter(
+  const filteredLibrary = library.filter(
     (f) =>
       f.name.toLowerCase().includes(search.toLowerCase()) ||
       (f.category ?? "").toLowerCase().includes(search.toLowerCase())
@@ -129,18 +152,36 @@ export function GaCanvas({
     await supabase.from("placed_feeders").delete().eq("id", placedId);
   }
 
+  async function promoteToLibrary(feeder: FeederWithCost) {
+    const { data: feederItemRows } = await supabase.from("feeder_items").select("item_id").eq("feeder_id", feeder.id);
+    const itemIds = ((feederItemRows ?? []) as { item_id: string }[]).map((r) => r.item_id);
+
+    const duplicate = await findDuplicateLibraryFeeder(supabase, itemIds, feeder.id);
+    if (duplicate) {
+      alert(`A feeder with the same items already exists in the Feeder Library: "${duplicate.name}". Not creating a duplicate.`);
+      return;
+    }
+
+    const { error } = await supabase.from("feeders").update({ is_library: true }).eq("id", feeder.id);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    setLibrary(library.map((f) => (f.id === feeder.id ? { ...f, is_library: true } : f)));
+  }
+
   function handleDragStart(event: DragStartEvent) {
     const id = String(event.active.id);
     if (id.startsWith("lib-")) {
       const feederId = id.replace("lib-", "");
-      setDraggingFeeder(feederLibrary.find((f) => f.id === feederId) ?? null);
+      setDraggingFeeder(library.find((f) => f.id === feederId) ?? null);
     }
   }
 
   function handleDragEnd(event: DragEndEvent) {
     setDraggingFeeder(null);
     const { active, over } = event;
-    if (!over) return;
+    if (!over || readOnly) return;
 
     const activeId = String(active.id);
     const overId = String(over.id);
@@ -148,7 +189,7 @@ export function GaCanvas({
     if (activeId.startsWith("lib-") && overId.startsWith("vert-")) {
       const feederId = activeId.replace("lib-", "");
       const verticalId = overId.replace("vert-", "");
-      const feeder = feederLibrary.find((f) => f.id === feederId);
+      const feeder = library.find((f) => f.id === feederId);
       if (feeder) addFeederToVertical(verticalId, feeder);
     }
   }
@@ -160,24 +201,27 @@ export function GaCanvas({
           <div className="flex flex-wrap items-center gap-3">
             <input
               value={name}
+              disabled={readOnly}
               onChange={(e) => setName(e.target.value)}
               onBlur={() => saveProjectField("name", name)}
-              className="rounded-md border border-slate-300 px-2 py-1 text-sm font-medium focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+              className="rounded-md border border-slate-300 px-2 py-1 text-sm font-medium focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-50 disabled:text-slate-500"
             />
             <input
               value={customer}
+              disabled={readOnly}
               onChange={(e) => setCustomer(e.target.value)}
               onBlur={() => saveProjectField("customer_name", customer)}
               placeholder="Customer"
-              className="rounded-md border border-slate-300 px-2 py-1 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+              className="rounded-md border border-slate-300 px-2 py-1 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-50 disabled:text-slate-500"
             />
             <select
               value={status}
+              disabled={readOnly}
               onChange={(e) => {
                 setStatus(e.target.value as Project["status"]);
                 saveProjectField("status", e.target.value);
               }}
-              className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+              className="rounded-md border border-slate-300 px-2 py-1 text-sm disabled:bg-slate-50 disabled:text-slate-500"
             >
               <option value="draft">draft</option>
               <option value="quoted">quoted</option>
@@ -198,19 +242,56 @@ export function GaCanvas({
           </div>
         </div>
 
+        <ProjectLockControls
+          projectId={project.id}
+          initialLockedBy={project.locked_by}
+          initialLockedByName={lockedByName}
+          initialArchived={project.archived}
+          currentUserId={currentUserId}
+          currentUserName={currentUserName}
+          isAdmin={isAdmin}
+          createdBy={project.created_by}
+          revisionNumber={project.revision_number}
+          siblingRevisions={siblingRevisions}
+          onStateChange={setLockState}
+        />
+
+        {readOnly && (
+          <div className="flex items-center gap-2 rounded-lg border border-amber-200/80 bg-amber-50/60 px-3 py-2 text-xs text-amber-800">
+            <Icon name="visibility" size={15} />
+            {lockState.archived
+              ? "This project is archived — read only."
+              : "Locked by another user — you can look around, but editing is off until it's released."}
+          </div>
+        )}
+
         <div className="flex flex-1 gap-4 overflow-hidden">
           <aside className="w-72 shrink-0 overflow-y-auto rounded-xl border border-slate-200/90 bg-white p-3 shadow-xs">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Feeder Master</p>
+            {!readOnly && (
+              <AdHocFeederPanel
+                projectId={project.id}
+                allItems={allItems}
+                onCreated={(f) => setLibrary([...library, f])}
+              />
+            )}
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search feeders..."
               className="mb-3 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
             />
-            <p className="mb-2 text-xs text-slate-400">Drag a feeder onto a vertical →</p>
+            <p className="mb-2 text-xs text-slate-400">
+              {readOnly ? "Read only — lock this project to edit." : "Drag a feeder onto a vertical →"}
+            </p>
             <div className="space-y-2">
               {filteredLibrary.map((f) => (
-                <LibraryFeederCard key={f.id} feeder={f} />
+                <LibraryFeederCard
+                  key={f.id}
+                  feeder={f}
+                  disabled={readOnly}
+                  onPromote={!readOnly && !f.is_library ? () => promoteToLibrary(f) : undefined}
+                />
               ))}
               {filteredLibrary.length === 0 && (
                 <p className="text-sm text-slate-400">
@@ -225,6 +306,7 @@ export function GaCanvas({
               <VerticalColumn
                 key={v.id}
                 vertical={v}
+                readOnly={readOnly}
                 onRename={(newName) => renameVertical(v.id, newName)}
                 onWidthChange={(w) => setVerticalWidth(v.id, w)}
                 onDelete={() => deleteVertical(v.id)}
@@ -233,12 +315,14 @@ export function GaCanvas({
                 onRemove={(placedId) => removePlaced(v.id, placedId)}
               />
             ))}
-            <button
-              onClick={addVertical}
-              className="flex h-fit w-48 shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-slate-300 py-8 text-sm font-medium text-slate-500 hover:border-brand-500/60 hover:text-brand-600"
-            >
-              + Add vertical
-            </button>
+            {!readOnly && (
+              <button
+                onClick={addVertical}
+                className="flex h-fit w-48 shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-slate-300 py-8 text-sm font-medium text-slate-500 hover:border-brand-500/60 hover:text-brand-600"
+              >
+                + Add vertical
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -255,9 +339,18 @@ export function GaCanvas({
   );
 }
 
-function LibraryFeederCard({ feeder }: { feeder: FeederWithCost }) {
+function LibraryFeederCard({
+  feeder,
+  disabled = false,
+  onPromote,
+}: {
+  feeder: FeederWithCost;
+  disabled?: boolean;
+  onPromote?: () => void;
+}) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `lib-${feeder.id}`,
+    disabled,
   });
 
   const style = transform
@@ -270,21 +363,41 @@ function LibraryFeederCard({ feeder }: { feeder: FeederWithCost }) {
       style={style}
       {...listeners}
       {...attributes}
-      className={`cursor-grab rounded-lg border border-slate-200 px-3 py-2 text-sm active:cursor-grabbing ${
-        isDragging ? "opacity-40" : "hover:border-brand-500/60"
+      className={`rounded-lg border border-slate-200 px-3 py-2 text-sm ${
+        disabled
+          ? "opacity-60"
+          : `cursor-grab active:cursor-grabbing ${isDragging ? "opacity-40" : "hover:border-brand-500/60"}`
       }`}
     >
-      <p className="font-medium text-slate-800">{feeder.name}</p>
+      <div className="flex items-center gap-1.5">
+        <p className="flex-1 truncate font-medium text-slate-800">{feeder.name}</p>
+        {!feeder.is_library && (
+          <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[10px] text-slate-500">
+            Project
+          </span>
+        )}
+      </div>
       <div className="flex items-center justify-between text-xs text-slate-400">
         <span>{feeder.category || "—"}</span>
         <span>₹{feeder.cost.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
       </div>
+      {onPromote && (
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={onPromote}
+          className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-brand-600 hover:underline"
+        >
+          <Icon name="upload" size={12} /> Save to Feeder Library
+        </button>
+      )}
     </div>
   );
 }
 
 function VerticalColumn({
   vertical,
+  readOnly,
   onRename,
   onWidthChange,
   onDelete,
@@ -293,6 +406,7 @@ function VerticalColumn({
   onRemove,
 }: {
   vertical: VerticalWithFeeders;
+  readOnly: boolean;
   onRename: (name: string) => void;
   onWidthChange: (width: string) => void;
   onDelete: () => void;
@@ -300,7 +414,7 @@ function VerticalColumn({
   onMove: (placedId: string, dir: -1 | 1) => void;
   onRemove: (placedId: string) => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `vert-${vertical.id}` });
+  const { setNodeRef, isOver } = useDroppable({ id: `vert-${vertical.id}`, disabled: readOnly });
   const [localName, setLocalName] = useState(vertical.name);
   const [localWidth, setLocalWidth] = useState(vertical.width_mm ? String(vertical.width_mm) : "");
 
@@ -311,25 +425,29 @@ function VerticalColumn({
       <div className="border-b border-slate-100 p-2">
         <input
           value={localName}
+          disabled={readOnly}
           onChange={(e) => setLocalName(e.target.value)}
           onBlur={() => onRename(localName)}
-          className="w-full rounded border-none bg-transparent px-1 py-0.5 text-sm font-semibold text-slate-900 focus:bg-slate-50"
+          className="w-full rounded border-none bg-transparent px-1 py-0.5 text-sm font-semibold text-slate-900 focus:bg-slate-50 disabled:text-slate-500"
         />
         <div className="mt-1 flex items-center justify-between px-1">
           <div className="flex items-center gap-1 text-xs text-slate-400">
             <input
               type="number"
               value={localWidth}
+              disabled={readOnly}
               onChange={(e) => setLocalWidth(e.target.value)}
               onBlur={() => onWidthChange(localWidth)}
               placeholder="width"
-              className="w-14 rounded border border-slate-200 px-1 py-0.5 text-xs"
+              className="w-14 rounded border border-slate-200 px-1 py-0.5 text-xs disabled:bg-slate-50"
             />
             <span>mm</span>
           </div>
-          <button onClick={onDelete} className="text-xs text-rose-600 hover:underline">
-            Delete
-          </button>
+          {!readOnly && (
+            <button onClick={onDelete} className="text-xs text-rose-600 hover:underline">
+              Delete
+            </button>
+          )}
         </div>
       </div>
 
@@ -342,18 +460,20 @@ function VerticalColumn({
           <div key={p.id} className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs">
             <div className="flex items-start justify-between gap-1">
               <p className="font-medium text-slate-800">{p.feeder.name}</p>
-              <button onClick={() => onRemove(p.id)} className="text-rose-500 hover:underline">
-                ✕
-              </button>
+              {!readOnly && (
+                <button onClick={() => onRemove(p.id)} className="text-rose-500 hover:underline">
+                  ✕
+                </button>
+              )}
             </div>
             <div className="mt-1 flex items-center justify-between">
               <div className="flex items-center gap-1">
-                <button onClick={() => onMove(p.id, -1)} disabled={i === 0} className="text-slate-400 disabled:opacity-30">
+                <button onClick={() => onMove(p.id, -1)} disabled={readOnly || i === 0} className="text-slate-400 disabled:opacity-30">
                   ↑
                 </button>
                 <button
                   onClick={() => onMove(p.id, 1)}
-                  disabled={i === vertical.placed.length - 1}
+                  disabled={readOnly || i === vertical.placed.length - 1}
                   className="text-slate-400 disabled:opacity-30"
                 >
                   ↓
@@ -363,8 +483,9 @@ function VerticalColumn({
                   type="number"
                   min="1"
                   value={p.qty}
+                  disabled={readOnly}
                   onChange={(e) => onQtyChange(p.id, Number(e.target.value) || 1)}
-                  className="w-12 rounded border border-slate-200 px-1 py-0.5"
+                  className="w-12 rounded border border-slate-200 px-1 py-0.5 disabled:bg-slate-100"
                 />
               </div>
               <span className="tabular-nums text-slate-500">

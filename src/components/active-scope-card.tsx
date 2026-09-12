@@ -45,12 +45,25 @@ export function ActiveScopeCard() {
         Active Scope
       </div>
       <div className="rounded-xl border border-slate-200/90 bg-white p-3.5 shadow-xs">
-        <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
           <span
             className={`rounded border px-1.5 py-0.5 font-mono text-[10px] font-medium ${STATUS_STYLES[project.status]}`}
           >
             {project.status.toUpperCase()}
           </span>
+          <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-500">
+            R{project.revision_number}
+          </span>
+          {project.archived && (
+            <span className="rounded border border-rose-200/60 bg-rose-50 px-1.5 py-0.5 text-[10px] font-medium text-rose-600">
+              ARCHIVED
+            </span>
+          )}
+          {project.locked_by && (
+            <span className="flex items-center gap-0.5 rounded border border-amber-200/60 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+              <Icon name="lock" size={11} /> Locked
+            </span>
+          )}
         </div>
         <div className="mb-1 line-clamp-1 text-xs font-medium text-slate-900" title={project.name}>
           {project.name}

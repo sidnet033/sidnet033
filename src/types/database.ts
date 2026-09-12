@@ -1,6 +1,6 @@
-// Hand-written row types matching supabase/migrations/0001_init.sql.
-// (If you later install the Supabase CLI you can generate these
-// automatically with `supabase gen types typescript`.)
+// Hand-written row types matching supabase/migrations/0001_init.sql and
+// 0002_workflow_features.sql. (If you later install the Supabase CLI you
+// can generate these automatically with `supabase gen types typescript`.)
 
 export type Profile = {
   id: string;
@@ -9,11 +9,19 @@ export type Profile = {
   created_at: string;
 };
 
+export type ItemStatus = "active" | "inactive" | "discontinued";
+
 export type ItemMaster = {
   id: string;
-  item_code: string;
+  sku: string | null;
+  vendor_cat: string | null;
   description: string;
   category: string | null;
+  make: string | null;
+  status: ItemStatus;
+  amps: number | null;
+  ka: number | null;
+  poles: number | null;
   uom: string;
   unit_cost: number;
   supplier: string | null;
@@ -26,6 +34,8 @@ export type Feeder = {
   name: string;
   description: string | null;
   category: string | null;
+  project_id: string | null;
+  is_library: boolean;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -48,6 +58,11 @@ export type Project = {
   status: "draft" | "quoted" | "won" | "lost";
   margin_pct: number;
   created_by: string | null;
+  locked_by: string | null;
+  locked_at: string | null;
+  archived: boolean;
+  revision_number: number;
+  revision_group_id: string;
   created_at: string;
   updated_at: string;
 };

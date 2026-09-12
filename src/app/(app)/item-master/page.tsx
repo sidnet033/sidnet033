@@ -18,7 +18,7 @@ export default async function ItemMasterPage({
   const { data: items } = await supabase
     .from("item_master")
     .select("*")
-    .order("item_code", { ascending: true });
+    .order("sku", { ascending: true });
 
   return (
     <div className="max-w-6xl space-y-4 px-8 py-6">

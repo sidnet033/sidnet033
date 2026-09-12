@@ -4,17 +4,18 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Feeder, FeederItemWithDetails, ItemMaster } from "@/types/database";
+import { itemCode } from "@/lib/item-display";
 
 export function FeederBuilder({
   feeder,
   initialLines,
   allItems,
-  isAdmin,
+  canEdit,
 }: {
   feeder: Feeder;
   initialLines: FeederItemWithDetails[];
   allItems: ItemMaster[];
-  isAdmin: boolean;
+  canEdit: boolean;
 }) {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -34,7 +35,7 @@ export function FeederBuilder({
     ? allItems
         .filter(
           (i) =>
-            i.item_code.toLowerCase().includes(itemSearch.toLowerCase()) ||
+            itemCode(i).toLowerCase().includes(itemSearch.toLowerCase()) ||
             i.description.toLowerCase().includes(itemSearch.toLowerCase())
         )
         .slice(0, 8)
@@ -97,7 +98,7 @@ export function FeederBuilder({
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">Feeder name</label>
               <input
-                disabled={!isAdmin}
+                disabled={!canEdit}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 onBlur={saveDetails}
@@ -107,7 +108,7 @@ export function FeederBuilder({
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">Category</label>
               <input
-                disabled={!isAdmin}
+                disabled={!canEdit}
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
                 onBlur={saveDetails}
@@ -118,7 +119,7 @@ export function FeederBuilder({
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">Description</label>
               <input
-                disabled={!isAdmin}
+                disabled={!canEdit}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 onBlur={saveDetails}
@@ -127,14 +128,14 @@ export function FeederBuilder({
             </div>
           </div>
         </div>
-        {isAdmin && (
+        {canEdit && (
           <button onClick={deleteFeeder} className="whitespace-nowrap text-sm text-rose-600 hover:underline">
             Delete feeder
           </button>
         )}
       </div>
 
-      {isAdmin && (
+      {canEdit && (
         <div className="relative flex flex-wrap items-end gap-3 rounded-xl border border-slate-200/90 bg-white p-4 shadow-xs">
           <div className="w-72">
             <label className="mb-1 block text-xs font-medium text-slate-600">Add item from master</label>
@@ -155,11 +156,11 @@ export function FeederBuilder({
                     key={m.id}
                     onClick={() => {
                       setSelectedItemId(m.id);
-                      setItemSearch(`${m.item_code} — ${m.description}`);
+                      setItemSearch(`${itemCode(m)} — ${m.description}`);
                     }}
                     className="block w-full px-3 py-1.5 text-left text-sm hover:bg-slate-50"
                   >
-                    <span className="font-mono text-xs text-slate-500">{m.item_code}</span> {m.description}
+                    <span className="font-mono text-xs text-slate-500">{itemCode(m)}</span> {m.description}
                   </button>
                 ))}
               </div>
@@ -195,16 +196,16 @@ export function FeederBuilder({
               <th className="px-3 py-2 text-right">Qty</th>
               <th className="px-3 py-2 text-right">Unit cost</th>
               <th className="px-3 py-2 text-right">Line cost</th>
-              {isAdmin && <th className="px-3 py-2" />}
+              {canEdit && <th className="px-3 py-2" />}
             </tr>
           </thead>
           <tbody>
             {lines.map((line) => (
               <tr key={line.id} className="border-t border-slate-100">
-                <td className="px-3 py-2 font-mono text-xs">{line.item.item_code}</td>
+                <td className="px-3 py-2 font-mono text-xs">{itemCode(line.item)}</td>
                 <td className="px-3 py-2">{line.item.description}</td>
                 <td className="px-3 py-2 text-right">
-                  {isAdmin ? (
+                  {canEdit ? (
                     <input
                       type="number"
                       min="0"
@@ -223,7 +224,7 @@ export function FeederBuilder({
                 <td className="px-3 py-2 text-right tabular-nums">
                   ₹{(line.qty * line.item.unit_cost).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
                 </td>
-                {isAdmin && (
+                {canEdit && (
                   <td className="px-3 py-2 text-right">
                     <button onClick={() => removeLine(line.id)} className="text-xs text-rose-600 hover:underline">
                       Remove
@@ -234,7 +235,7 @@ export function FeederBuilder({
             ))}
             {lines.length === 0 && (
               <tr>
-                <td colSpan={isAdmin ? 6 : 5} className="px-3 py-8 text-center text-slate-400">
+                <td colSpan={canEdit ? 6 : 5} className="px-3 py-8 text-center text-slate-400">
                   No items added to this feeder yet.
                 </td>
               </tr>
@@ -242,13 +243,13 @@ export function FeederBuilder({
           </tbody>
           <tfoot>
             <tr className="border-t border-slate-200 bg-slate-50 font-medium">
-              <td colSpan={isAdmin ? 4 : 3} className="px-3 py-2 text-right">
+              <td colSpan={canEdit ? 4 : 3} className="px-3 py-2 text-right">
                 Feeder total
               </td>
               <td className="px-3 py-2 text-right tabular-nums">
                 ₹{total.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
               </td>
-              {isAdmin && <td />}
+              {canEdit && <td />}
             </tr>
           </tfoot>
         </table>

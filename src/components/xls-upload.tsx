@@ -3,10 +3,13 @@
 import { useRef, useState } from "react";
 import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase/client";
+import { importItemRows, summaryText, type ParsedItemRow } from "@/lib/item-import";
 
 // Expected columns in the sheet's header row (any order, case-insensitive):
-// item_code, description, category, uom, unit_cost, supplier, notes
-const REQUIRED_COLUMNS = ["item_code", "description"];
+// sku, vendor_cat, description, make, category, status, amps, ka, poles,
+// uom, unit_cost, supplier, notes. Every row needs a sku or a vendor_cat
+// (or both) plus a description — everything else is optional.
+const REQUIRED_DESCRIPTION = "description";
 
 export function XlsUpload({ onDone }: { onDone: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -31,22 +34,16 @@ export function XlsUpload({ onDone }: { onDone: () => void }) {
         if (key) columnIndex[key] = colNumber;
       });
 
-      const missing = REQUIRED_COLUMNS.filter((c) => !(c in columnIndex));
+      const missing: string[] = [];
+      if (!(REQUIRED_DESCRIPTION in columnIndex)) missing.push("description");
+      if (!("sku" in columnIndex) && !("vendor_cat" in columnIndex)) missing.push("sku or vendor_cat");
       if (missing.length > 0) {
         setMessage(`Sheet is missing required column(s): ${missing.join(", ")}`);
         setBusy(false);
         return;
       }
 
-      const rows: {
-        item_code: string;
-        description: string;
-        category: string | null;
-        uom: string;
-        unit_cost: number;
-        supplier: string | null;
-        notes: string | null;
-      }[] = [];
+      const rows: { rowNumber: number; data: ParsedItemRow }[] = [];
 
       sheet.eachRow((row, rowNumber) => {
         if (rowNumber === 1) return;
@@ -58,17 +55,25 @@ export function XlsUpload({ onDone }: { onDone: () => void }) {
           if (typeof v === "object" && "text" in v) return String((v as { text: string }).text);
           return String(v);
         };
-        const itemCode = cellText("item_code").trim();
-        if (!itemCode) return;
+        if (row.cellCount === 0) return;
 
         rows.push({
-          item_code: itemCode,
-          description: cellText("description").trim(),
-          category: cellText("category").trim() || null,
-          uom: cellText("uom").trim() || "nos",
-          unit_cost: Number(cellText("unit_cost")) || 0,
-          supplier: cellText("supplier").trim() || null,
-          notes: cellText("notes").trim() || null,
+          rowNumber,
+          data: {
+            sku: cellText("sku").trim() || null,
+            vendor_cat: cellText("vendor_cat").trim() || null,
+            description: cellText("description").trim(),
+            make: cellText("make").trim() || null,
+            category: cellText("category").trim() || null,
+            status: cellText("status").trim().toLowerCase() || "active",
+            amps: cellText("amps") ? Number(cellText("amps")) : null,
+            ka: cellText("ka") ? Number(cellText("ka")) : null,
+            poles: cellText("poles") ? Number(cellText("poles")) : null,
+            uom: cellText("uom").trim() || "nos",
+            unit_cost: Number(cellText("unit_cost")) || 0,
+            supplier: cellText("supplier").trim() || null,
+            notes: cellText("notes").trim() || null,
+          },
         });
       });
 
@@ -79,14 +84,9 @@ export function XlsUpload({ onDone }: { onDone: () => void }) {
       }
 
       const supabase = createClient();
-      const { error } = await supabase.from("item_master").upsert(rows, { onConflict: "item_code" });
-
-      if (error) {
-        setMessage(`Upload failed: ${error.message}`);
-      } else {
-        setMessage(`Imported ${rows.length} item(s).`);
-        onDone();
-      }
+      const summary = await importItemRows(supabase, rows);
+      setMessage(summaryText(summary));
+      if (summary.created > 0 || summary.updated > 0) onDone();
     } catch {
       setMessage("Could not read that file. Make sure it's a .xlsx file.");
     } finally {
@@ -102,7 +102,7 @@ export function XlsUpload({ onDone }: { onDone: () => void }) {
         <input ref={inputRef} type="file" accept=".xlsx" onChange={handleFile} disabled={busy} className="hidden" />
       </label>
       {message && (
-        <div className="absolute right-0 top-full z-10 mt-1 w-72 rounded-md border border-slate-200 bg-white p-2 text-xs text-slate-600 shadow-sm">
+        <div className="absolute right-0 top-full z-10 mt-1 w-80 whitespace-pre-line rounded-md border border-slate-200 bg-white p-2 text-xs text-slate-600 shadow-sm">
           {message}
         </div>
       )}

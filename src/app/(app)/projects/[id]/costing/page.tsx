@@ -1,17 +1,33 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { MarginEditor } from "@/components/margin-editor";
-import type { ItemMaster, Project } from "@/types/database";
+import { getCurrentUser } from "@/lib/auth";
+import { ProjectCostingControls } from "@/components/project-costing-controls";
+import { itemCode } from "@/lib/item-display";
+import type { ItemMaster } from "@/types/database";
+import type { SiblingRevision } from "@/app/(app)/projects/[id]/ga/page";
 
 export const dynamic = "force-dynamic";
 
 export default async function CostingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
+  const current = await getCurrentUser();
+  const isAdmin = current?.profile?.role === "admin";
 
   const { data: project } = await supabase.from("projects").select("*").eq("id", id).single();
   if (!project) notFound();
+
+  const [{ data: lockedByProfile }, { data: siblings }] = await Promise.all([
+    project.locked_by
+      ? supabase.from("profiles").select("full_name").eq("id", project.locked_by).single()
+      : Promise.resolve({ data: null }),
+    supabase
+      .from("projects")
+      .select("id, revision_number, status")
+      .eq("revision_group_id", project.revision_group_id)
+      .order("revision_number"),
+  ]);
 
   const { data: verticals } = await supabase
     .from("verticals")
@@ -59,7 +75,7 @@ export default async function CostingPage({ params }: { params: Promise<{ id: st
     entry.qty += line.qty * feederCount;
     bom.set(line.item.id, entry);
   }
-  const bomRows = Array.from(bom.values()).sort((a, b) => a.item.item_code.localeCompare(b.item.item_code));
+  const bomRows = Array.from(bom.values()).sort((a, b) => itemCode(a.item).localeCompare(itemCode(b.item)));
   const totalCost = bomRows.reduce((sum, r) => sum + r.qty * r.item.unit_cost, 0);
 
   // per-vertical subtotal
@@ -94,7 +110,15 @@ export default async function CostingPage({ params }: { params: Promise<{ id: st
         <SummaryCard label="Total BOM cost" value={`₹${totalCost.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`} />
       </div>
 
-      <MarginEditor project={project as Project} totalCost={totalCost} />
+      <ProjectCostingControls
+        project={project}
+        totalCost={totalCost}
+        currentUserId={current?.userId ?? ""}
+        currentUserName={current?.profile?.full_name ?? current?.email ?? null}
+        isAdmin={isAdmin}
+        lockedByName={(lockedByProfile as { full_name: string | null } | null)?.full_name ?? null}
+        siblingRevisions={(siblings ?? []) as SiblingRevision[]}
+      />
 
       <div>
         <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-900">Cost by vertical</h2>
@@ -147,7 +171,7 @@ export default async function CostingPage({ params }: { params: Promise<{ id: st
             <tbody>
               {bomRows.map((r) => (
                 <tr key={r.item.id} className="border-t border-slate-100">
-                  <td className="px-3 py-2 font-mono text-xs">{r.item.item_code}</td>
+                  <td className="px-3 py-2 font-mono text-xs">{itemCode(r.item)}</td>
                   <td className="px-3 py-2">{r.item.description}</td>
                   <td className="px-3 py-2 text-slate-500">{r.item.category || "—"}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{r.qty}</td>

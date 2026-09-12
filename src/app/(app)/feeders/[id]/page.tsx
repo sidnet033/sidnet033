@@ -15,7 +15,7 @@ export default async function FeederDetailPage({ params }: { params: Promise<{ i
   const [{ data: feeder }, { data: lines }, { data: allItems }] = await Promise.all([
     supabase.from("feeders").select("*").eq("id", id).single(),
     supabase.from("feeder_items").select("*, item:item_master(*)").eq("feeder_id", id).order("created_at"),
-    supabase.from("item_master").select("*").order("item_code"),
+    supabase.from("item_master").select("*").order("sku"),
   ]);
 
   if (!feeder) notFound();
@@ -26,7 +26,7 @@ export default async function FeederDetailPage({ params }: { params: Promise<{ i
         feeder={feeder as Feeder}
         initialLines={(lines ?? []) as unknown as FeederItemWithDetails[]}
         allItems={(allItems ?? []) as ItemMaster[]}
-        isAdmin={isAdmin}
+        canEdit={isAdmin || !(feeder as Feeder).is_library}
       />
     </div>
   );

@@ -12,7 +12,7 @@ export default async function FeedersPage() {
   const current = await getCurrentUser();
   const isAdmin = current?.profile?.role === "admin";
 
-  const { data: feeders } = await supabase.from("feeders").select("*").order("name");
+  const { data: feeders } = await supabase.from("feeders").select("*").eq("is_library", true).order("name");
   const { data: lines } = await supabase.from("feeder_items").select("feeder_id");
   const costByFeederTotal = await getFeederCosts(supabase);
 

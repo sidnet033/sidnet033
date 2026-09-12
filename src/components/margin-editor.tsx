@@ -4,7 +4,15 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Project } from "@/types/database";
 
-export function MarginEditor({ project, totalCost }: { project: Project; totalCost: number }) {
+export function MarginEditor({
+  project,
+  totalCost,
+  readOnly = false,
+}: {
+  project: Project;
+  totalCost: number;
+  readOnly?: boolean;
+}) {
   const [margin, setMargin] = useState(project.margin_pct);
   const [saving, setSaving] = useState(false);
 
@@ -31,9 +39,10 @@ export function MarginEditor({ project, totalCost }: { project: Project; totalCo
               type="number"
               step="0.5"
               value={margin}
+              disabled={readOnly}
               onChange={(e) => setMargin(Number(e.target.value) || 0)}
               onBlur={() => saveMargin(margin)}
-              className="w-24 rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+              className="w-24 rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-50 disabled:text-slate-500"
             />
             <span className="text-sm text-slate-500">%{saving ? " — saving..." : ""}</span>
           </div>

@@ -19,11 +19,17 @@ export default async function DashboardPage() {
   const [{ data: projects }, { count: itemCount }, { count: feederCount }] = await Promise.all([
     supabase.from("projects").select("*").order("created_at", { ascending: false }),
     supabase.from("item_master").select("*", { count: "exact", head: true }),
-    supabase.from("feeders").select("*", { count: "exact", head: true }),
+    supabase.from("feeders").select("*", { count: "exact", head: true }).eq("is_library", true),
   ]);
 
   const rows = (projects ?? []) as Project[];
   const activeCount = rows.filter((p) => p.status === "draft" || p.status === "quoted").length;
+
+  const lockedByIds = Array.from(new Set(rows.map((p) => p.locked_by).filter((id): id is string => !!id)));
+  const { data: lockers } = lockedByIds.length
+    ? await supabase.from("profiles").select("id, full_name").in("id", lockedByIds)
+    : { data: [] };
+  const lockerNames = new Map(((lockers ?? []) as { id: string; full_name: string | null }[]).map((p) => [p.id, p.full_name]));
 
   return (
     <div className="max-w-5xl space-y-7 px-8 py-6">
@@ -71,23 +77,41 @@ export default async function DashboardPage() {
                 <th className="px-4 py-2">Project</th>
                 <th className="px-4 py-2">Customer</th>
                 <th className="px-4 py-2">Status</th>
+                <th className="px-4 py-2">Lock</th>
                 <th className="px-4 py-2">Margin</th>
                 <th className="px-4 py-2">Updated</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((p) => (
-                <tr key={p.id} className="border-t border-slate-100 hover:bg-slate-50">
+                <tr key={p.id} className={`border-t border-slate-100 hover:bg-slate-50 ${p.archived ? "opacity-60" : ""}`}>
                   <td className="px-4 py-3">
                     <Link href={`/projects/${p.id}/ga`} className="font-medium text-slate-900 hover:underline">
                       {p.name}
                     </Link>
+                    <span className="ml-2 rounded border border-slate-200 bg-slate-50 px-1 py-0.5 font-mono text-[10px] text-slate-500">
+                      R{p.revision_number}
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-slate-600">{p.customer_name || "—"}</td>
                   <td className="px-4 py-3">
                     <span className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${STATUS_STYLES[p.status] ?? ""}`}>
                       {p.status.toUpperCase()}
                     </span>
+                    {p.archived && (
+                      <span className="ml-1 rounded border border-rose-200/60 bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600">
+                        ARCHIVED
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {p.locked_by ? (
+                      <span className="flex items-center gap-1 text-[11px] font-medium text-amber-700">
+                        <Icon name="lock" size={13} /> {lockerNames.get(p.locked_by) || "locked"}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-slate-400">Unlocked</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-slate-600">{p.margin_pct}%</td>
                   <td className="px-4 py-3 text-slate-500">{new Date(p.updated_at).toLocaleDateString()}</td>
@@ -95,7 +119,7 @@ export default async function DashboardPage() {
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
                     No projects yet. Create one above.
                   </td>
                 </tr>
