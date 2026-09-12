@@ -8,7 +8,7 @@ const geistSans = Geist({
 });
 
 const spaceGrotesk = Space_Grotesk({
-  variable: "--font-display",
+  variable: "--font-display-raw",
   subsets: ["latin"],
   weight: ["500", "600", "700"],
 });

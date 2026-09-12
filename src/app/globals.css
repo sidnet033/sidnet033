@@ -10,7 +10,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
-  --font-display: var(--font-display);
+  --font-display: var(--font-display-raw);
 
   --color-brand-50: #f0f7ff;
   --color-brand-100: #e0effe;
