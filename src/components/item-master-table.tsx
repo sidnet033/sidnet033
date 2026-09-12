@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { ItemMaster } from "@/types/database";
 import { XlsUpload } from "@/components/xls-upload";
 import { SheetSyncButton } from "@/components/sheet-sync-button";
+import { Icon } from "@/components/icon";
 
 const EMPTY_DRAFT = {
   item_code: "",
@@ -19,12 +20,14 @@ const EMPTY_DRAFT = {
 export function ItemMasterTable({
   initialItems,
   isAdmin,
+  initialSearch = "",
 }: {
   initialItems: ItemMaster[];
   isAdmin: boolean;
+  initialSearch?: string;
 }) {
   const [items, setItems] = useState<ItemMaster[]>(initialItems);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -117,19 +120,22 @@ export function ItemMasterTable({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by code, description, category..."
-          className="w-72 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
-        />
+        <div className="relative">
+          <Icon name="search" size={16} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by code, description, category..."
+            className="w-72 rounded-md border border-slate-300 py-1.5 pl-8 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+          />
+        </div>
         {isAdmin && (
           <div className="flex items-center gap-2">
             <XlsUpload onDone={refresh} />
             <SheetSyncButton onDone={refresh} />
             <button
               onClick={() => setAdding((v) => !v)}
-              className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
+              className="rounded-md bg-brand-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-600"
             >
               {adding ? "Cancel" : "+ Add item"}
             </button>
@@ -137,10 +143,10 @@ export function ItemMasterTable({
         )}
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-rose-600">{error}</p>}
 
       {adding && (
-        <form onSubmit={handleAdd} className="grid grid-cols-2 gap-3 rounded-md border border-slate-200 bg-white p-4 sm:grid-cols-4">
+        <form onSubmit={handleAdd} className="grid grid-cols-2 gap-3 rounded-xl border border-slate-200/90 bg-white p-4 shadow-xs sm:grid-cols-4">
           <Field label="Item code" value={draft.item_code} onChange={(v) => setDraft({ ...draft, item_code: v })} required />
           <Field label="Description" value={draft.description} onChange={(v) => setDraft({ ...draft, description: v })} required className="sm:col-span-2" />
           <Field label="Category" value={draft.category} onChange={(v) => setDraft({ ...draft, category: v })} />
@@ -149,14 +155,14 @@ export function ItemMasterTable({
           <Field label="Supplier" value={draft.supplier} onChange={(v) => setDraft({ ...draft, supplier: v })} />
           <Field label="Notes" value={draft.notes} onChange={(v) => setDraft({ ...draft, notes: v })} />
           <div className="sm:col-span-4">
-            <button type="submit" className="rounded-md bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-800">
+            <button type="submit" className="rounded-md bg-brand-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-600">
               Save item
             </button>
           </div>
         </form>
       )}
 
-      <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-slate-200/90 bg-white shadow-xs">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
@@ -180,7 +186,7 @@ export function ItemMasterTable({
                   <td className="px-2 py-1"><input type="number" className="w-24 rounded border px-1 py-0.5 text-right" value={editDraft.unit_cost} onChange={(e) => setEditDraft({ ...editDraft, unit_cost: e.target.value })} /></td>
                   <td className="px-2 py-1"><input className="w-28 rounded border px-1 py-0.5" value={editDraft.supplier} onChange={(e) => setEditDraft({ ...editDraft, supplier: e.target.value })} /></td>
                   <td className="whitespace-nowrap px-2 py-1">
-                    <button onClick={() => saveEdit(item.id)} className="mr-2 text-xs font-medium text-green-700 hover:underline">Save</button>
+                    <button onClick={() => saveEdit(item.id)} className="mr-2 text-xs font-medium text-emerald-600 hover:underline">Save</button>
                     <button onClick={() => setEditingId(null)} className="text-xs text-slate-500 hover:underline">Cancel</button>
                   </td>
                 </tr>
@@ -195,7 +201,7 @@ export function ItemMasterTable({
                   {isAdmin && (
                     <td className="whitespace-nowrap px-3 py-2 text-right">
                       <button onClick={() => startEdit(item)} className="mr-2 text-xs text-slate-500 hover:underline">Edit</button>
-                      <button onClick={() => handleDelete(item.id)} className="text-xs text-red-600 hover:underline">Delete</button>
+                      <button onClick={() => handleDelete(item.id)} className="text-xs text-rose-600 hover:underline">Delete</button>
                     </td>
                   )}
                 </tr>

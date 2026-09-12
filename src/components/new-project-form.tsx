@@ -42,7 +42,7 @@ export function NewProjectForm() {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+        className="rounded-md bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600"
       >
         + New project
       </button>
@@ -50,7 +50,7 @@ export function NewProjectForm() {
   }
 
   return (
-    <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-white p-4">
+    <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200/90 bg-white p-4 shadow-xs">
       <div>
         <label className="mb-1 block text-xs font-medium text-slate-600">Project / quote name</label>
         <input
@@ -73,7 +73,7 @@ export function NewProjectForm() {
       <button
         type="submit"
         disabled={saving}
-        className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+        className="rounded-md bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50"
       >
         {saving ? "Creating..." : "Create"}
       </button>

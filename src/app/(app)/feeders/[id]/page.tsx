@@ -21,11 +21,13 @@ export default async function FeederDetailPage({ params }: { params: Promise<{ i
   if (!feeder) notFound();
 
   return (
-    <FeederBuilder
-      feeder={feeder as Feeder}
-      initialLines={(lines ?? []) as unknown as FeederItemWithDetails[]}
-      allItems={(allItems ?? []) as ItemMaster[]}
-      isAdmin={isAdmin}
-    />
+    <div className="max-w-6xl px-8 py-6">
+      <FeederBuilder
+        feeder={feeder as Feeder}
+        initialLines={(lines ?? []) as unknown as FeederItemWithDetails[]}
+        allItems={(allItems ?? []) as ItemMaster[]}
+        isAdmin={isAdmin}
+      />
+    </div>
   );
 }

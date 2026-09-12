@@ -77,10 +77,10 @@ export default async function CostingPage({ params }: { params: Promise<{ id: st
   }
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-5xl space-y-6 px-8 py-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">{project.name} — Costing</h1>
+          <h1 className="font-display text-xl font-semibold text-slate-900">{project.name} — Costing</h1>
           <p className="text-sm text-slate-500">{project.customer_name || "No customer set"}</p>
         </div>
         <Link href={`/projects/${project.id}/ga`} className="text-sm text-slate-500 hover:underline">
@@ -97,8 +97,8 @@ export default async function CostingPage({ params }: { params: Promise<{ id: st
       <MarginEditor project={project as Project} totalCost={totalCost} />
 
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">Cost by vertical</h2>
-        <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-900">Cost by vertical</h2>
+        <div className="overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-xs">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
@@ -130,8 +130,8 @@ export default async function CostingPage({ params }: { params: Promise<{ id: st
       </div>
 
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">Full BOM (rolled up across the whole switchboard)</h2>
-        <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-900">Full BOM (rolled up across the whole switchboard)</h2>
+        <div className="overflow-x-auto rounded-xl border border-slate-200/90 bg-white shadow-xs">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
@@ -187,9 +187,9 @@ export default async function CostingPage({ params }: { params: Promise<{ id: st
 
 function SummaryCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-slate-200 bg-white p-4">
+    <div className="rounded-xl border border-slate-200/90 bg-white p-5 shadow-xs">
       <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-xl font-semibold text-slate-900">{value}</p>
+      <p className="mt-1 font-display text-xl font-semibold text-slate-900">{value}</p>
     </div>
   );
 }

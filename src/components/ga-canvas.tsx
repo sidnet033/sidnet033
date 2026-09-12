@@ -155,21 +155,21 @@ export function GaCanvas({
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div className="flex h-[calc(100vh-64px)] flex-col gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200 bg-white p-3">
+      <div className="flex h-[calc(100vh-56px)] flex-col gap-4 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/90 bg-white p-3 shadow-xs">
           <div className="flex flex-wrap items-center gap-3">
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
               onBlur={() => saveProjectField("name", name)}
-              className="rounded-md border border-slate-300 px-2 py-1 text-sm font-medium"
+              className="rounded-md border border-slate-300 px-2 py-1 text-sm font-medium focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
             />
             <input
               value={customer}
               onChange={(e) => setCustomer(e.target.value)}
               onBlur={() => saveProjectField("customer_name", customer)}
               placeholder="Customer"
-              className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+              className="rounded-md border border-slate-300 px-2 py-1 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
             />
             <select
               value={status}
@@ -187,11 +187,11 @@ export function GaCanvas({
           </div>
           <div className="flex items-center gap-3">
             <Link href="/" className="text-sm text-slate-500 hover:underline">
-              ← All projects
+              ← Dashboard
             </Link>
             <Link
               href={`/projects/${project.id}/costing`}
-              className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
+              className="rounded-md bg-brand-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-600"
             >
               View costing →
             </Link>
@@ -199,13 +199,13 @@ export function GaCanvas({
         </div>
 
         <div className="flex flex-1 gap-4 overflow-hidden">
-          <aside className="w-72 shrink-0 overflow-y-auto rounded-md border border-slate-200 bg-white p-3">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Feeder library</p>
+          <aside className="w-72 shrink-0 overflow-y-auto rounded-xl border border-slate-200/90 bg-white p-3 shadow-xs">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Feeder Master</p>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search feeders..."
-              className="mb-3 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+              className="mb-3 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
             />
             <p className="mb-2 text-xs text-slate-400">Drag a feeder onto a vertical →</p>
             <div className="space-y-2">
@@ -214,7 +214,7 @@ export function GaCanvas({
               ))}
               {filteredLibrary.length === 0 && (
                 <p className="text-sm text-slate-400">
-                  No feeders. Build your feeder library first.
+                  No feeders. Build your feeder master first.
                 </p>
               )}
             </div>
@@ -235,7 +235,7 @@ export function GaCanvas({
             ))}
             <button
               onClick={addVertical}
-              className="flex h-fit w-48 shrink-0 items-center justify-center rounded-md border-2 border-dashed border-slate-300 py-8 text-sm font-medium text-slate-500 hover:border-slate-400 hover:text-slate-700"
+              className="flex h-fit w-48 shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-slate-300 py-8 text-sm font-medium text-slate-500 hover:border-brand-500/60 hover:text-brand-600"
             >
               + Add vertical
             </button>
@@ -270,8 +270,8 @@ function LibraryFeederCard({ feeder }: { feeder: FeederWithCost }) {
       style={style}
       {...listeners}
       {...attributes}
-      className={`cursor-grab rounded-md border border-slate-200 px-3 py-2 text-sm active:cursor-grabbing ${
-        isDragging ? "opacity-40" : "hover:border-slate-400"
+      className={`cursor-grab rounded-lg border border-slate-200 px-3 py-2 text-sm active:cursor-grabbing ${
+        isDragging ? "opacity-40" : "hover:border-brand-500/60"
       }`}
     >
       <p className="font-medium text-slate-800">{feeder.name}</p>
@@ -307,7 +307,7 @@ function VerticalColumn({
   const subtotal = vertical.placed.reduce((sum, p) => sum + p.qty * p.feeder.cost, 0);
 
   return (
-    <div className="flex w-64 shrink-0 flex-col rounded-md border border-slate-200 bg-white">
+    <div className="flex w-64 shrink-0 flex-col rounded-xl border border-slate-200/90 bg-white shadow-xs">
       <div className="border-b border-slate-100 p-2">
         <input
           value={localName}
@@ -327,7 +327,7 @@ function VerticalColumn({
             />
             <span>mm</span>
           </div>
-          <button onClick={onDelete} className="text-xs text-red-500 hover:underline">
+          <button onClick={onDelete} className="text-xs text-rose-600 hover:underline">
             Delete
           </button>
         </div>
@@ -339,10 +339,10 @@ function VerticalColumn({
         style={{ minHeight: 200 }}
       >
         {vertical.placed.map((p, i) => (
-          <div key={p.id} className="rounded-md border border-slate-200 bg-slate-50 p-2 text-xs">
+          <div key={p.id} className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs">
             <div className="flex items-start justify-between gap-1">
               <p className="font-medium text-slate-800">{p.feeder.name}</p>
-              <button onClick={() => onRemove(p.id)} className="text-red-500 hover:underline">
+              <button onClick={() => onRemove(p.id)} className="text-rose-500 hover:underline">
                 ✕
               </button>
             </div>

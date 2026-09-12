@@ -92,7 +92,7 @@ export function FeederBuilder({
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
-        <div className="flex-1 space-y-3 rounded-md border border-slate-200 bg-white p-4">
+        <div className="flex-1 space-y-3 rounded-xl border border-slate-200/90 bg-white p-4 shadow-xs">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">Feeder name</label>
@@ -128,14 +128,14 @@ export function FeederBuilder({
           </div>
         </div>
         {isAdmin && (
-          <button onClick={deleteFeeder} className="whitespace-nowrap text-sm text-red-600 hover:underline">
+          <button onClick={deleteFeeder} className="whitespace-nowrap text-sm text-rose-600 hover:underline">
             Delete feeder
           </button>
         )}
       </div>
 
       {isAdmin && (
-        <div className="relative flex flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-white p-4">
+        <div className="relative flex flex-wrap items-end gap-3 rounded-xl border border-slate-200/90 bg-white p-4 shadow-xs">
           <div className="w-72">
             <label className="mb-1 block text-xs font-medium text-slate-600">Add item from master</label>
             <input
@@ -179,14 +179,14 @@ export function FeederBuilder({
           <button
             onClick={addLine}
             disabled={!selectedItemId}
-            className="rounded-md bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-40"
+            className="rounded-md bg-brand-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-40"
           >
             Add line
           </button>
         </div>
       )}
 
-      <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
+      <div className="overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-xs">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
@@ -225,7 +225,7 @@ export function FeederBuilder({
                 </td>
                 {isAdmin && (
                   <td className="px-3 py-2 text-right">
-                    <button onClick={() => removeLine(line.id)} className="text-xs text-red-600 hover:underline">
+                    <button onClick={() => removeLine(line.id)} className="text-xs text-rose-600 hover:underline">
                       Remove
                     </button>
                   </td>

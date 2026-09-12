@@ -24,10 +24,10 @@ export default async function FeedersPage() {
   const rows = (feeders ?? []) as Feeder[];
 
   return (
-    <div className="space-y-4">
+    <div className="max-w-6xl space-y-4 px-8 py-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">Feeder Library</h1>
+          <h1 className="font-display text-xl font-semibold text-slate-900">Feeder Master</h1>
           <p className="text-sm text-slate-500">
             Reusable feeder templates built from item master lines. Drag these onto the GA canvas.
           </p>
@@ -35,7 +35,7 @@ export default async function FeedersPage() {
         {isAdmin && <NewFeederButton />}
       </div>
 
-      <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
+      <div className="overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-xs">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
@@ -64,7 +64,7 @@ export default async function FeedersPage() {
             {rows.length === 0 && (
               <tr>
                 <td colSpan={4} className="px-4 py-8 text-center text-slate-400">
-                  No feeders yet. {isAdmin ? "Create one above." : "Ask an admin to build the feeder library."}
+                  No feeders yet. {isAdmin ? "Create one above." : "Ask an admin to build the feeder master."}
                 </td>
               </tr>
             )}
