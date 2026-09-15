@@ -5,12 +5,12 @@ import { useRouter, usePathname } from "next/navigation";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
-import { ActiveScopeCard } from "@/components/active-scope-card";
 
 const NAV_LINKS = [
-  { href: "/", label: "Dashboard", icon: "dashboard" },
-  { href: "/item-master", label: "Item Master", icon: "inventory_2" },
-  { href: "/feeders", label: "Feeder Master", icon: "schema" },
+  { href: "/", label: "Dashboard", icon: "dashboard", activeMatch: (p: string) => p === "/" },
+  { href: "/", label: "Costing", icon: "payments", activeMatch: (p: string) => p.startsWith("/revisions") },
+  { href: "/item-master", label: "Item Master", icon: "inventory_2", activeMatch: (p: string) => p.startsWith("/item-master") },
+  { href: "/feeders", label: "Feeder Master", icon: "schema", activeMatch: (p: string) => p.startsWith("/feeders") },
 ];
 
 function initials(name: string) {
@@ -21,22 +21,34 @@ function initials(name: string) {
 export function AppShell({
   email,
   fullName,
-  role,
   isAdmin,
   children,
 }: {
   email: string | null;
   fullName: string | null;
-  role: string | null;
   isAdmin: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const [search, setSearch] = useState("");
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("sidebar-collapsed") === "1";
+  });
+
+  function toggleCollapsed() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      window.localStorage.setItem("sidebar-collapsed", next ? "1" : "0");
+      return next;
+    });
+  }
 
   const displayName = fullName || email || "User";
-  const links = isAdmin ? [...NAV_LINKS, { href: "/admin", label: "Admin Space", icon: "admin_panel_settings" }] : NAV_LINKS;
+  const links = isAdmin
+    ? [...NAV_LINKS, { href: "/admin", label: "Admin Space", icon: "admin_panel_settings", activeMatch: (p: string) => p.startsWith("/admin") }]
+    : NAV_LINKS;
 
   async function signOut() {
     const supabase = createClient();
@@ -84,44 +96,41 @@ export function AppShell({
       </header>
 
       <div className="mx-auto flex w-full max-w-[1720px] flex-1">
-        <aside className="flex w-72 shrink-0 flex-col justify-between overflow-y-auto border-r border-slate-200/90 bg-white/60 p-6 xl:w-80">
-          <div className="space-y-6">
-            <nav className="space-y-1">
-              <div className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                Navigation
-              </div>
-              {links.map((link) => {
-                const active = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
-                return (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors ${
-                      active
-                        ? "bg-blue-50 text-blue-700"
-                        : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
-                    }`}
-                  >
-                    <Icon name={link.icon} size={18} className={active ? "text-blue-600" : "text-slate-500"} />
-                    <span className={active ? "font-semibold" : ""}>{link.label}</span>
-                  </Link>
-                );
-              })}
-            </nav>
-            <ActiveScopeCard />
-          </div>
-
-          <div className="mt-6 border-t border-slate-200/80 pt-4">
-            <div className="flex items-center gap-2.5 px-1">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 font-display text-xs font-medium text-white ring-1 ring-slate-200">
-                {initials(displayName)}
-              </div>
-              <div className="min-w-0 text-left">
-                <div className="truncate text-xs font-semibold text-slate-900">{displayName}</div>
-                <div className="truncate text-[10px] text-slate-500">{role === "admin" ? "Admin" : "Sales"}</div>
-              </div>
+        <aside
+          className={`flex shrink-0 flex-col overflow-y-auto border-r border-slate-200/90 bg-white/60 transition-all ${
+            collapsed ? "w-16 p-3" : "w-72 p-6 xl:w-80"
+          }`}
+        >
+          <nav className="space-y-1">
+            <div className={`mb-2 flex items-center px-2 ${collapsed ? "justify-center" : "justify-between"}`}>
+              {!collapsed && (
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Navigation</span>
+              )}
+              <button
+                onClick={toggleCollapsed}
+                title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <Icon name={collapsed ? "chevron_right" : "chevron_left"} size={16} />
+              </button>
             </div>
-          </div>
+            {links.map((link) => {
+              const active = link.activeMatch(pathname);
+              return (
+                <Link
+                  key={link.label}
+                  href={link.href}
+                  title={collapsed ? link.label : undefined}
+                  className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors ${
+                    collapsed ? "justify-center" : ""
+                  } ${active ? "bg-blue-50 text-blue-700" : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"}`}
+                >
+                  <Icon name={link.icon} size={18} className={active ? "text-blue-600" : "text-slate-500"} />
+                  {!collapsed && <span className={active ? "font-semibold" : ""}>{link.label}</span>}
+                </Link>
+              );
+            })}
+          </nav>
         </aside>
 
         <main className="min-w-0 flex-1 bg-white">{children}</main>

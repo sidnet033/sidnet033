@@ -1,24 +1,30 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { SwitchboardHeaderBar } from "@/components/switchboard-header-bar";
 import { CostBreakdownCard } from "@/components/cost-breakdown-card";
 import { AdHocFeederPanel } from "@/components/ad-hoc-feeder-panel";
 import { findDuplicateLibraryFeeder } from "@/lib/feeder-duplicate";
 import { ensureUnassignedVertical } from "@/lib/switchboard-bom";
 import { itemCode } from "@/lib/item-display";
 import { Icon } from "@/components/icon";
-import type { LockState } from "@/components/revision-lock-controls";
-import type { SwitchboardContext } from "@/lib/switchboard-context";
 import type {
   Feeder,
   FeederItemWithDetails,
   ItemMaster,
+  Switchboard,
   SwitchboardBusbarLine,
   SwitchboardEnclosureLine,
 } from "@/types/database";
-import type { FeederModule, LibraryFeederOption } from "@/app/(app)/switchboards/[id]/bom/page";
+
+type FeederPlacement = { id: string; vertical_id: string; tier_number: number; qty: number };
+type FeederModule = {
+  feeder: Feeder;
+  placements: FeederPlacement[];
+  placementQty: number;
+  lines: FeederItemWithDetails[];
+};
+type LibraryFeederOption = { id: string; name: string; category: string | null; tag: string | null; rating_summary: string | null };
 
 function money(n: number) {
   return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
@@ -28,48 +34,120 @@ function lineTotal(lines: FeederItemWithDetails[]) {
   return lines.reduce((s, l) => s + l.qty * l.item.unit_cost, 0);
 }
 
+async function loadBomData(supabase: ReturnType<typeof createClient>, switchboardId: string) {
+  const { data: switchboard } = await supabase.from("switchboards").select("*").eq("id", switchboardId).single();
+  if (!switchboard) return null;
+
+  const { data: verticals } = await supabase.from("verticals").select("id").eq("switchboard_id", switchboardId);
+  const verticalIds = ((verticals ?? []) as { id: string }[]).map((v) => v.id);
+
+  const [{ data: placed }, { data: busbarRows }, { data: enclosureRows }, { data: libraryFeeders }] = await Promise.all([
+    verticalIds.length
+      ? supabase
+          .from("placed_feeders")
+          .select("id, vertical_id, tier_number, qty, feeder:feeders(*)")
+          .in("vertical_id", verticalIds)
+      : Promise.resolve({ data: [] }),
+    supabase.from("switchboard_busbars").select("*").eq("switchboard_id", switchboardId).order("sort_order"),
+    supabase.from("switchboard_enclosure_lines").select("*").eq("switchboard_id", switchboardId).order("sort_order"),
+    supabase.from("feeders").select("id, name, category, tag, rating_summary").eq("is_library", true).order("name"),
+  ]);
+
+  type PlacedRow = FeederPlacement & { feeder: Feeder };
+  const placedRows = (placed ?? []) as unknown as PlacedRow[];
+
+  const feederById = new Map<string, Feeder>();
+  const placementsByFeeder = new Map<string, FeederPlacement[]>();
+  for (const p of placedRows) {
+    feederById.set(p.feeder.id, p.feeder);
+    const list = placementsByFeeder.get(p.feeder.id) ?? [];
+    list.push({ id: p.id, vertical_id: p.vertical_id, tier_number: p.tier_number, qty: p.qty });
+    placementsByFeeder.set(p.feeder.id, list);
+  }
+
+  const feederIds = Array.from(feederById.keys());
+  const { data: feederLines } = feederIds.length
+    ? await supabase.from("feeder_items").select("*, item:item_master(*)").in("feeder_id", feederIds).order("created_at")
+    : { data: [] };
+
+  const linesByFeeder = new Map<string, FeederItemWithDetails[]>();
+  for (const line of (feederLines ?? []) as unknown as FeederItemWithDetails[]) {
+    const list = linesByFeeder.get(line.feeder_id) ?? [];
+    list.push(line);
+    linesByFeeder.set(line.feeder_id, list);
+  }
+
+  const modules: FeederModule[] = feederIds.map((fid) => {
+    const placements = placementsByFeeder.get(fid) ?? [];
+    return {
+      feeder: feederById.get(fid)!,
+      placements,
+      placementQty: placements.reduce((s, p) => s + p.qty, 0),
+      lines: linesByFeeder.get(fid) ?? [],
+    };
+  });
+
+  const placedFeederIds = new Set(feederIds);
+  const libraryFeederOptions = ((libraryFeeders ?? []) as LibraryFeederOption[]).filter((f) => !placedFeederIds.has(f.id));
+
+  return {
+    switchboard: switchboard as Switchboard,
+    modules,
+    busbars: (busbarRows ?? []) as SwitchboardBusbarLine[],
+    enclosureLines: (enclosureRows ?? []) as SwitchboardEnclosureLine[],
+    libraryFeederOptions,
+  };
+}
+
 export function BomBuilder({
-  ctx,
+  switchboardId,
   currentUserId,
-  currentUserName,
   isAdmin,
-  initialModules,
+  revisionArchived,
   allItems,
-  initialBusbars,
-  initialEnclosureLines,
-  libraryFeederOptions,
 }: {
-  ctx: SwitchboardContext;
+  switchboardId: string;
   currentUserId: string;
-  currentUserName: string | null;
   isAdmin: boolean;
-  initialModules: FeederModule[];
+  revisionArchived: boolean;
   allItems: ItemMaster[];
-  initialBusbars: SwitchboardBusbarLine[];
-  initialEnclosureLines: SwitchboardEnclosureLine[];
-  libraryFeederOptions: LibraryFeederOption[];
 }) {
   const supabase = useMemo(() => createClient(), []);
-  const sb = ctx.switchboard;
 
-  const [lockState, setLockState] = useState<LockState>({
-    locked_by: ctx.revision.locked_by,
-    archived: ctx.revision.archived,
-  });
-  const readOnly = lockState.archived || (lockState.locked_by !== null && lockState.locked_by !== currentUserId);
+  const [loading, setLoading] = useState(true);
+  const [sb, setSb] = useState<Switchboard | null>(null);
+  const [modules, setModules] = useState<FeederModule[]>([]);
+  const [busbars, setBusbars] = useState<SwitchboardBusbarLine[]>([]);
+  const [enclosureLines, setEnclosureLines] = useState<SwitchboardEnclosureLine[]>([]);
+  const [libraryOptions, setLibraryOptions] = useState<LibraryFeederOption[]>([]);
 
-  const [modules, setModules] = useState<FeederModule[]>(initialModules);
-  const [busbars, setBusbars] = useState<SwitchboardBusbarLine[]>(initialBusbars);
-  const [enclosureLines, setEnclosureLines] = useState<SwitchboardEnclosureLine[]>(initialEnclosureLines);
-  const [libraryOptions, setLibraryOptions] = useState<LibraryFeederOption[]>(libraryFeederOptions);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const data = await loadBomData(supabase, switchboardId);
+      if (cancelled || !data) return;
+      setSb(data.switchboard);
+      setModules(data.modules);
+      setBusbars(data.busbars);
+      setEnclosureLines(data.enclosureLines);
+      setLibraryOptions(data.libraryFeederOptions);
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, switchboardId]);
+
+  const readOnly = !sb || revisionArchived || (sb.locked_by !== null && sb.locked_by !== currentUserId);
 
   const electrical = modules.reduce((s, m) => s + m.placementQty * lineTotal(m.lines), 0);
   const busbarsTotal = busbars.reduce((s, b) => s + b.qty * b.rate, 0);
   const enclosureTotal = enclosureLines.reduce((s, e) => s + e.qty * e.rate, 0);
   const rmTotal = electrical + busbarsTotal + enclosureTotal;
-  const wiringAmt = (rmTotal * sb.labor_wiring_pct) / 100;
-  const assemblyAmt = (rmTotal * sb.labor_assembly_pct) / 100;
-  const testingAmt = (rmTotal * sb.labor_testing_pct) / 100;
+  const wiringAmt = sb ? (rmTotal * sb.labor_wiring_pct) / 100 : 0;
+  const assemblyAmt = sb ? (rmTotal * sb.labor_assembly_pct) / 100 : 0;
+  const testingAmt = sb ? (rmTotal * sb.labor_testing_pct) / 100 : 0;
   const laborTotal = wiringAmt + assemblyAmt + testingAmt;
   const mfgTotal = rmTotal + laborTotal;
   const breakdown = {
@@ -85,6 +163,7 @@ export function BomBuilder({
   };
 
   async function addLibraryFeeder(opt: LibraryFeederOption) {
+    if (!sb) return;
     const vId = await ensureUnassignedVertical(supabase, sb.id);
     const { data: placement, error } = await supabase
       .from("placed_feeders")
@@ -110,6 +189,7 @@ export function BomBuilder({
   }
 
   async function handleAdHocCreated(feeder: Feeder & { cost: number }) {
+    if (!sb) return;
     const vId = await ensureUnassignedVertical(supabase, sb.id);
     const { data: placement, error } = await supabase
       .from("placed_feeders")
@@ -133,6 +213,7 @@ export function BomBuilder({
   }
 
   async function duplicateModule(mod: FeederModule) {
+    if (!sb) return;
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -185,6 +266,7 @@ export function BomBuilder({
   }
 
   async function deleteModule(mod: FeederModule) {
+    if (!sb) return;
     if (!confirm(`Remove "${mod.feeder.name}" from this switchboard's BOM?`)) return;
     await supabase.from("placed_feeders").delete().in("id", mod.placements.map((p) => p.id));
     if (mod.feeder.switchboard_id === sb.id && !mod.feeder.is_library) {
@@ -260,6 +342,7 @@ export function BomBuilder({
   }
 
   async function addBusbar() {
+    if (!sb) return;
     const { data, error } = await supabase
       .from("switchboard_busbars")
       .insert({ switchboard_id: sb.id, description: "New busbar run", qty: 1, rate: 0, sort_order: busbars.length })
@@ -278,6 +361,7 @@ export function BomBuilder({
   }
 
   async function addEnclosureLine() {
+    if (!sb) return;
     const { data, error } = await supabase
       .from("switchboard_enclosure_lines")
       .insert({ switchboard_id: sb.id, description: "New enclosure line", qty: 1, rate: 0, sort_order: enclosureLines.length })
@@ -295,70 +379,71 @@ export function BomBuilder({
     await supabase.from("switchboard_enclosure_lines").delete().eq("id", id);
   }
 
+  if (loading || !sb) {
+    return <div className="p-8 text-sm text-slate-400">Loading...</div>;
+  }
+
   return (
-    <div className="flex h-[calc(100vh-56px)] flex-col overflow-y-auto">
-      <SwitchboardHeaderBar
-        ctx={ctx}
-        currentUserId={currentUserId}
-        currentUserName={currentUserName}
-        isAdmin={isAdmin}
-        lockState={lockState}
-        onStateChange={setLockState}
-      />
-      <div className="space-y-5 p-4">
-        <CostBreakdownCard breakdown={breakdown} switchboard={sb} />
-
-        {!readOnly && (
-          <div className="flex flex-wrap items-start gap-3">
-            <AddFromLibrary options={libraryOptions} onSelect={addLibraryFeeder} />
-            <div className="flex-1">
-              <AdHocFeederPanel switchboardId={sb.id} allItems={allItems} onCreated={handleAdHocCreated} />
-            </div>
-          </div>
-        )}
-
-        <div className="space-y-3">
-          {modules.map((mod) => (
-            <FeederModuleCard
-              key={mod.feeder.id}
-              mod={mod}
-              readOnly={readOnly}
-              canEditLines={!readOnly && (isAdmin || !mod.feeder.is_library)}
-              allItems={allItems}
-              onRename={(field, value) => renameFeeder(mod, field, value)}
-              onQtyChange={(qty) => updateModuleQty(mod, qty)}
-              onAddLine={(item, qty) => addLine(mod, item, qty)}
-              onLineQtyChange={(lineId, qty) => updateLineQty(mod, lineId, qty)}
-              onRemoveLine={(lineId) => removeLine(mod, lineId)}
-              onDuplicate={!readOnly ? () => duplicateModule(mod) : undefined}
-              onDelete={!readOnly ? () => deleteModule(mod) : undefined}
-              onPromote={!readOnly && !mod.feeder.is_library ? () => promoteToLibrary(mod) : undefined}
-            />
-          ))}
-          {modules.length === 0 && (
-            <p className="rounded-xl border border-dashed border-slate-300 py-10 text-center text-sm text-slate-400">
-              No feeders in this switchboard&apos;s BOM yet. Add one from the library or build a custom feeder above.
-            </p>
-          )}
+    <div className="space-y-5 p-4">
+      {readOnly && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200/80 bg-amber-50/60 px-3 py-2 text-xs text-amber-800">
+          <Icon name="visibility" size={15} />
+          {revisionArchived ? "This revision is archived — read only." : "This switchboard is locked by another user — read only until it's released."}
         </div>
+      )}
 
-        <LineItemsSection
-          title="1. Busbars"
-          lines={busbars}
-          readOnly={readOnly}
-          onAdd={addBusbar}
-          onUpdate={updateBusbar}
-          onRemove={removeBusbar}
-        />
-        <LineItemsSection
-          title="2. Enclosure & Cubicle Construction"
-          lines={enclosureLines}
-          readOnly={readOnly}
-          onAdd={addEnclosureLine}
-          onUpdate={updateEnclosureLine}
-          onRemove={removeEnclosureLine}
-        />
+      <CostBreakdownCard breakdown={breakdown} switchboard={sb} />
+
+      {!readOnly && (
+        <div className="flex flex-wrap items-start gap-3">
+          <AddFromLibrary options={libraryOptions} onSelect={addLibraryFeeder} />
+          <div className="flex-1">
+            <AdHocFeederPanel switchboardId={sb.id} allItems={allItems} onCreated={handleAdHocCreated} />
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {modules.map((mod) => (
+          <FeederModuleCard
+            key={mod.feeder.id}
+            mod={mod}
+            readOnly={readOnly}
+            canEditLines={!readOnly && (isAdmin || !mod.feeder.is_library)}
+            allItems={allItems}
+            onRename={(field, value) => renameFeeder(mod, field, value)}
+            onQtyChange={(qty) => updateModuleQty(mod, qty)}
+            onAddLine={(item, qty) => addLine(mod, item, qty)}
+            onLineQtyChange={(lineId, qty) => updateLineQty(mod, lineId, qty)}
+            onRemoveLine={(lineId) => removeLine(mod, lineId)}
+            onDuplicate={!readOnly ? () => duplicateModule(mod) : undefined}
+            onDelete={!readOnly ? () => deleteModule(mod) : undefined}
+            onPromote={!readOnly && !mod.feeder.is_library ? () => promoteToLibrary(mod) : undefined}
+          />
+        ))}
+        {modules.length === 0 && (
+          <p className="rounded-xl border border-dashed border-slate-300 py-10 text-center text-sm text-slate-400">
+            No feeders in this switchboard&apos;s BOM yet. Add one from the library or build a custom feeder above.
+          </p>
+        )}
       </div>
+
+      <LineItemsSection
+        title="1. Busbars"
+        lines={busbars}
+        readOnly={readOnly}
+        onAdd={addBusbar}
+        onUpdate={updateBusbar}
+        onRemove={removeBusbar}
+      />
+      <LineItemsSection
+        title="2. Enclosure & Cubicle Construction"
+        lines={enclosureLines}
+        readOnly={readOnly}
+        onAdd={addEnclosureLine}
+        onUpdate={updateEnclosureLine}
+        onRemove={removeEnclosureLine}
+      />
     </div>
   );
 }

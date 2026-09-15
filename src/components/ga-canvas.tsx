@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -13,16 +13,17 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { createClient } from "@/lib/supabase/client";
-import type { BayType, ItemMaster, PlacedFeeder, Vertical } from "@/types/database";
-import type { VerticalWithFeeders } from "@/app/(app)/switchboards/[id]/ga/page";
-import { SwitchboardHeaderBar } from "@/components/switchboard-header-bar";
-import type { LockState } from "@/components/revision-lock-controls";
+import type { BayType, Feeder, ItemMaster, PlacedFeeder, Switchboard, Vertical } from "@/types/database";
+import { getFeederCosts } from "@/lib/feeder-cost";
+import { getSwitchboardCostBreakdown } from "@/lib/switchboard-cost";
 import { AdHocFeederPanel } from "@/components/ad-hoc-feeder-panel";
 import { findDuplicateLibraryFeeder } from "@/lib/feeder-duplicate";
 import { Icon } from "@/components/icon";
-import type { SwitchboardContext } from "@/lib/switchboard-context";
 
-type FeederWithCost = VerticalWithFeeders["placed"][number]["feeder"];
+type FeederWithCost = Feeder & { cost: number };
+type VerticalWithFeeders = Vertical & {
+  placed: (PlacedFeeder & { feeder: FeederWithCost })[];
+};
 type PlacedWithFeeder = VerticalWithFeeders["placed"][number];
 
 const BAY_TEMPLATES: { bay_type: BayType; label: string; namePrefix: string }[] = [
@@ -36,44 +37,93 @@ const FORM_OPTIONS = ["Form 1", "Form 2a", "Form 2b", "Form 3a", "Form 3b", "For
 const PLINTH_OPTIONS = [75, 100, 150, 200];
 const PANEL_HEIGHT_OPTIONS = [1800, 2000, 2100, 2200];
 
+async function loadGaData(supabase: ReturnType<typeof createClient>, switchboardId: string) {
+  const { data: switchboard } = await supabase.from("switchboards").select("*").eq("id", switchboardId).single();
+  if (!switchboard) return null;
+
+  const [{ data: verticals }, { data: feeders }, feederCosts, breakdown] = await Promise.all([
+    supabase.from("verticals").select("*").eq("switchboard_id", switchboardId).order("sort_order"),
+    supabase.from("feeders").select("*").or(`is_library.eq.true,switchboard_id.eq.${switchboardId}`).order("name"),
+    getFeederCosts(supabase),
+    getSwitchboardCostBreakdown(supabase, switchboard as Switchboard),
+  ]);
+
+  const verticalIds = (verticals ?? []).map((v) => v.id);
+  const { data: placed } = verticalIds.length
+    ? await supabase.from("placed_feeders").select("*, feeder:feeders(*)").in("vertical_id", verticalIds).order("sort_order")
+    : { data: [] };
+
+  const verticalsWithFeeders: VerticalWithFeeders[] = (verticals ?? []).map((v) => ({
+    ...v,
+    placed: ((placed ?? []) as unknown as (PlacedFeeder & { feeder: Feeder; vertical_id: string })[])
+      .filter((p) => p.vertical_id === v.id)
+      .map((p) => ({ ...p, feeder: { ...p.feeder, cost: feederCosts.get(p.feeder.id) ?? 0 } })),
+  }));
+
+  const feederLibrary: FeederWithCost[] = ((feeders ?? []) as Feeder[]).map((f) => ({
+    ...f,
+    cost: feederCosts.get(f.id) ?? 0,
+  }));
+
+  return {
+    switchboard: switchboard as Switchboard,
+    verticals: verticalsWithFeeders,
+    feederLibrary,
+    enclosureCost: breakdown.enclosure,
+  };
+}
+
 export function GaCanvas({
-  ctx,
-  initialVerticals,
-  feederLibrary,
+  switchboardId,
   allItems,
   currentUserId,
-  currentUserName,
-  isAdmin,
-  enclosureCost,
+  revisionArchived,
 }: {
-  ctx: SwitchboardContext;
-  initialVerticals: VerticalWithFeeders[];
-  feederLibrary: FeederWithCost[];
+  switchboardId: string;
   allItems: ItemMaster[];
   currentUserId: string;
-  currentUserName: string | null;
-  isAdmin: boolean;
-  enclosureCost: number;
+  revisionArchived: boolean;
 }) {
   const supabase = useMemo(() => createClient(), []);
-  const sb = ctx.switchboard;
 
-  const [formOfSeparation, setFormOfSeparation] = useState(sb.form_of_separation ?? "");
-  const [plinthHeight, setPlinthHeight] = useState(sb.plinth_height_mm ?? 100);
-  const [panelHeight, setPanelHeight] = useState(sb.panel_height_mm ?? 2100);
-  const [amps, setAmps] = useState(sb.amps ?? "");
-  const [ka, setKa] = useState(sb.ka ?? "");
+  const [loading, setLoading] = useState(true);
+  const [sb, setSb] = useState<Switchboard | null>(null);
+  const [verticals, setVerticals] = useState<VerticalWithFeeders[]>([]);
+  const [library, setLibrary] = useState<FeederWithCost[]>([]);
+  const [enclosureCost, setEnclosureCost] = useState(0);
 
-  const [verticals, setVerticals] = useState<VerticalWithFeeders[]>(initialVerticals);
-  const [library, setLibrary] = useState<FeederWithCost[]>(feederLibrary);
+  const [formOfSeparation, setFormOfSeparation] = useState("");
+  const [plinthHeight, setPlinthHeight] = useState(100);
+  const [panelHeight, setPanelHeight] = useState(2100);
+  const [amps, setAmps] = useState<number | "">("");
+  const [ka, setKa] = useState<number | "">("");
+
   const [search, setSearch] = useState("");
   const [draggingFeeder, setDraggingFeeder] = useState<FeederWithCost | null>(null);
-  const [lockState, setLockState] = useState<LockState>({
-    locked_by: ctx.revision.locked_by,
-    archived: ctx.revision.archived,
-  });
 
-  const readOnly = lockState.archived || (lockState.locked_by !== null && lockState.locked_by !== currentUserId);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const data = await loadGaData(supabase, switchboardId);
+      if (cancelled || !data) return;
+      setSb(data.switchboard);
+      setVerticals(data.verticals);
+      setLibrary(data.feederLibrary);
+      setEnclosureCost(data.enclosureCost);
+      setFormOfSeparation(data.switchboard.form_of_separation ?? "");
+      setPlinthHeight(data.switchboard.plinth_height_mm ?? 100);
+      setPanelHeight(data.switchboard.panel_height_mm ?? 2100);
+      setAmps(data.switchboard.amps ?? "");
+      setKa(data.switchboard.ka ?? "");
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, switchboardId]);
+
+  const readOnly = !sb || revisionArchived || (sb.locked_by !== null && sb.locked_by !== currentUserId);
 
   const bays = verticals.filter((v) => v.bay_type !== "unassigned").sort((a, b) => a.sort_order - b.sort_order);
   const unallocated = verticals.find((v) => v.bay_type === "unassigned") ?? null;
@@ -88,10 +138,12 @@ export function GaCanvas({
   );
 
   async function saveMasterParam(field: string, value: string | number | null) {
+    if (!sb) return;
     await supabase.from("switchboards").update({ [field]: value }).eq("id", sb.id);
   }
 
   async function addBay(template: (typeof BAY_TEMPLATES)[number]) {
+    if (!sb) return;
     const count = bays.filter((b) => b.bay_type === template.bay_type).length + 1;
     const { data, error } = await supabase
       .from("verticals")
@@ -228,17 +280,21 @@ export function GaCanvas({
     }
   }
 
+  if (loading || !sb) {
+    return <div className="p-8 text-sm text-slate-400">Loading...</div>;
+  }
+
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div className="flex h-[calc(100vh-56px)] flex-col">
-        <SwitchboardHeaderBar
-          ctx={ctx}
-          currentUserId={currentUserId}
-          currentUserName={currentUserName}
-          isAdmin={isAdmin}
-          lockState={lockState}
-          onStateChange={setLockState}
-        />
+      <div className="flex h-full flex-col">
+        {readOnly && (
+          <div className="flex items-center gap-2 border-b border-amber-200/80 bg-amber-50/60 px-4 py-2 text-xs text-amber-800">
+            <Icon name="visibility" size={15} />
+            {revisionArchived
+              ? "This revision is archived — read only."
+              : "This switchboard is locked by another user — read only until it's released."}
+          </div>
+        )}
 
         <div className="flex flex-wrap items-end gap-4 border-b border-slate-200/90 bg-slate-50/60 px-4 py-2.5 text-xs">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Switchboard Master Parameters</p>
@@ -352,7 +408,7 @@ export function GaCanvas({
               className="mb-3 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
             />
             <p className="mb-2 text-xs text-slate-400">
-              {readOnly ? "Read only — lock this revision to edit." : "Drag a feeder onto a bay →"}
+              {readOnly ? "Read only — lock this switchboard to edit." : "Drag a feeder onto a bay →"}
             </p>
             <div className="space-y-2">
               {filteredLibrary.map((f) => (
@@ -427,9 +483,6 @@ export function GaCanvas({
               <span className="text-slate-500">
                 Enclosure Cost: <span className="font-semibold text-slate-900">₹{enclosureCost.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
               </span>
-              <a href={`/switchboards/${sb.id}/bom`} className="font-medium text-brand-600 hover:underline">
-                Open BOM Builder →
-              </a>
             </div>
           </div>
         </div>

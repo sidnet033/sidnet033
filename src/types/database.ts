@@ -75,8 +75,9 @@ export type Project = {
   created_at: string;
 };
 
-// A revision is a snapshot of a project (Rev 01, Rev 02, ...) and is the
-// unit that gets locked/archived. Holds one or more switchboards.
+// A revision is a snapshot of a project (Rev 01, Rev 02, ...) — its only
+// per-revision state is "archived" (read-only for everyone). Holds one or
+// more switchboards, which are what actually get locked for editing.
 export type Revision = {
   id: string;
   project_id: string;
@@ -85,8 +86,6 @@ export type Revision = {
   status: "draft" | "quoted" | "won" | "lost";
   margin_pct: number;
   created_by: string | null;
-  locked_by: string | null;
-  locked_at: string | null;
   archived: boolean;
   revision_number: number;
   revision_group_id: string;
@@ -101,7 +100,8 @@ export type Revision = {
 };
 
 // A physical switchboard within a revision — the unit that has its own
-// BOM (feeders/items) and GA (bays/tiers).
+// BOM (feeders/items), GA (bays/tiers) and lock (one user edits it at a
+// time; other switchboards in the same revision stay free).
 export type Switchboard = {
   id: string;
   revision_id: string;
@@ -118,6 +118,8 @@ export type Switchboard = {
   labor_assembly_pct: number;
   labor_testing_pct: number;
   profit_pct: number;
+  locked_by: string | null;
+  locked_at: string | null;
   created_at: string;
 };
 

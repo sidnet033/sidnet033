@@ -4,13 +4,19 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Icon } from "@/components/icon";
 
-export type SwitchboardNode = { id: string; tag: string; title: string | null; specSummary: string; cost: number };
+export type SwitchboardNode = {
+  id: string;
+  tag: string;
+  title: string | null;
+  specSummary: string;
+  cost: number;
+  lockedByName: string | null;
+};
 export type RevisionNode = {
   id: string;
   revisionNumber: number;
   archived: boolean;
   isLatest: boolean;
-  lockedByName: string | null;
   switchboards: SwitchboardNode[];
   cost: number;
 };
@@ -139,11 +145,6 @@ export function ProjectsTree({ customers }: { customers: CustomerNode[] }) {
                                     Superseded
                                   </span>
                                 )}
-                                {r.lockedByName && (
-                                  <span className="flex items-center gap-0.5 rounded border border-amber-200/60 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                                    <Icon name="lock" size={11} /> {r.lockedByName}
-                                  </span>
-                                )}
                                 <span className="text-xs text-slate-400">{r.switchboards.length} switchboard(s)</span>
                               </button>
                               <span className="text-sm text-slate-500">{money(r.cost)}</span>
@@ -153,7 +154,7 @@ export function ProjectsTree({ customers }: { customers: CustomerNode[] }) {
                                 {r.switchboards.map((sb) => (
                                   <Link
                                     key={sb.id}
-                                    href={`/switchboards/${sb.id}/summary`}
+                                    href={`/revisions/${r.id}?sb=${sb.id}&tab=summary`}
                                     className="flex items-center justify-between gap-3 rounded-md px-3 py-1.5 text-sm hover:bg-slate-50"
                                   >
                                     <span>
@@ -162,6 +163,11 @@ export function ProjectsTree({ customers }: { customers: CustomerNode[] }) {
                                         {sb.title ? `: ${sb.title}` : ""}
                                       </span>
                                       {sb.specSummary && <span className="ml-2 text-xs text-slate-400">{sb.specSummary}</span>}
+                                      {sb.lockedByName && (
+                                        <span className="ml-2 inline-flex items-center gap-0.5 rounded border border-amber-200/60 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                                          <Icon name="lock" size={11} /> {sb.lockedByName}
+                                        </span>
+                                      )}
                                     </span>
                                     <span className="text-slate-500">{money(sb.cost)}</span>
                                   </Link>

@@ -71,19 +71,17 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
       return;
     }
 
-    const { data: switchboard, error: switchboardError } = await supabase
+    const { error: switchboardError } = await supabase
       .from("switchboards")
-      .insert({ revision_id: revision.id, tag: "SB-01", title: "Board 1", sort_order: 0 })
-      .select("id")
-      .single();
+      .insert({ revision_id: revision.id, tag: "SB-01", title: "Board 1", sort_order: 0 });
     setSaving(false);
 
-    if (switchboardError || !switchboard) {
-      setError(switchboardError?.message ?? "Could not create the first switchboard.");
+    if (switchboardError) {
+      setError(switchboardError.message);
       return;
     }
 
-    router.push(`/switchboards/${switchboard.id}/summary`);
+    router.push(`/revisions/${revision.id}`);
   }
 
   if (!open) {

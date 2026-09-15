@@ -9,7 +9,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <AppShell
       email={current?.email ?? null}
       fullName={current?.profile?.full_name ?? null}
-      role={current?.profile?.role ?? null}
       isAdmin={isAdmin}
     >
       {children}

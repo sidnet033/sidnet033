@@ -1,11 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { RevisionLockControls, type LockState } from "@/components/revision-lock-controls";
-import { Icon } from "@/components/icon";
-import type { SiblingRevision } from "@/lib/switchboard-context";
 import type { CostBreakdown } from "@/lib/switchboard-cost";
 import type { Customer, Project, Revision, Switchboard } from "@/types/database";
 
@@ -24,26 +20,15 @@ export function CostingMatrix({
   project,
   customer,
   columns: initialColumns,
-  currentUserId,
-  currentUserName,
-  isAdmin,
-  lockedByName,
-  siblingRevisions,
+  archived,
 }: {
   revision: Revision;
   project: Project;
   customer: Customer | null;
   columns: SwitchboardColumn[];
-  currentUserId: string;
-  currentUserName: string | null;
-  isAdmin: boolean;
-  lockedByName: string | null;
-  siblingRevisions: SiblingRevision[];
+  archived: boolean;
 }) {
   const supabase = useMemo(() => createClient(), []);
-
-  const [lockState, setLockState] = useState<LockState>({ locked_by: revision.locked_by, archived: revision.archived });
-  const readOnly = lockState.archived || (lockState.locked_by !== null && lockState.locked_by !== currentUserId);
 
   const [columns, setColumns] = useState(initialColumns);
   const [freightAmount, setFreightAmount] = useState(revision.freight_amount);
@@ -74,44 +59,13 @@ export function CostingMatrix({
 
   return (
     <div className="max-w-6xl space-y-5 px-8 py-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
-            <Link href="/" className="hover:underline">
-              Projects
-            </Link>
-            <span>/</span>
-            <span className="text-slate-700">
-              {project.code}
-              {customer ? ` · ${customer.name}` : ""}
-            </span>
-            <span>/</span>
-            <span className="font-medium text-slate-900">Costing</span>
-          </div>
-          <h1 className="mt-1 font-display text-xl font-semibold text-slate-900">{project.title} — Project Costing</h1>
-          <p className="text-sm text-slate-500">{columns.length} switchboard(s)</p>
-        </div>
-        <RevisionLockControls
-          revisionId={revision.id}
-          initialLockedBy={revision.locked_by}
-          initialLockedByName={lockedByName}
-          initialArchived={revision.archived}
-          currentUserId={currentUserId}
-          currentUserName={currentUserName}
-          isAdmin={isAdmin}
-          createdBy={revision.created_by}
-          revisionNumber={revision.revision_number}
-          siblingRevisions={siblingRevisions}
-          onStateChange={setLockState}
-        />
+      <div>
+        <h1 className="font-display text-xl font-semibold text-slate-900">
+          {project.title} — Project Costing
+          {customer ? ` · ${customer.name}` : ""}
+        </h1>
+        <p className="text-sm text-slate-500">{columns.length} switchboard(s)</p>
       </div>
-
-      {readOnly && (
-        <div className="flex items-center gap-2 rounded-lg border border-amber-200/80 bg-amber-50/60 px-3 py-2 text-xs text-amber-800">
-          <Icon name="visibility" size={15} />
-          {lockState.archived ? "This revision is archived — read only." : "Locked by another user — editing is off until it's released."}
-        </div>
-      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <KpiCard label="Total Project MFG Cost" value={money(totalMfg)} />
@@ -127,9 +81,7 @@ export function CostingMatrix({
               <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2">Cost head</th>
               {columns.map((c) => (
                 <th key={c.switchboard.id} className="px-3 py-2 text-right">
-                  <Link href={`/switchboards/${c.switchboard.id}/summary`} className="hover:underline">
-                    {c.switchboard.tag}
-                  </Link>
+                  {c.switchboard.tag}
                   {c.specSummary && <div className="mt-0.5 font-normal normal-case text-slate-400">{c.specSummary}</div>}
                 </th>
               ))}
@@ -162,7 +114,7 @@ export function CostingMatrix({
                   <input
                     type="number"
                     step="0.5"
-                    disabled={readOnly}
+                    disabled={archived}
                     value={c.switchboard.profit_pct}
                     onChange={(e) => updateProfitPct(c.switchboard.id, Number(e.target.value) || 0)}
                     className="w-16 rounded border border-slate-200 px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
@@ -195,7 +147,7 @@ export function CostingMatrix({
               label="Freight"
               amount={freightAmount}
               description={freightDesc}
-              readOnly={readOnly}
+              readOnly={archived}
               span={columns.length}
               onAmountChange={(v) => {
                 setFreightAmount(v);
@@ -210,7 +162,7 @@ export function CostingMatrix({
               label="Installation"
               amount={installAmount}
               description={installDesc}
-              readOnly={readOnly}
+              readOnly={archived}
               span={columns.length}
               onAmountChange={(v) => {
                 setInstallAmount(v);
@@ -225,7 +177,7 @@ export function CostingMatrix({
               label="Commissioning"
               amount={commissioningAmount}
               description={commissioningDesc}
-              readOnly={readOnly}
+              readOnly={archived}
               span={columns.length}
               onAmountChange={(v) => {
                 setCommissioningAmount(v);

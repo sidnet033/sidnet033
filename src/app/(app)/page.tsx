@@ -25,7 +25,7 @@ export default async function DashboardPage() {
   const costBySwitchboard = new Map(switchboardRows.map((sb, i) => [sb.id, breakdowns[i].mfgTotal]));
 
   const lockedByIds = Array.from(
-    new Set(((revisions ?? []) as Revision[]).map((r) => r.locked_by).filter((v): v is string => !!v))
+    new Set(switchboardRows.map((sb) => sb.locked_by).filter((v): v is string => !!v))
   );
   const { data: lockers } = lockedByIds.length
     ? await supabase.from("profiles").select("id, full_name").in("id", lockedByIds)
@@ -55,6 +55,7 @@ export default async function DashboardPage() {
           .filter(Boolean)
           .join(" · "),
         cost: costBySwitchboard.get(sb.id) ?? 0,
+        lockedByName: sb.locked_by ? lockerNames.get(sb.locked_by) ?? "locked" : null,
       }));
 
   const revisionNodes = (projectId: string): RevisionNode[] =>
@@ -67,7 +68,6 @@ export default async function DashboardPage() {
           revisionNumber: r.revision_number,
           archived: r.archived,
           isLatest: latestRevisionId.get(r.revision_group_id) === r.id,
-          lockedByName: r.locked_by ? lockerNames.get(r.locked_by) ?? "locked" : null,
           switchboards: boards,
           cost: boards.reduce((s, b) => s + b.cost, 0),
         };
