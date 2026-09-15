@@ -7,8 +7,9 @@ import { importItemRows, summaryText, type ParsedItemRow } from "@/lib/item-impo
 
 // Expected columns in the sheet's header row (any order, case-insensitive):
 // sku, vendor_cat, description, make, category, status, amps, ka, poles,
-// uom, unit_cost, supplier, notes. Every row needs a sku or a vendor_cat
-// (or both) plus a description — everything else is optional.
+// uom, unit_cost, list_price, discount_pct, supplier, notes. Every row
+// needs a sku or a vendor_cat (or both) plus a description — everything
+// else is optional.
 const REQUIRED_DESCRIPTION = "description";
 
 export function XlsUpload({ onDone }: { onDone: () => void }) {
@@ -71,6 +72,8 @@ export function XlsUpload({ onDone }: { onDone: () => void }) {
             poles: cellText("poles") ? Number(cellText("poles")) : null,
             uom: cellText("uom").trim() || "nos",
             unit_cost: Number(cellText("unit_cost")) || 0,
+            list_price: cellText("list_price") ? Number(cellText("list_price")) : null,
+            discount_pct: cellText("discount_pct") ? Number(cellText("discount_pct")) : null,
             supplier: cellText("supplier").trim() || null,
             notes: cellText("notes").trim() || null,
           },

@@ -1,41 +1,116 @@
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { NewProjectForm } from "@/components/new-project-form";
+import { getSwitchboardCostBreakdown } from "@/lib/switchboard-cost";
+import { NewProjectModal } from "@/components/new-project-modal";
+import { ProjectsTree, type CustomerNode, type ProjectNode, type RevisionNode, type SwitchboardNode } from "@/components/projects-tree";
 import { Icon } from "@/components/icon";
-import type { Project } from "@/types/database";
+import type { Customer, Project, Revision, Switchboard } from "@/types/database";
 
 export const dynamic = "force-dynamic";
-
-const STATUS_STYLES: Record<string, string> = {
-  draft: "bg-slate-100 text-slate-600 border-slate-200",
-  quoted: "bg-blue-50 text-blue-700 border-blue-200/60",
-  won: "bg-emerald-50 text-emerald-600 border-emerald-200/60",
-  lost: "bg-rose-50 text-rose-600 border-rose-200/60",
-};
 
 export default async function DashboardPage() {
   const supabase = await createClient();
 
-  const [{ data: projects }, { count: itemCount }, { count: feederCount }] = await Promise.all([
-    supabase.from("projects").select("*").order("created_at", { ascending: false }),
-    supabase.from("item_master").select("*", { count: "exact", head: true }),
-    supabase.from("feeders").select("*", { count: "exact", head: true }).eq("is_library", true),
-  ]);
+  const [{ data: customers }, { data: projects }, { data: revisions }, { data: switchboards }, { count: itemCount }, { count: feederCount }] =
+    await Promise.all([
+      supabase.from("customers").select("*").order("name"),
+      supabase.from("projects").select("*").order("created_at", { ascending: false }),
+      supabase.from("revisions").select("*").order("revision_number"),
+      supabase.from("switchboards").select("*").order("sort_order"),
+      supabase.from("item_master").select("*", { count: "exact", head: true }),
+      supabase.from("feeders").select("*", { count: "exact", head: true }).eq("is_library", true),
+    ]);
 
-  const rows = (projects ?? []) as Project[];
-  const activeCount = rows.filter((p) => p.status === "draft" || p.status === "quoted").length;
+  const switchboardRows = (switchboards ?? []) as Switchboard[];
+  const breakdowns = await Promise.all(switchboardRows.map((sb) => getSwitchboardCostBreakdown(supabase, sb)));
+  const costBySwitchboard = new Map(switchboardRows.map((sb, i) => [sb.id, breakdowns[i].mfgTotal]));
 
-  const lockedByIds = Array.from(new Set(rows.map((p) => p.locked_by).filter((id): id is string => !!id)));
+  const lockedByIds = Array.from(
+    new Set(((revisions ?? []) as Revision[]).map((r) => r.locked_by).filter((v): v is string => !!v))
+  );
   const { data: lockers } = lockedByIds.length
     ? await supabase.from("profiles").select("id, full_name").in("id", lockedByIds)
     : { data: [] };
   const lockerNames = new Map(((lockers ?? []) as { id: string; full_name: string | null }[]).map((p) => [p.id, p.full_name]));
 
+  const revisionGroups = new Map<string, Revision[]>();
+  for (const r of (revisions ?? []) as Revision[]) {
+    const list = revisionGroups.get(r.revision_group_id) ?? [];
+    list.push(r);
+    revisionGroups.set(r.revision_group_id, list);
+  }
+  const latestRevisionId = new Map<string, string>();
+  for (const [groupId, list] of revisionGroups) {
+    const latest = list.reduce((a, b) => (b.revision_number > a.revision_number ? b : a));
+    latestRevisionId.set(groupId, latest.id);
+  }
+
+  const switchboardNodes = (revisionId: string): SwitchboardNode[] =>
+    switchboardRows
+      .filter((sb) => sb.revision_id === revisionId)
+      .map((sb) => ({
+        id: sb.id,
+        tag: sb.tag,
+        title: sb.title,
+        specSummary: [sb.form_of_separation, sb.amps ? `${sb.amps}A` : null, sb.ka ? `${sb.ka}kA` : null]
+          .filter(Boolean)
+          .join(" · "),
+        cost: costBySwitchboard.get(sb.id) ?? 0,
+      }));
+
+  const revisionNodes = (projectId: string): RevisionNode[] =>
+    ((revisions ?? []) as Revision[])
+      .filter((r) => r.project_id === projectId)
+      .map((r) => {
+        const boards = switchboardNodes(r.id);
+        return {
+          id: r.id,
+          revisionNumber: r.revision_number,
+          archived: r.archived,
+          isLatest: latestRevisionId.get(r.revision_group_id) === r.id,
+          lockedByName: r.locked_by ? lockerNames.get(r.locked_by) ?? "locked" : null,
+          switchboards: boards,
+          cost: boards.reduce((s, b) => s + b.cost, 0),
+        };
+      })
+      .sort((a, b) => b.revisionNumber - a.revisionNumber);
+
+  const projectNodes = (customerId: string | null): ProjectNode[] =>
+    ((projects ?? []) as Project[])
+      .filter((p) => p.customer_id === customerId)
+      .map((p) => {
+        const revs = revisionNodes(p.id);
+        return {
+          id: p.id,
+          code: p.code,
+          title: p.title,
+          revisions: revs,
+          cost: revs.reduce((s, r) => s + r.cost, 0),
+        };
+      });
+
+  const customerNodes: CustomerNode[] = ((customers ?? []) as Customer[]).map((c) => {
+    const projs = projectNodes(c.id);
+    return { id: c.id, name: c.name, projects: projs, cost: projs.reduce((s, p) => s + p.cost, 0) };
+  });
+
+  // projects with no customer_id (shouldn't normally happen, but keep visible)
+  const unassignedProjects = projectNodes(null);
+  if (unassignedProjects.length > 0) {
+    customerNodes.push({
+      id: "__unassigned__",
+      name: "No customer",
+      projects: unassignedProjects,
+      cost: unassignedProjects.reduce((s, p) => s + p.cost, 0),
+    });
+  }
+
+  const activeRevisionCount = ((revisions ?? []) as Revision[]).filter((r) => !r.archived).length;
+
   return (
-    <div className="max-w-5xl space-y-7 px-8 py-6">
+    <div className="max-w-6xl space-y-7 px-8 py-6">
       <div>
         <h1 className="font-display text-xl font-semibold text-slate-900">Dashboard</h1>
-        <p className="text-sm text-slate-500">Your projects, item master and feeder master at a glance.</p>
+        <p className="text-sm text-slate-500">Customers, projects, revisions and switchboards at a glance.</p>
       </div>
 
       {(itemCount ?? 0) === 0 && (
@@ -44,88 +119,29 @@ export default async function DashboardPage() {
             <Icon name="warning" size={18} className="mt-0.5 text-amber-600" />
             <div>
               <span className="font-medium text-amber-950">Item master is empty</span>
-              <p className="mt-0.5 text-amber-800/90">
-                Add components before building feeders or quoting a switchboard.
-              </p>
+              <p className="mt-0.5 text-amber-800/90">Add components before building feeders or quoting a switchboard.</p>
             </div>
           </div>
-          <Link
-            href="/item-master"
-            className="shrink-0 rounded p-1 text-amber-700 hover:bg-amber-100/50 hover:text-amber-900"
-          >
+          <a href="/item-master" className="shrink-0 rounded p-1 text-amber-700 hover:bg-amber-100/50 hover:text-amber-900">
             <Icon name="arrow_forward" size={17} />
-          </Link>
+          </a>
         </div>
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard label="Active projects" value={String(activeCount)} icon="folder_open" />
+        <StatCard label="Active revisions" value={String(activeRevisionCount)} icon="folder_open" />
         <StatCard label="Item master lines" value={String(itemCount ?? 0)} icon="inventory_2" />
         <StatCard label="Feeders built" value={String(feederCount ?? 0)} icon="schema" />
       </div>
 
       <div>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-900">Projects &amp; Quotes</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-900">Projects</h2>
         </div>
-        <NewProjectForm />
+        <NewProjectModal customers={(customers ?? []) as Customer[]} />
 
-        <div className="mt-3 overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-xs">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-2">Project</th>
-                <th className="px-4 py-2">Customer</th>
-                <th className="px-4 py-2">Status</th>
-                <th className="px-4 py-2">Lock</th>
-                <th className="px-4 py-2">Margin</th>
-                <th className="px-4 py-2">Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((p) => (
-                <tr key={p.id} className={`border-t border-slate-100 hover:bg-slate-50 ${p.archived ? "opacity-60" : ""}`}>
-                  <td className="px-4 py-3">
-                    <Link href={`/projects/${p.id}/ga`} className="font-medium text-slate-900 hover:underline">
-                      {p.name}
-                    </Link>
-                    <span className="ml-2 rounded border border-slate-200 bg-slate-50 px-1 py-0.5 font-mono text-[10px] text-slate-500">
-                      R{p.revision_number}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{p.customer_name || "—"}</td>
-                  <td className="px-4 py-3">
-                    <span className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${STATUS_STYLES[p.status] ?? ""}`}>
-                      {p.status.toUpperCase()}
-                    </span>
-                    {p.archived && (
-                      <span className="ml-1 rounded border border-rose-200/60 bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600">
-                        ARCHIVED
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {p.locked_by ? (
-                      <span className="flex items-center gap-1 text-[11px] font-medium text-amber-700">
-                        <Icon name="lock" size={13} /> {lockerNames.get(p.locked_by) || "locked"}
-                      </span>
-                    ) : (
-                      <span className="text-[11px] text-slate-400">Unlocked</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{p.margin_pct}%</td>
-                  <td className="px-4 py-3 text-slate-500">{new Date(p.updated_at).toLocaleDateString()}</td>
-                </tr>
-              ))}
-              {rows.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
-                    No projects yet. Create one above.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="mt-3">
+          <ProjectsTree customers={customerNodes} />
         </div>
       </div>
     </div>

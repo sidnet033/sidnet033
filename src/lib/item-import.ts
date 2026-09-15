@@ -15,6 +15,8 @@ export type ParsedItemRow = {
   poles: number | null;
   uom: string;
   unit_cost: number;
+  list_price: number | null;
+  discount_pct: number | null;
   supplier: string | null;
   notes: string | null;
 };

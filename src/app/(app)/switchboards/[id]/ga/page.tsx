@@ -1,9 +1,10 @@
-import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth";
+import { getSwitchboardContext } from "@/lib/switchboard-context";
 import { getFeederCosts } from "@/lib/feeder-cost";
+import { getSwitchboardCostBreakdown } from "@/lib/switchboard-cost";
 import { GaCanvas } from "@/components/ga-canvas";
-import type { Feeder, ItemMaster, PlacedFeeder, Project, Vertical } from "@/types/database";
+import type { Feeder, ItemMaster, PlacedFeeder, Vertical } from "@/types/database";
 
 export const dynamic = "force-dynamic";
 
@@ -11,34 +12,20 @@ export type VerticalWithFeeders = Vertical & {
   placed: (PlacedFeeder & { feeder: Feeder & { cost: number } })[];
 };
 
-export type SiblingRevision = { id: string; revision_number: number; status: string };
-
-export default async function GaPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function GaBuilderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
   const current = await getCurrentUser();
   const isAdmin = current?.profile?.role === "admin";
 
-  const [{ data: project }, { data: verticals }, { data: feeders }, { data: allItems }, feederCosts] =
-    await Promise.all([
-      supabase.from("projects").select("*").eq("id", id).single(),
-      supabase.from("verticals").select("*").eq("project_id", id).order("sort_order"),
-      supabase.from("feeders").select("*").or(`is_library.eq.true,project_id.eq.${id}`).order("name"),
-      supabase.from("item_master").select("*").order("sku"),
-      getFeederCosts(await createClient()),
-    ]);
+  const ctx = await getSwitchboardContext(id);
 
-  if (!project) notFound();
-
-  const [{ data: lockedByProfile }, { data: siblings }] = await Promise.all([
-    project.locked_by
-      ? supabase.from("profiles").select("full_name").eq("id", project.locked_by).single()
-      : Promise.resolve({ data: null }),
-    supabase
-      .from("projects")
-      .select("id, revision_number, status")
-      .eq("revision_group_id", project.revision_group_id)
-      .order("revision_number"),
+  const [{ data: verticals }, { data: feeders }, { data: allItems }, feederCosts, breakdown] = await Promise.all([
+    supabase.from("verticals").select("*").eq("switchboard_id", id).order("sort_order"),
+    supabase.from("feeders").select("*").or(`is_library.eq.true,switchboard_id.eq.${id}`).order("name"),
+    supabase.from("item_master").select("*").order("sku"),
+    getFeederCosts(await createClient()),
+    getSwitchboardCostBreakdown(await createClient(), ctx.switchboard),
   ]);
 
   const verticalIds = (verticals ?? []).map((v) => v.id);
@@ -64,15 +51,14 @@ export default async function GaPage({ params }: { params: Promise<{ id: string 
 
   return (
     <GaCanvas
-      project={project as Project}
+      ctx={ctx}
       initialVerticals={verticalsWithFeeders}
       feederLibrary={feederLibrary}
       allItems={(allItems ?? []) as ItemMaster[]}
       currentUserId={current?.userId ?? ""}
       currentUserName={current?.profile?.full_name ?? current?.email ?? null}
       isAdmin={isAdmin}
-      lockedByName={(lockedByProfile as { full_name: string | null } | null)?.full_name ?? null}
-      siblingRevisions={(siblings ?? []) as SiblingRevision[]}
+      enclosureCost={breakdown.enclosure}
     />
   );
 }

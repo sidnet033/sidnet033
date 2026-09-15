@@ -8,18 +8,20 @@ import type { ItemMaster } from "@/types/database";
 type NewFeederLine = { item: ItemMaster; qty: number };
 
 export function AdHocFeederPanel({
-  projectId,
+  switchboardId,
   allItems,
   onCreated,
 }: {
-  projectId: string;
+  switchboardId: string;
   allItems: ItemMaster[];
   onCreated: (feeder: {
     id: string;
     name: string;
     description: string | null;
     category: string | null;
-    project_id: string | null;
+    tag: string | null;
+    rating_summary: string | null;
+    switchboard_id: string | null;
     is_library: boolean;
     created_by: string | null;
     created_at: string;
@@ -90,7 +92,7 @@ export function AdHocFeederPanel({
       .insert({
         name: name.trim(),
         category: category.trim() || null,
-        project_id: projectId,
+        switchboard_id: switchboardId,
         is_library: false,
         created_by: user?.id,
       })
@@ -125,7 +127,7 @@ export function AdHocFeederPanel({
         onClick={() => setOpen(true)}
         className="mb-3 w-full rounded-md border border-dashed border-slate-300 py-1.5 text-xs font-medium text-slate-500 hover:border-brand-500/60 hover:text-brand-600"
       >
-        + New feeder for this project
+        + New feeder for this switchboard
       </button>
     );
   }

@@ -4,12 +4,12 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
-import type { SiblingRevision } from "@/app/(app)/projects/[id]/ga/page";
+import type { SiblingRevision } from "@/lib/switchboard-context";
 
 export type LockState = { locked_by: string | null; archived: boolean };
 
-export function ProjectLockControls({
-  projectId,
+export function RevisionLockControls({
+  revisionId,
   initialLockedBy,
   initialLockedByName,
   initialArchived,
@@ -21,7 +21,7 @@ export function ProjectLockControls({
   siblingRevisions,
   onStateChange,
 }: {
-  projectId: string;
+  revisionId: string;
   initialLockedBy: string | null;
   initialLockedByName: string | null;
   initialArchived: boolean;
@@ -61,7 +61,7 @@ export function ProjectLockControls({
 
   function handleLock() {
     run(
-      () => supabase.rpc("lock_project", { p_project_id: projectId }),
+      () => supabase.rpc("lock_revision", { p_revision_id: revisionId }),
       () => {
         setLockedBy(currentUserId);
         setLockedByName(currentUserName);
@@ -72,7 +72,7 @@ export function ProjectLockControls({
 
   function handleUnlock() {
     run(
-      () => supabase.rpc("unlock_project", { p_project_id: projectId }),
+      () => supabase.rpc("unlock_revision", { p_revision_id: revisionId }),
       () => {
         setLockedBy(null);
         setLockedByName(null);
@@ -82,9 +82,9 @@ export function ProjectLockControls({
   }
 
   function handleArchive() {
-    if (!confirm("Archive this project? It becomes read-only for everyone until un-archived.")) return;
+    if (!confirm("Archive this revision? It becomes read-only for everyone until un-archived.")) return;
     run(
-      () => supabase.rpc("archive_project", { p_project_id: projectId }),
+      () => supabase.rpc("archive_revision", { p_revision_id: revisionId }),
       () => {
         setArchived(true);
         setLockedBy(null);
@@ -96,7 +96,7 @@ export function ProjectLockControls({
 
   function handleUnarchive() {
     run(
-      () => supabase.rpc("unarchive_project", { p_project_id: projectId }),
+      () => supabase.rpc("unarchive_revision", { p_revision_id: revisionId }),
       () => {
         setArchived(false);
         onStateChange?.({ locked_by: null, archived: false });
@@ -106,30 +106,38 @@ export function ProjectLockControls({
 
   async function handleCreateRevision() {
     setBusy(true);
-    const { data, error } = await supabase.rpc("create_project_revision", { p_project_id: projectId });
-    setBusy(false);
+    const { data, error } = await supabase.rpc("create_revision", { p_revision_id: revisionId });
     if (error) {
+      setBusy(false);
       alert(error.message);
       return;
     }
-    router.push(`/projects/${data}/ga`);
+    const { data: firstSwitchboard } = await supabase
+      .from("switchboards")
+      .select("id")
+      .eq("revision_id", data)
+      .order("sort_order")
+      .limit(1)
+      .maybeSingle();
+    setBusy(false);
+    router.push(firstSwitchboard ? `/switchboards/${firstSwitchboard.id}/summary` : `/revisions/${data}/costing`);
   }
 
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-600">
-        R{revisionNumber}
+        Rev {revisionNumber}
       </span>
 
       {siblingRevisions.length > 1 && (
         <select
-          value={projectId}
-          onChange={(e) => router.push(`/projects/${e.target.value}/ga`)}
+          value={revisionId}
+          onChange={(e) => router.push(`/revisions/${e.target.value}/costing`)}
           className="rounded-md border border-slate-300 px-2 py-1 text-xs"
         >
           {siblingRevisions.map((s) => (
             <option key={s.id} value={s.id}>
-              R{s.revision_number} · {s.status}
+              Rev {s.revision_number} · {s.status}
             </option>
           ))}
         </select>

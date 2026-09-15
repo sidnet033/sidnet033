@@ -23,6 +23,8 @@ export function FeederBuilder({
   const [name, setName] = useState(feeder.name);
   const [category, setCategory] = useState(feeder.category ?? "");
   const [description, setDescription] = useState(feeder.description ?? "");
+  const [tag, setTag] = useState(feeder.tag ?? "");
+  const [ratingSummary, setRatingSummary] = useState(feeder.rating_summary ?? "");
   const [lines, setLines] = useState(initialLines);
 
   const [itemSearch, setItemSearch] = useState("");
@@ -44,7 +46,14 @@ export function FeederBuilder({
   async function saveDetails() {
     const { error } = await supabase
       .from("feeders")
-      .update({ name, category: category || null, description: description || null, updated_at: new Date().toISOString() })
+      .update({
+        name,
+        category: category || null,
+        description: description || null,
+        tag: tag || null,
+        rating_summary: ratingSummary || null,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", feeder.id);
     if (error) alert(error.message);
   }
@@ -123,6 +132,28 @@ export function FeederBuilder({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 onBlur={saveDetails}
+                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm disabled:bg-slate-50"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">Tag</label>
+              <input
+                disabled={!canEdit}
+                value={tag}
+                onChange={(e) => setTag(e.target.value)}
+                onBlur={saveDetails}
+                placeholder="e.g. FDR-INC-3200-4P"
+                className="w-full rounded-md border border-slate-300 px-2 py-1.5 font-mono text-sm disabled:bg-slate-50"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-xs font-medium text-slate-600">Rating summary</label>
+              <input
+                disabled={!canEdit}
+                value={ratingSummary}
+                onChange={(e) => setRatingSummary(e.target.value)}
+                onBlur={saveDetails}
+                placeholder="e.g. 3200A · 65kA · 4-Pole Drawout"
                 className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm disabled:bg-slate-50"
               />
             </div>

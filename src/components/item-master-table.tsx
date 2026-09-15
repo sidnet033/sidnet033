@@ -19,6 +19,8 @@ const EMPTY_DRAFT = {
   poles: "",
   uom: "nos",
   unit_cost: "0",
+  list_price: "",
+  discount_pct: "",
   supplier: "",
   notes: "",
 };
@@ -38,6 +40,8 @@ function draftToRow(d: Draft) {
     poles: d.poles.trim() ? Number(d.poles) : null,
     uom: d.uom.trim() || "nos",
     unit_cost: Number(d.unit_cost) || 0,
+    list_price: d.list_price.trim() ? Number(d.list_price) : null,
+    discount_pct: d.discount_pct.trim() ? Number(d.discount_pct) : null,
     supplier: d.supplier.trim() || null,
     notes: d.notes.trim() || null,
   };
@@ -116,6 +120,8 @@ export function ItemMasterTable({
       poles: item.poles === null ? "" : String(item.poles),
       uom: item.uom,
       unit_cost: String(item.unit_cost),
+      list_price: item.list_price === null ? "" : String(item.list_price),
+      discount_pct: item.discount_pct === null ? "" : String(item.discount_pct),
       supplier: item.supplier ?? "",
       notes: item.notes ?? "",
     });
@@ -198,6 +204,8 @@ export function ItemMasterTable({
           <Field label="Poles" value={draft.poles} onChange={(v) => setDraft({ ...draft, poles: v })} type="number" />
           <Field label="UOM" value={draft.uom} onChange={(v) => setDraft({ ...draft, uom: v })} />
           <Field label="Unit cost" value={draft.unit_cost} onChange={(v) => setDraft({ ...draft, unit_cost: v })} type="number" />
+          <Field label="List price" value={draft.list_price} onChange={(v) => setDraft({ ...draft, list_price: v })} type="number" />
+          <Field label="Discount %" value={draft.discount_pct} onChange={(v) => setDraft({ ...draft, discount_pct: v })} type="number" />
           <Field label="Supplier" value={draft.supplier} onChange={(v) => setDraft({ ...draft, supplier: v })} />
           <Field label="Notes" value={draft.notes} onChange={(v) => setDraft({ ...draft, notes: v })} className="sm:col-span-2" />
           <p className="text-xs text-slate-400 sm:col-span-4">Either SKU or Vendor Cat is required (both are fine too).</p>
@@ -224,6 +232,8 @@ export function ItemMasterTable({
               <th className="px-3 py-2 text-right">Poles</th>
               <th className="px-3 py-2">UOM</th>
               <th className="px-3 py-2 text-right">Unit cost</th>
+              <th className="px-3 py-2 text-right">List price</th>
+              <th className="px-3 py-2 text-right">Disc %</th>
               {isAdmin && <th className="px-3 py-2" />}
             </tr>
           </thead>
@@ -248,6 +258,8 @@ export function ItemMasterTable({
                   <td className="px-2 py-1"><input type="number" className="w-14 rounded border px-1 py-0.5 text-right" value={editDraft.poles} onChange={(e) => setEditDraft({ ...editDraft, poles: e.target.value })} /></td>
                   <td className="px-2 py-1"><input className="w-16 rounded border px-1 py-0.5" value={editDraft.uom} onChange={(e) => setEditDraft({ ...editDraft, uom: e.target.value })} /></td>
                   <td className="px-2 py-1"><input type="number" className="w-24 rounded border px-1 py-0.5 text-right" value={editDraft.unit_cost} onChange={(e) => setEditDraft({ ...editDraft, unit_cost: e.target.value })} /></td>
+                  <td className="px-2 py-1"><input type="number" className="w-24 rounded border px-1 py-0.5 text-right" value={editDraft.list_price} onChange={(e) => setEditDraft({ ...editDraft, list_price: e.target.value })} /></td>
+                  <td className="px-2 py-1"><input type="number" className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.discount_pct} onChange={(e) => setEditDraft({ ...editDraft, discount_pct: e.target.value })} /></td>
                   <td className="whitespace-nowrap px-2 py-1">
                     <button onClick={() => saveEdit(item.id)} className="mr-2 text-xs font-medium text-emerald-600 hover:underline">Save</button>
                     <button onClick={() => setEditingId(null)} className="text-xs text-slate-500 hover:underline">Cancel</button>
@@ -268,6 +280,12 @@ export function ItemMasterTable({
                   <td className="px-3 py-2 text-right tabular-nums text-slate-500">{item.poles ?? "—"}</td>
                   <td className="px-3 py-2 text-slate-500">{item.uom}</td>
                   <td className="px-3 py-2 text-right tabular-nums">₹{item.unit_cost.toLocaleString("en-IN")}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-500">
+                    {item.list_price != null ? `₹${item.list_price.toLocaleString("en-IN")}` : "—"}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-500">
+                    {item.discount_pct != null ? `${item.discount_pct}%` : "—"}
+                  </td>
                   {isAdmin && (
                     <td className="whitespace-nowrap px-3 py-2 text-right">
                       <button onClick={() => startEdit(item)} className="mr-2 text-xs text-slate-500 hover:underline">Edit</button>
@@ -279,7 +297,7 @@ export function ItemMasterTable({
             )}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={isAdmin ? 12 : 11} className="px-3 py-8 text-center text-slate-400">
+                <td colSpan={isAdmin ? 14 : 13} className="px-3 py-8 text-center text-slate-400">
                   No items found.
                 </td>
               </tr>
