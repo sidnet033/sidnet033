@@ -32,17 +32,23 @@ export type ImportSummary = {
 // new one: match by SKU first, then by Vendor Cat.
 export async function importItemRows(
   supabase: SupabaseClient,
-  rows: { rowNumber: number; data: ParsedItemRow }[]
+  rows: { rowNumber: number; data: ParsedItemRow }[],
+  onProgress?: (done: number, total: number) => void
 ): Promise<ImportSummary> {
   const summary: ImportSummary = { created: 0, updated: 0, skipped: [] };
+  let done = 0;
 
   for (const { rowNumber, data } of rows) {
     if (!data.sku && !data.vendor_cat) {
       summary.skipped.push({ row: rowNumber, reason: "Missing both SKU and Vendor Cat" });
+      done += 1;
+      onProgress?.(done, rows.length);
       continue;
     }
     if (!data.description) {
       summary.skipped.push({ row: rowNumber, reason: "Missing description" });
+      done += 1;
+      onProgress?.(done, rows.length);
       continue;
     }
 
@@ -71,6 +77,8 @@ export async function importItemRows(
         .eq("id", existingId);
       if (error) {
         summary.skipped.push({ row: rowNumber, reason: error.message });
+        done += 1;
+        onProgress?.(done, rows.length);
         continue;
       }
       summary.updated += 1;
@@ -78,13 +86,43 @@ export async function importItemRows(
       const { error } = await supabase.from("item_master").insert(data);
       if (error) {
         summary.skipped.push({ row: rowNumber, reason: error.message });
+        done += 1;
+        onProgress?.(done, rows.length);
         continue;
       }
       summary.created += 1;
     }
+    done += 1;
+    onProgress?.(done, rows.length);
   }
 
   return summary;
+}
+
+// Records an import run in import_logs so it shows up in the audit log,
+// regardless of which entry point (xlsx upload or Google Sheet sync) ran it.
+export async function logImport(
+  supabase: SupabaseClient,
+  params: {
+    source: "xlsx_upload" | "google_sheet_sync";
+    fileName?: string | null;
+    summary: ImportSummary;
+    importedByName?: string | null;
+  }
+) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  await supabase.from("import_logs").insert({
+    source: params.source,
+    file_name: params.fileName ?? null,
+    created_count: params.summary.created,
+    updated_count: params.summary.updated,
+    failed_count: params.summary.skipped.length,
+    failures: params.summary.skipped,
+    imported_by: user?.id ?? null,
+    imported_by_name: params.importedByName ?? null,
+  });
 }
 
 export function summaryText(summary: ImportSummary): string {

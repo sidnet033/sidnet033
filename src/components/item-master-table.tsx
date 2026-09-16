@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase/client";
 import type { ItemMaster, ItemStatus } from "@/types/database";
 import { XlsUpload } from "@/components/xls-upload";
@@ -58,23 +59,89 @@ const MAKE_COLORS = [
 const STATUS_LABELS: Record<ItemStatus, string> = {
   active: "Active",
   inactive: "Pending Review",
-  discontinued: "Discontinued",
+  discontinued: "Archived",
 };
 
-const TOGGLEABLE_COLUMNS: { key: string; label: string }[] = [
-  { key: "vendor_cat", label: "Vendor Cat" },
-  { key: "category", label: "Category" },
-  { key: "make", label: "Make" },
-  { key: "uom", label: "UOM" },
-  { key: "list_price", label: "List Price" },
-  { key: "discount_pct", label: "Disc %" },
-  { key: "amps", label: "Amps" },
-  { key: "poles", label: "Poles" },
-  { key: "ka", label: "kA" },
+type ColumnKey =
+  | "sku"
+  | "vendor_cat"
+  | "description"
+  | "category"
+  | "make"
+  | "uom"
+  | "unit_cost"
+  | "list_price"
+  | "discount_pct"
+  | "amps"
+  | "poles"
+  | "ka"
+  | "status";
+
+const ALL_COLUMNS: ColumnKey[] = [
+  "sku",
+  "vendor_cat",
+  "description",
+  "category",
+  "make",
+  "uom",
+  "unit_cost",
+  "list_price",
+  "discount_pct",
+  "amps",
+  "poles",
+  "ka",
+  "status",
 ];
 
+const COLUMN_LABELS: Record<ColumnKey, string> = {
+  sku: "SKU",
+  vendor_cat: "Vendor Cat",
+  description: "Description",
+  category: "Category",
+  make: "Make",
+  uom: "UOM",
+  unit_cost: "Unit Cost",
+  list_price: "List Price",
+  discount_pct: "Disc %",
+  amps: "Amps",
+  poles: "Poles",
+  ka: "kA",
+  status: "Status",
+};
+
+const COLUMN_ALIGN: Record<ColumnKey, "left" | "right" | "center"> = {
+  sku: "left",
+  vendor_cat: "left",
+  description: "left",
+  category: "left",
+  make: "left",
+  uom: "center",
+  unit_cost: "right",
+  list_price: "right",
+  discount_pct: "center",
+  amps: "right",
+  poles: "center",
+  ka: "right",
+  status: "left",
+};
+
+const CELL_CLASS: Record<ColumnKey, string> = {
+  sku: "px-2 font-display font-semibold text-primary",
+  vendor_cat: "px-2 font-display text-secondary",
+  description: "max-w-[320px] truncate px-2 text-on-surface",
+  category: "px-2",
+  make: "px-2",
+  uom: "px-2 text-center font-display text-secondary",
+  unit_cost: "px-2 text-right font-display font-bold tabular-nums text-on-surface",
+  list_price: "px-2 text-right font-display tabular-nums text-secondary line-through",
+  discount_pct: "px-2 text-center",
+  amps: "px-2 text-right font-display font-semibold tabular-nums text-on-surface",
+  poles: "px-2 text-center font-display tabular-nums text-on-surface",
+  ka: "px-2 text-right font-display font-bold tabular-nums text-primary",
+  status: "px-2",
+};
+
 const VIEW_STORAGE_KEY = "item-master-view";
-const COLUMNS_STORAGE_KEY = "item-master-columns";
 
 type SavedView = {
   search?: string;
@@ -84,6 +151,10 @@ type SavedView = {
   skuPrefixFilter?: string;
   supplierFilter?: string;
   rowsPerPage?: number;
+  columnOrder?: string[];
+  visibleColumns?: string[];
+  sortKey?: string | null;
+  sortDir?: "asc" | "desc";
 };
 
 function loadSavedView(): SavedView {
@@ -96,14 +167,18 @@ function loadSavedView(): SavedView {
   }
 }
 
-function loadColumnPrefs(): string[] | null {
-  if (typeof window === "undefined") return null;
+function patchSavedView(patch: Partial<SavedView>) {
+  if (typeof window === "undefined") return;
   try {
-    const raw = window.localStorage.getItem(COLUMNS_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as string[]) : null;
+    const current = loadSavedView();
+    window.localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify({ ...current, ...patch }));
   } catch {
-    return null;
+    // ignore
   }
+}
+
+function isColumnKey(v: string): v is ColumnKey {
+  return (ALL_COLUMNS as string[]).includes(v);
 }
 
 function skuPrefix(sku: string): string {
@@ -176,6 +251,23 @@ function downloadCsv(filename: string, rows: ItemMaster[]) {
   URL.revokeObjectURL(url);
 }
 
+async function downloadXlsx(filename: string, rows: ItemMaster[]) {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("Item Master");
+  sheet.columns = CSV_FIELDS.map((f) => ({ header: f, key: f, width: 18 }));
+  for (const item of rows) {
+    sheet.addRow(Object.fromEntries(CSV_FIELDS.map((f) => [f, item[f]])));
+  }
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function ItemMasterTable({
   initialItems,
   isAdmin,
@@ -199,13 +291,22 @@ export function ItemMasterTable({
   const [rowsPerPage, setRowsPerPage] = useState(() => loadSavedView().rowsPerPage || 25);
   const [savedViewFlash, setSavedViewFlash] = useState(false);
 
-  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(
-    () => new Set(loadColumnPrefs() ?? TOGGLEABLE_COLUMNS.map((c) => c.key))
-  );
+  const [columnOrder, setColumnOrder] = useState<ColumnKey[]>(() => {
+    const saved = (loadSavedView().columnOrder ?? []).filter(isColumnKey);
+    const missing = ALL_COLUMNS.filter((k) => !saved.includes(k));
+    return saved.length > 0 ? [...saved, ...missing] : [...ALL_COLUMNS];
+  });
+  const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(() => {
+    const saved = (loadSavedView().visibleColumns ?? []).filter(isColumnKey);
+    return new Set(saved.length > 0 ? saved : ALL_COLUMNS);
+  });
   const [columnsOpen, setColumnsOpen] = useState(false);
 
-  const [sortKey, setSortKey] = useState<keyof ItemMaster | null>(null);
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [sortKey, setSortKey] = useState<ColumnKey | null>(() => {
+    const saved = loadSavedView().sortKey;
+    return saved && isColumnKey(saved) ? saved : null;
+  });
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(() => loadSavedView().sortDir ?? "asc");
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDiscountOpen, setBulkDiscountOpen] = useState(false);
@@ -279,8 +380,8 @@ export function ItemMasterTable({
 
   const sorted = sortKey
     ? [...filtered].sort((a, b) => {
-        const av = a[sortKey];
-        const bv = b[sortKey];
+        const av = a[sortKey as keyof ItemMaster];
+        const bv = b[sortKey as keyof ItemMaster];
         if (av == null && bv == null) return 0;
         if (av == null) return 1;
         if (bv == null) return -1;
@@ -314,28 +415,56 @@ export function ItemMasterTable({
   }
 
   function saveCurrentView() {
-    const view: SavedView = { search, statusFilter, makeFilter, categoryFilter, skuPrefixFilter, supplierFilter, rowsPerPage };
+    const view: SavedView = {
+      search,
+      statusFilter,
+      makeFilter,
+      categoryFilter,
+      skuPrefixFilter,
+      supplierFilter,
+      rowsPerPage,
+      columnOrder,
+      visibleColumns: Array.from(visibleColumns),
+      sortKey,
+      sortDir,
+    };
     window.localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify(view));
     setSavedViewFlash(true);
     setTimeout(() => setSavedViewFlash(false), 1500);
   }
 
-  function toggleColumn(key: string) {
+  function toggleColumn(key: ColumnKey) {
     setVisibleColumns((prev) => {
+      if (prev.has(key) && prev.size === 1) return prev;
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
-      window.localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(Array.from(next)));
+      patchSavedView({ visibleColumns: Array.from(next) });
       return next;
     });
   }
 
-  function handleSort(key: keyof ItemMaster) {
+  function moveColumn(key: ColumnKey, dir: -1 | 1) {
+    setColumnOrder((prev) => {
+      const idx = prev.indexOf(key);
+      const newIdx = idx + dir;
+      if (newIdx < 0 || newIdx >= prev.length) return prev;
+      const next = [...prev];
+      [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
+      patchSavedView({ columnOrder: next });
+      return next;
+    });
+  }
+
+  function handleSort(key: ColumnKey) {
     if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      const nextDir = sortDir === "asc" ? "desc" : "asc";
+      setSortDir(nextDir);
+      patchSavedView({ sortKey: key, sortDir: nextDir });
     } else {
       setSortKey(key);
       setSortDir("asc");
+      patchSavedView({ sortKey: key, sortDir: "asc" });
     }
   }
 
@@ -463,13 +592,107 @@ export function ItemMasterTable({
     navigator.clipboard?.writeText(sku).catch(() => {});
   }
 
+  function renderCell(item: ItemMaster, key: ColumnKey): React.ReactNode {
+    switch (key) {
+      case "sku":
+        return (
+          <div className="flex items-center gap-1">
+            <span>{item.sku || "—"}</span>
+            {item.sku && (
+              <button
+                onClick={() => copySku(item.sku!)}
+                title="Copy SKU"
+                className="text-secondary opacity-0 transition-opacity hover:text-primary group-hover:opacity-100"
+              >
+                <Icon name="content_copy" size={12} />
+              </button>
+            )}
+          </div>
+        );
+      case "vendor_cat":
+        return item.vendor_cat || "—";
+      case "description":
+        return item.description;
+      case "category":
+        return item.category ? (
+          <span className="rounded bg-surface-container-high px-1.5 py-0.5 text-[10px] font-bold text-on-surface-variant">{item.category}</span>
+        ) : (
+          <span className="text-outline-variant">—</span>
+        );
+      case "make":
+        return item.make ? (
+          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${makeColor(item.make)}`}>{item.make}</span>
+        ) : (
+          <span className="text-outline-variant">—</span>
+        );
+      case "uom":
+        return item.uom;
+      case "unit_cost":
+        return `₹${item.unit_cost.toLocaleString("en-IN")}`;
+      case "list_price":
+        return item.list_price != null ? `₹${item.list_price.toLocaleString("en-IN")}` : "";
+      case "discount_pct":
+        return item.discount_pct != null ? (
+          <span className="rounded bg-tertiary-fixed px-1.5 py-0.5 text-[11px] font-bold text-on-tertiary-fixed">-{item.discount_pct}%</span>
+        ) : (
+          <span className="text-outline-variant">—</span>
+        );
+      case "amps":
+        return item.amps ?? "—";
+      case "poles":
+        return item.poles ?? "—";
+      case "ka":
+        return item.ka ?? "—";
+      case "status":
+        return <StatusBadge status={item.status} />;
+    }
+  }
+
+  function renderEditCell(key: ColumnKey): React.ReactNode {
+    switch (key) {
+      case "sku":
+        return <input className="w-24 rounded border px-1 py-0.5" value={editDraft.sku} onChange={(e) => setEditDraft({ ...editDraft, sku: e.target.value })} />;
+      case "vendor_cat":
+        return <input className="w-24 rounded border px-1 py-0.5" value={editDraft.vendor_cat} onChange={(e) => setEditDraft({ ...editDraft, vendor_cat: e.target.value })} />;
+      case "description":
+        return <input className="w-full min-w-40 rounded border px-1 py-0.5" value={editDraft.description} onChange={(e) => setEditDraft({ ...editDraft, description: e.target.value })} />;
+      case "category":
+        return <input className="w-24 rounded border px-1 py-0.5" value={editDraft.category} onChange={(e) => setEditDraft({ ...editDraft, category: e.target.value })} />;
+      case "make":
+        return <input className="w-24 rounded border px-1 py-0.5" value={editDraft.make} onChange={(e) => setEditDraft({ ...editDraft, make: e.target.value })} />;
+      case "uom":
+        return <input className="w-16 rounded border px-1 py-0.5" value={editDraft.uom} onChange={(e) => setEditDraft({ ...editDraft, uom: e.target.value })} />;
+      case "unit_cost":
+        return <input type="number" className="w-24 rounded border px-1 py-0.5 text-right" value={editDraft.unit_cost} onChange={(e) => setEditDraft({ ...editDraft, unit_cost: e.target.value })} />;
+      case "list_price":
+        return <input type="number" className="w-24 rounded border px-1 py-0.5 text-right" value={editDraft.list_price} onChange={(e) => setEditDraft({ ...editDraft, list_price: e.target.value })} />;
+      case "discount_pct":
+        return <input type="number" className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.discount_pct} onChange={(e) => setEditDraft({ ...editDraft, discount_pct: e.target.value })} />;
+      case "amps":
+        return <input type="number" className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.amps} onChange={(e) => setEditDraft({ ...editDraft, amps: e.target.value })} />;
+      case "poles":
+        return <input type="number" className="w-14 rounded border px-1 py-0.5 text-right" value={editDraft.poles} onChange={(e) => setEditDraft({ ...editDraft, poles: e.target.value })} />;
+      case "ka":
+        return <input type="number" className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.ka} onChange={(e) => setEditDraft({ ...editDraft, ka: e.target.value })} />;
+      case "status":
+        return (
+          <select className="rounded border px-1 py-0.5" value={editDraft.status} onChange={(e) => setEditDraft({ ...editDraft, status: e.target.value as ItemStatus })}>
+            <option value="active">{STATUS_LABELS.active}</option>
+            <option value="inactive">{STATUS_LABELS.inactive}</option>
+            <option value="discontinued">{STATUS_LABELS.discontinued}</option>
+          </select>
+        );
+    }
+  }
+
   const selectedItems = items.filter((i) => selectedIds.has(i.id));
   const lastUpdatedAt = selectedItems.reduce<string | null>(
     (latest, i) => (!latest || i.updated_at > latest ? i.updated_at : latest),
     null
   );
 
-  const col = (key: string) => visibleColumns.has(key);
+  const visibleColumnList = columnOrder.filter((k) => visibleColumns.has(k));
+  const totalCols = visibleColumnList.length + (isAdmin ? 2 : 0);
 
   return (
     <div className="space-y-3">
@@ -490,12 +713,12 @@ export function ItemMasterTable({
             >
               Download template
             </a>
-            <XlsUpload onDone={refresh} />
+            <XlsUpload onDone={refresh} currentUserName={currentUserName} />
             <button
-              onClick={() => downloadCsv("item-master-price-list.csv", sorted)}
+              onClick={() => downloadXlsx("item-master.xlsx", items)}
               className="flex h-8 items-center gap-1.5 rounded-[4px] bg-surface-container-lowest px-2.5 text-xs font-medium text-on-surface shadow-sm hover:bg-surface-container-low"
             >
-              <Icon name="download" size={16} className="text-secondary" /> Export Price List
+              <Icon name="download" size={16} className="text-secondary" /> Export Item Master
             </button>
           </div>
         )}
@@ -557,12 +780,6 @@ export function ItemMasterTable({
               onClick={() => setStatusFilter("active")}
             />
             <StatusChip
-              label={STATUS_LABELS.inactive}
-              count={counts.inactive}
-              active={statusFilter === "inactive"}
-              onClick={() => setStatusFilter("inactive")}
-            />
-            <StatusChip
               label={STATUS_LABELS.discontinued}
               count={counts.discontinued}
               active={statusFilter === "discontinued"}
@@ -591,18 +808,36 @@ export function ItemMasterTable({
                 onClick={() => setColumnsOpen((v) => !v)}
                 className="flex h-8 items-center gap-1.5 rounded-[4px] bg-surface-container-low px-2.5 text-xs font-medium text-on-surface hover:bg-surface-container-high"
               >
-                <Icon name="view_column" size={14} className="text-secondary" /> Customize Columns ({visibleColumns.size + 5})
+                <Icon name="view_column" size={14} className="text-secondary" /> Customize Columns ({visibleColumns.size})
               </button>
               {columnsOpen && (
-                <div className="absolute right-0 top-full z-20 mt-1 w-56 rounded-[4px] bg-surface-container-lowest p-2 shadow-md">
+                <div className="absolute right-0 top-full z-20 mt-1 w-64 rounded-[4px] bg-surface-container-lowest p-2 shadow-md">
                   <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wide text-secondary">
-                    Toggle optional columns
+                    Show, hide &amp; reorder columns
                   </p>
-                  {TOGGLEABLE_COLUMNS.map((c) => (
-                    <label key={c.key} className="flex items-center gap-2 rounded px-1 py-1 text-xs text-on-surface hover:bg-surface-container-low">
-                      <input type="checkbox" checked={visibleColumns.has(c.key)} onChange={() => toggleColumn(c.key)} className="rounded" />
-                      {c.label}
-                    </label>
+                  {columnOrder.map((key, idx) => (
+                    <div key={key} className="flex items-center gap-1 rounded px-1 py-1 hover:bg-surface-container-low">
+                      <div className="flex flex-col">
+                        <button
+                          disabled={idx === 0}
+                          onClick={() => moveColumn(key, -1)}
+                          className="text-secondary hover:text-primary disabled:opacity-20"
+                        >
+                          <Icon name="arrow_drop_up" size={16} />
+                        </button>
+                        <button
+                          disabled={idx === columnOrder.length - 1}
+                          onClick={() => moveColumn(key, 1)}
+                          className="-mt-1.5 text-secondary hover:text-primary disabled:opacity-20"
+                        >
+                          <Icon name="arrow_drop_down" size={16} />
+                        </button>
+                      </div>
+                      <label className="flex flex-1 items-center gap-2 text-xs text-on-surface">
+                        <input type="checkbox" checked={visibleColumns.has(key)} onChange={() => toggleColumn(key)} className="rounded" />
+                        {COLUMN_LABELS[key]}
+                      </label>
+                    </div>
                   ))}
                   <button
                     onClick={() => setColumnsOpen(false)}
@@ -615,7 +850,7 @@ export function ItemMasterTable({
             </div>
             {isAdmin && (
               <>
-                <SheetSyncButton onDone={refresh} />
+                <SheetSyncButton onDone={refresh} currentUserName={currentUserName} />
                 <button
                   onClick={() => setAdding((v) => !v)}
                   className="flex h-8 items-center gap-1.5 rounded-[4px] bg-primary px-3 text-xs font-medium text-on-primary shadow-sm hover:bg-primary-container"
@@ -730,19 +965,18 @@ export function ItemMasterTable({
                     />
                   </th>
                 )}
-                <SortableTh label="SKU" sortKey="sku" current={sortKey} dir={sortDir} onSort={handleSort} />
-                {col("vendor_cat") && <SortableTh label="Vendor Cat" sortKey="vendor_cat" current={sortKey} dir={sortDir} onSort={handleSort} />}
-                <SortableTh label="Description" sortKey="description" current={sortKey} dir={sortDir} onSort={handleSort} className="min-w-[240px]" />
-                {col("category") && <SortableTh label="Category" sortKey="category" current={sortKey} dir={sortDir} onSort={handleSort} />}
-                {col("make") && <SortableTh label="Make" sortKey="make" current={sortKey} dir={sortDir} onSort={handleSort} />}
-                {col("uom") && <SortableTh label="UOM" sortKey="uom" current={sortKey} dir={sortDir} onSort={handleSort} align="center" />}
-                <SortableTh label="Unit Cost" sortKey="unit_cost" current={sortKey} dir={sortDir} onSort={handleSort} align="right" />
-                {col("list_price") && <SortableTh label="List Price" sortKey="list_price" current={sortKey} dir={sortDir} onSort={handleSort} align="right" />}
-                {col("discount_pct") && <SortableTh label="Disc %" sortKey="discount_pct" current={sortKey} dir={sortDir} onSort={handleSort} align="center" />}
-                {col("amps") && <SortableTh label="Amps" sortKey="amps" current={sortKey} dir={sortDir} onSort={handleSort} align="right" />}
-                {col("poles") && <SortableTh label="Poles" sortKey="poles" current={sortKey} dir={sortDir} onSort={handleSort} align="center" />}
-                {col("ka") && <SortableTh label="kA" sortKey="ka" current={sortKey} dir={sortDir} onSort={handleSort} align="right" />}
-                <SortableTh label="Status" sortKey="status" current={sortKey} dir={sortDir} onSort={handleSort} />
+                {visibleColumnList.map((key) => (
+                  <SortableTh
+                    key={key}
+                    label={COLUMN_LABELS[key]}
+                    sortKey={key}
+                    current={sortKey}
+                    dir={sortDir}
+                    onSort={handleSort}
+                    align={COLUMN_ALIGN[key]}
+                    className={key === "description" ? "min-w-[240px]" : undefined}
+                  />
+                ))}
                 {isAdmin && <th className="sticky right-0 bg-surface-container px-2 text-right">Actions</th>}
               </tr>
             </thead>
@@ -751,25 +985,11 @@ export function ItemMasterTable({
                 editingId === item.id ? (
                   <tr key={item.id} className="bg-tertiary-fixed/40">
                     {isAdmin && <td />}
-                    <td className="px-2 py-1"><input className="w-24 rounded border px-1 py-0.5" value={editDraft.sku} onChange={(e) => setEditDraft({ ...editDraft, sku: e.target.value })} /></td>
-                    {col("vendor_cat") && <td className="px-2 py-1"><input className="w-24 rounded border px-1 py-0.5" value={editDraft.vendor_cat} onChange={(e) => setEditDraft({ ...editDraft, vendor_cat: e.target.value })} /></td>}
-                    <td className="px-2 py-1"><input className="w-full min-w-40 rounded border px-1 py-0.5" value={editDraft.description} onChange={(e) => setEditDraft({ ...editDraft, description: e.target.value })} /></td>
-                    {col("category") && <td className="px-2 py-1"><input className="w-24 rounded border px-1 py-0.5" value={editDraft.category} onChange={(e) => setEditDraft({ ...editDraft, category: e.target.value })} /></td>}
-                    {col("make") && <td className="px-2 py-1"><input className="w-24 rounded border px-1 py-0.5" value={editDraft.make} onChange={(e) => setEditDraft({ ...editDraft, make: e.target.value })} /></td>}
-                    {col("uom") && <td className="px-2 py-1"><input className="w-16 rounded border px-1 py-0.5" value={editDraft.uom} onChange={(e) => setEditDraft({ ...editDraft, uom: e.target.value })} /></td>}
-                    <td className="px-2 py-1"><input type="number" className="w-24 rounded border px-1 py-0.5 text-right" value={editDraft.unit_cost} onChange={(e) => setEditDraft({ ...editDraft, unit_cost: e.target.value })} /></td>
-                    {col("list_price") && <td className="px-2 py-1"><input type="number" className="w-24 rounded border px-1 py-0.5 text-right" value={editDraft.list_price} onChange={(e) => setEditDraft({ ...editDraft, list_price: e.target.value })} /></td>}
-                    {col("discount_pct") && <td className="px-2 py-1"><input type="number" className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.discount_pct} onChange={(e) => setEditDraft({ ...editDraft, discount_pct: e.target.value })} /></td>}
-                    {col("amps") && <td className="px-2 py-1"><input type="number" className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.amps} onChange={(e) => setEditDraft({ ...editDraft, amps: e.target.value })} /></td>}
-                    {col("poles") && <td className="px-2 py-1"><input type="number" className="w-14 rounded border px-1 py-0.5 text-right" value={editDraft.poles} onChange={(e) => setEditDraft({ ...editDraft, poles: e.target.value })} /></td>}
-                    {col("ka") && <td className="px-2 py-1"><input type="number" className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.ka} onChange={(e) => setEditDraft({ ...editDraft, ka: e.target.value })} /></td>}
-                    <td className="px-2 py-1">
-                      <select className="rounded border px-1 py-0.5" value={editDraft.status} onChange={(e) => setEditDraft({ ...editDraft, status: e.target.value as ItemStatus })}>
-                        <option value="active">{STATUS_LABELS.active}</option>
-                        <option value="inactive">{STATUS_LABELS.inactive}</option>
-                        <option value="discontinued">{STATUS_LABELS.discontinued}</option>
-                      </select>
-                    </td>
+                    {visibleColumnList.map((key) => (
+                      <td key={key} className="px-2 py-1">
+                        {renderEditCell(key)}
+                      </td>
+                    ))}
                     <td className="whitespace-nowrap px-2 py-1 text-right">
                       <button onClick={() => saveEdit(item.id)} className="mr-2 text-xs font-medium text-tertiary hover:underline">Save</button>
                       <button onClick={() => setEditingId(null)} className="text-xs text-secondary hover:underline">Cancel</button>
@@ -787,66 +1007,11 @@ export function ItemMasterTable({
                         />
                       </td>
                     )}
-                    <td className="px-2 font-display font-semibold text-primary">
-                      <div className="flex items-center gap-1">
-                        <span>{item.sku || "—"}</span>
-                        {item.sku && (
-                          <button
-                            onClick={() => copySku(item.sku!)}
-                            title="Copy SKU"
-                            className="text-secondary opacity-0 transition-opacity hover:text-primary group-hover:opacity-100"
-                          >
-                            <Icon name="content_copy" size={12} />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                    {col("vendor_cat") && <td className="px-2 font-display text-secondary">{item.vendor_cat || "—"}</td>}
-                    <td className="max-w-[320px] truncate px-2 text-on-surface" title={item.description}>
-                      {item.description}
-                    </td>
-                    {col("category") && (
-                      <td className="px-2">
-                        {item.category ? (
-                          <span className="rounded bg-surface-container-high px-1.5 py-0.5 text-[10px] font-bold text-on-surface-variant">{item.category}</span>
-                        ) : (
-                          <span className="text-outline-variant">—</span>
-                        )}
+                    {visibleColumnList.map((key) => (
+                      <td key={key} className={CELL_CLASS[key]} title={key === "description" ? item.description : undefined}>
+                        {renderCell(item, key)}
                       </td>
-                    )}
-                    {col("make") && (
-                      <td className="px-2">
-                        {item.make ? (
-                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${makeColor(item.make)}`}>{item.make}</span>
-                        ) : (
-                          <span className="text-outline-variant">—</span>
-                        )}
-                      </td>
-                    )}
-                    {col("uom") && <td className="px-2 text-center font-display text-secondary">{item.uom}</td>}
-                    <td className="px-2 text-right font-display font-bold tabular-nums text-on-surface">₹{item.unit_cost.toLocaleString("en-IN")}</td>
-                    {col("list_price") && (
-                      <td className="px-2 text-right font-display tabular-nums text-secondary line-through">
-                        {item.list_price != null ? `₹${item.list_price.toLocaleString("en-IN")}` : ""}
-                      </td>
-                    )}
-                    {col("discount_pct") && (
-                      <td className="px-2 text-center">
-                        {item.discount_pct != null ? (
-                          <span className="rounded bg-tertiary-fixed px-1.5 py-0.5 font-display text-[11px] font-bold text-on-tertiary-fixed">
-                            -{item.discount_pct}%
-                          </span>
-                        ) : (
-                          <span className="text-outline-variant">—</span>
-                        )}
-                      </td>
-                    )}
-                    {col("amps") && <td className="px-2 text-right font-display font-semibold tabular-nums text-on-surface">{item.amps ?? "—"}</td>}
-                    {col("poles") && <td className="px-2 text-center font-display tabular-nums text-on-surface">{item.poles ?? "—"}</td>}
-                    {col("ka") && <td className="px-2 text-right font-display font-bold tabular-nums text-primary">{item.ka ?? "—"}</td>}
-                    <td className="px-2">
-                      <StatusBadge status={item.status} />
-                    </td>
+                    ))}
                     {isAdmin && (
                       <td className="sticky right-0 bg-surface-container-lowest px-2 text-right group-hover:bg-surface-container-low">
                         <div className="flex items-center justify-end gap-1">
@@ -871,7 +1036,7 @@ export function ItemMasterTable({
               )}
               {paged.length === 0 && (
                 <tr>
-                  <td colSpan={16} className="px-3 py-10 text-center text-sm text-secondary">
+                  <td colSpan={totalCols} className="px-3 py-10 text-center text-sm text-secondary">
                     No items found.
                   </td>
                 </tr>
@@ -996,10 +1161,10 @@ function SortableTh({
   className = "",
 }: {
   label: string;
-  sortKey: keyof ItemMaster;
-  current: keyof ItemMaster | null;
+  sortKey: ColumnKey;
+  current: ColumnKey | null;
   dir: "asc" | "desc";
-  onSort: (key: keyof ItemMaster) => void;
+  onSort: (key: ColumnKey) => void;
   align?: "left" | "right" | "center";
   className?: string;
 }) {

@@ -12,6 +12,19 @@ export type Profile = {
 
 export type ItemStatus = "active" | "inactive" | "discontinued";
 
+export type ImportLog = {
+  id: string;
+  source: "xlsx_upload" | "google_sheet_sync";
+  file_name: string | null;
+  created_count: number;
+  updated_count: number;
+  failed_count: number;
+  failures: { row: number; reason: string }[];
+  imported_by: string | null;
+  imported_by_name: string | null;
+  created_at: string;
+};
+
 export type ItemMaster = {
   id: string;
   sku: string | null;

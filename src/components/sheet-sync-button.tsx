@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { summaryText, type ImportSummary } from "@/lib/item-import";
+import { createClient } from "@/lib/supabase/client";
+import { logImport, summaryText, type ImportSummary } from "@/lib/item-import";
 
-export function SheetSyncButton({ onDone }: { onDone: () => void }) {
+export function SheetSyncButton({ onDone, currentUserName }: { onDone: () => void; currentUserName?: string }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -18,6 +19,11 @@ export function SheetSyncButton({ onDone }: { onDone: () => void }) {
       } else {
         const summary = body as ImportSummary;
         setMessage(summaryText(summary));
+        await logImport(createClient(), {
+          source: "google_sheet_sync",
+          summary,
+          importedByName: currentUserName ?? null,
+        });
         if (summary.created > 0 || summary.updated > 0) onDone();
       }
     } catch {
@@ -32,12 +38,12 @@ export function SheetSyncButton({ onDone }: { onDone: () => void }) {
       <button
         onClick={handleSync}
         disabled={busy}
-        className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+        className="flex h-8 items-center gap-1.5 rounded-[4px] bg-surface-container-low px-2.5 text-xs font-medium text-on-surface hover:bg-surface-container-high disabled:opacity-50"
       >
         {busy ? "Syncing..." : "Sync Google Sheet"}
       </button>
       {message && (
-        <div className="absolute right-0 top-full z-10 mt-1 w-80 whitespace-pre-line rounded-md border border-slate-200 bg-white p-2 text-xs text-slate-600 shadow-sm">
+        <div className="absolute right-0 top-full z-10 mt-1 w-80 whitespace-pre-line rounded-[4px] bg-surface-container-lowest p-2 text-xs text-on-surface-variant shadow-md">
           {message}
         </div>
       )}
