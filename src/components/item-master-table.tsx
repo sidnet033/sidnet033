@@ -27,6 +27,41 @@ const EMPTY_DRAFT = {
 
 type Draft = typeof EMPTY_DRAFT;
 
+const CSV_FIELDS: (keyof ItemMaster)[] = [
+  "sku",
+  "vendor_cat",
+  "description",
+  "make",
+  "category",
+  "status",
+  "amps",
+  "ka",
+  "poles",
+  "uom",
+  "unit_cost",
+  "list_price",
+  "discount_pct",
+  "supplier",
+  "notes",
+];
+
+const ROWS_PER_PAGE_OPTIONS = [25, 50, 100];
+
+const MAKE_COLORS = [
+  "bg-blue-50 text-blue-700",
+  "bg-violet-50 text-violet-700",
+  "bg-amber-50 text-amber-700",
+  "bg-teal-50 text-teal-700",
+  "bg-rose-50 text-rose-700",
+  "bg-indigo-50 text-indigo-700",
+];
+
+function makeColor(make: string) {
+  let hash = 0;
+  for (let i = 0; i < make.length; i++) hash = (hash * 31 + make.charCodeAt(i)) >>> 0;
+  return MAKE_COLORS[hash % MAKE_COLORS.length];
+}
+
 function draftToRow(d: Draft) {
   return {
     sku: d.sku.trim() || null,
@@ -53,6 +88,23 @@ function validateDraft(d: Draft): string | null {
   return null;
 }
 
+function csvEscape(v: unknown): string {
+  const s = v === null || v === undefined ? "" : String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function downloadCsv(filename: string, rows: ItemMaster[]) {
+  const lines = [CSV_FIELDS.join(",")];
+  for (const item of rows) lines.push(CSV_FIELDS.map((f) => csvEscape(item[f])).join(","));
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function ItemMasterTable({
   initialItems,
   isAdmin,
@@ -64,6 +116,13 @@ export function ItemMasterTable({
 }) {
   const [items, setItems] = useState<ItemMaster[]>(initialItems);
   const [search, setSearch] = useState(initialSearch);
+  const [statusFilter, setStatusFilter] = useState<"all" | ItemStatus>("all");
+  const [makeFilter, setMakeFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
+
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -72,16 +131,76 @@ export function ItemMasterTable({
 
   const supabase = useMemo(() => createClient(), []);
 
-  const filtered = items.filter((item) => {
+  const distinctMakes = useMemo(
+    () => Array.from(new Set(items.map((i) => i.make).filter((v): v is string => !!v))).sort(),
+    [items]
+  );
+  const distinctCategories = useMemo(
+    () => Array.from(new Set(items.map((i) => i.category).filter((v): v is string => !!v))).sort(),
+    [items]
+  );
+
+  function matchesBase(item: ItemMaster) {
     const q = search.toLowerCase();
-    return (
+    const matchesSearch =
+      !q ||
       (item.sku ?? "").toLowerCase().includes(q) ||
       (item.vendor_cat ?? "").toLowerCase().includes(q) ||
       item.description.toLowerCase().includes(q) ||
       (item.make ?? "").toLowerCase().includes(q) ||
-      (item.category ?? "").toLowerCase().includes(q)
-    );
-  });
+      (item.category ?? "").toLowerCase().includes(q);
+    return matchesSearch && (!makeFilter || item.make === makeFilter) && (!categoryFilter || item.category === categoryFilter);
+  }
+
+  const baseFiltered = items.filter(matchesBase);
+  const counts = {
+    all: baseFiltered.length,
+    active: baseFiltered.filter((i) => i.status === "active").length,
+    inactive: baseFiltered.filter((i) => i.status === "inactive").length,
+    discontinued: baseFiltered.filter((i) => i.status === "discontinued").length,
+  };
+  const filtered = statusFilter === "all" ? baseFiltered : baseFiltered.filter((i) => i.status === statusFilter);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * rowsPerPage;
+  const paged = filtered.slice(pageStart, pageStart + rowsPerPage);
+
+  const filterKey = `${search}|${statusFilter}|${makeFilter}|${categoryFilter}|${rowsPerPage}`;
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey);
+    setPage(1);
+  }
+
+  const hasActiveFilters = !!search || statusFilter !== "all" || !!makeFilter || !!categoryFilter;
+
+  function clearFilters() {
+    setSearch("");
+    setStatusFilter("all");
+    setMakeFilter("");
+    setCategoryFilter("");
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAllOnPage() {
+    const pageIds = paged.map((i) => i.id);
+    const allSelected = pageIds.every((id) => selectedIds.has(id));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allSelected) pageIds.forEach((id) => next.delete(id));
+      else pageIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
 
   async function refresh() {
     const { data } = await supabase.from("item_master").select("*").order("sku");
@@ -156,37 +275,136 @@ export function ItemMasterTable({
     refresh();
   }
 
+  async function handleDeleteSelected() {
+    if (!confirm(`Delete ${selectedIds.size} item(s)? This can't be undone.`)) return;
+    const { error } = await supabase.from("item_master").delete().in("id", Array.from(selectedIds));
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    setSelectedIds(new Set());
+    refresh();
+  }
+
+  function copySku(sku: string) {
+    navigator.clipboard?.writeText(sku).catch(() => {});
+  }
+
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="relative">
-          <Icon name="search" size={16} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by SKU, vendor cat, description, make..."
-            className="w-80 rounded-md border border-slate-300 py-1.5 pl-8 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-          />
-        </div>
-        {isAdmin && (
-          <div className="flex items-center gap-2">
-            <a
-              href="/templates/item-master-template.xlsx"
-              download
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              Download template
-            </a>
-            <XlsUpload onDone={refresh} />
-            <SheetSyncButton onDone={refresh} />
-            <button
-              onClick={() => setAdding((v) => !v)}
-              className="rounded-md bg-brand-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-600"
-            >
-              {adding ? "Cancel" : "+ Add item"}
-            </button>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <KpiCard label="Total items" value={items.length} icon="inventory_2" />
+        <KpiCard label="Active" value={items.filter((i) => i.status === "active").length} icon="check_circle" tone="emerald" />
+        <KpiCard label="Inactive" value={items.filter((i) => i.status === "inactive").length} icon="pause_circle" tone="slate" />
+        <KpiCard
+          label="Discontinued"
+          value={items.filter((i) => i.status === "discontinued").length}
+          icon="cancel"
+          tone="rose"
+        />
+      </div>
+
+      <div className="space-y-3 rounded-xl border border-slate-200/90 bg-white p-4 shadow-xs">
+        <div className="grid grid-cols-1 items-center gap-3 md:grid-cols-12">
+          <div className="relative md:col-span-6">
+            <Icon name="search" size={16} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by SKU, vendor cat, description, make..."
+              className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-sm focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+            />
           </div>
-        )}
+          <div className="relative md:col-span-3">
+            <select
+              value={makeFilter}
+              onChange={(e) => setMakeFilter(e.target.value)}
+              className="h-9 w-full appearance-none rounded-lg border border-slate-200 bg-slate-50 px-3 pr-8 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+            >
+              <option value="">All makes</option>
+              {distinctMakes.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <Icon name="expand_more" size={16} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
+          </div>
+          <div className="relative md:col-span-3">
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="h-9 w-full appearance-none rounded-lg border border-slate-200 bg-slate-50 px-3 pr-8 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+            >
+              <option value="">All categories</option>
+              {distinctCategories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <Icon name="expand_more" size={16} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Status</span>
+            <StatusChip label="All" count={counts.all} active={statusFilter === "all"} onClick={() => setStatusFilter("all")} />
+            <StatusChip
+              label="Active"
+              count={counts.active}
+              active={statusFilter === "active"}
+              onClick={() => setStatusFilter("active")}
+            />
+            <StatusChip
+              label="Inactive"
+              count={counts.inactive}
+              active={statusFilter === "inactive"}
+              onClick={() => setStatusFilter("inactive")}
+            />
+            <StatusChip
+              label="Discontinued"
+              count={counts.discontinued}
+              active={statusFilter === "discontinued"}
+              onClick={() => setStatusFilter("discontinued")}
+            />
+            {hasActiveFilters && (
+              <button
+                onClick={clearFilters}
+                className="ml-1 flex items-center gap-1 text-xs text-slate-500 hover:text-rose-600"
+              >
+                <Icon name="filter_alt_off" size={13} /> Clear filters
+              </button>
+            )}
+          </div>
+
+          {isAdmin && (
+            <div className="flex flex-wrap items-center gap-2">
+              <a
+                href="/templates/item-master-template.xlsx"
+                download
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              >
+                <Icon name="download" size={14} className="text-slate-400" /> Template
+              </a>
+              <XlsUpload onDone={refresh} />
+              <SheetSyncButton onDone={refresh} />
+              <button
+                onClick={() => downloadCsv("item-master-price-list.csv", filtered)}
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              >
+                <Icon name="file_download" size={14} className="text-slate-400" /> Export price list
+              </button>
+              <button
+                onClick={() => setAdding((v) => !v)}
+                className="flex h-8 items-center gap-1.5 rounded-lg bg-brand-500 px-3 text-xs font-medium text-white hover:bg-brand-600"
+              >
+                <Icon name="add" size={14} /> {adding ? "Cancel" : "Add item"}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {error && <p className="text-sm text-rose-600">{error}</p>}
@@ -217,107 +435,303 @@ export function ItemMasterTable({
         </form>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200/90 bg-white shadow-xs">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-3 py-2">SKU</th>
-              <th className="px-3 py-2">Vendor Cat</th>
-              <th className="px-3 py-2">Description</th>
-              <th className="px-3 py-2">Make</th>
-              <th className="px-3 py-2">Category</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2 text-right">Amps</th>
-              <th className="px-3 py-2 text-right">kA</th>
-              <th className="px-3 py-2 text-right">Poles</th>
-              <th className="px-3 py-2">UOM</th>
-              <th className="px-3 py-2 text-right">Unit cost</th>
-              <th className="px-3 py-2 text-right">List price</th>
-              <th className="px-3 py-2 text-right">Disc %</th>
-              {isAdmin && <th className="px-3 py-2" />}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((item) =>
-              editingId === item.id ? (
-                <tr key={item.id} className="border-t border-slate-100 bg-amber-50">
-                  <td className="px-2 py-1"><input className="w-24 rounded border px-1 py-0.5" value={editDraft.sku} onChange={(e) => setEditDraft({ ...editDraft, sku: e.target.value })} /></td>
-                  <td className="px-2 py-1"><input className="w-24 rounded border px-1 py-0.5" value={editDraft.vendor_cat} onChange={(e) => setEditDraft({ ...editDraft, vendor_cat: e.target.value })} /></td>
-                  <td className="px-2 py-1"><input className="w-full min-w-40 rounded border px-1 py-0.5" value={editDraft.description} onChange={(e) => setEditDraft({ ...editDraft, description: e.target.value })} /></td>
-                  <td className="px-2 py-1"><input className="w-24 rounded border px-1 py-0.5" value={editDraft.make} onChange={(e) => setEditDraft({ ...editDraft, make: e.target.value })} /></td>
-                  <td className="px-2 py-1"><input className="w-24 rounded border px-1 py-0.5" value={editDraft.category} onChange={(e) => setEditDraft({ ...editDraft, category: e.target.value })} /></td>
-                  <td className="px-2 py-1">
-                    <select className="rounded border px-1 py-0.5" value={editDraft.status} onChange={(e) => setEditDraft({ ...editDraft, status: e.target.value as ItemStatus })}>
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
-                      <option value="discontinued">Discontinued</option>
-                    </select>
-                  </td>
-                  <td className="px-2 py-1"><input type="number" className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.amps} onChange={(e) => setEditDraft({ ...editDraft, amps: e.target.value })} /></td>
-                  <td className="px-2 py-1"><input type="number" className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.ka} onChange={(e) => setEditDraft({ ...editDraft, ka: e.target.value })} /></td>
-                  <td className="px-2 py-1"><input type="number" className="w-14 rounded border px-1 py-0.5 text-right" value={editDraft.poles} onChange={(e) => setEditDraft({ ...editDraft, poles: e.target.value })} /></td>
-                  <td className="px-2 py-1"><input className="w-16 rounded border px-1 py-0.5" value={editDraft.uom} onChange={(e) => setEditDraft({ ...editDraft, uom: e.target.value })} /></td>
-                  <td className="px-2 py-1"><input type="number" className="w-24 rounded border px-1 py-0.5 text-right" value={editDraft.unit_cost} onChange={(e) => setEditDraft({ ...editDraft, unit_cost: e.target.value })} /></td>
-                  <td className="px-2 py-1"><input type="number" className="w-24 rounded border px-1 py-0.5 text-right" value={editDraft.list_price} onChange={(e) => setEditDraft({ ...editDraft, list_price: e.target.value })} /></td>
-                  <td className="px-2 py-1"><input type="number" className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.discount_pct} onChange={(e) => setEditDraft({ ...editDraft, discount_pct: e.target.value })} /></td>
-                  <td className="whitespace-nowrap px-2 py-1">
-                    <button onClick={() => saveEdit(item.id)} className="mr-2 text-xs font-medium text-emerald-600 hover:underline">Save</button>
-                    <button onClick={() => setEditingId(null)} className="text-xs text-slate-500 hover:underline">Cancel</button>
-                  </td>
-                </tr>
-              ) : (
-                <tr key={item.id} className="border-t border-slate-100 hover:bg-slate-50">
-                  <td className="px-3 py-2 font-mono text-xs">{item.sku || "—"}</td>
-                  <td className="px-3 py-2 font-mono text-xs">{item.vendor_cat || "—"}</td>
-                  <td className="px-3 py-2">{item.description}</td>
-                  <td className="px-3 py-2 text-slate-500">{item.make || "—"}</td>
-                  <td className="px-3 py-2 text-slate-500">{item.category || "—"}</td>
-                  <td className="px-3 py-2">
-                    <StatusBadge status={item.status} />
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-500">{item.amps ?? "—"}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-500">{item.ka ?? "—"}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-500">{item.poles ?? "—"}</td>
-                  <td className="px-3 py-2 text-slate-500">{item.uom}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">₹{item.unit_cost.toLocaleString("en-IN")}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-500">
-                    {item.list_price != null ? `₹${item.list_price.toLocaleString("en-IN")}` : "—"}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-500">
-                    {item.discount_pct != null ? `${item.discount_pct}%` : "—"}
-                  </td>
-                  {isAdmin && (
-                    <td className="whitespace-nowrap px-3 py-2 text-right">
-                      <button onClick={() => startEdit(item)} className="mr-2 text-xs text-slate-500 hover:underline">Edit</button>
-                      <button onClick={() => handleDelete(item.id)} className="text-xs text-rose-600 hover:underline">Delete</button>
-                    </td>
-                  )}
-                </tr>
-              )
-            )}
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={isAdmin ? 14 : 13} className="px-3 py-8 text-center text-slate-400">
-                  No items found.
-                </td>
+      {isAdmin && selectedIds.size > 0 && (
+        <div className="flex items-center justify-between rounded-xl bg-slate-900 px-4 py-2.5 text-white shadow-md">
+          <div className="flex items-center gap-3">
+            <span className="flex h-5 w-5 items-center justify-center rounded bg-brand-500 text-[11px] font-bold">
+              {selectedIds.size}
+            </span>
+            <span className="text-sm font-medium">item(s) selected</span>
+            <div className="h-4 w-px bg-white/20" />
+            <button
+              onClick={() => downloadCsv("item-master-selected.csv", items.filter((i) => selectedIds.has(i.id)))}
+              className="flex items-center gap-1.5 rounded bg-white/10 px-2.5 py-1 text-xs font-medium hover:bg-white/20"
+            >
+              <Icon name="file_download" size={14} /> Export selected
+            </button>
+            <button
+              onClick={handleDeleteSelected}
+              className="flex items-center gap-1.5 rounded bg-rose-500/90 px-2.5 py-1 text-xs font-medium hover:bg-rose-500"
+            >
+              <Icon name="delete" size={14} /> Delete selected
+            </button>
+          </div>
+          <button onClick={() => setSelectedIds(new Set())} className="text-white/70 hover:text-white">
+            <Icon name="close" size={18} />
+          </button>
+        </div>
+      )}
+
+      <div className="overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-xs">
+        <div className="overflow-x-auto">
+          <table className="w-full whitespace-nowrap text-left text-xs">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              <tr className="h-9 border-b border-slate-200">
+                {isAdmin && (
+                  <th className="w-9 px-2 text-center">
+                    <input
+                      type="checkbox"
+                      className="cursor-pointer rounded"
+                      checked={paged.length > 0 && paged.every((i) => selectedIds.has(i.id))}
+                      onChange={toggleSelectAllOnPage}
+                    />
+                  </th>
+                )}
+                <th className="px-2">SKU</th>
+                <th className="px-2">Vendor Cat</th>
+                <th className="min-w-[240px] px-2">Description</th>
+                <th className="px-2">Category</th>
+                <th className="px-2">Make</th>
+                <th className="px-2 text-center">UOM</th>
+                <th className="px-2 text-right">Unit Cost</th>
+                <th className="px-2 text-right">List Price</th>
+                <th className="px-2 text-center">Disc %</th>
+                <th className="px-2 text-right">Amps</th>
+                <th className="px-2 text-center">Poles</th>
+                <th className="px-2 text-right">kA</th>
+                <th className="px-2">Status</th>
+                {isAdmin && <th className="sticky right-0 bg-slate-50 px-2 text-right">Actions</th>}
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {paged.map((item) =>
+                editingId === item.id ? (
+                  <tr key={item.id} className="bg-amber-50">
+                    {isAdmin && <td />}
+                    <td className="px-2 py-1"><input className="w-24 rounded border px-1 py-0.5" value={editDraft.sku} onChange={(e) => setEditDraft({ ...editDraft, sku: e.target.value })} /></td>
+                    <td className="px-2 py-1"><input className="w-24 rounded border px-1 py-0.5" value={editDraft.vendor_cat} onChange={(e) => setEditDraft({ ...editDraft, vendor_cat: e.target.value })} /></td>
+                    <td className="px-2 py-1"><input className="w-full min-w-40 rounded border px-1 py-0.5" value={editDraft.description} onChange={(e) => setEditDraft({ ...editDraft, description: e.target.value })} /></td>
+                    <td className="px-2 py-1"><input className="w-24 rounded border px-1 py-0.5" value={editDraft.category} onChange={(e) => setEditDraft({ ...editDraft, category: e.target.value })} /></td>
+                    <td className="px-2 py-1"><input className="w-24 rounded border px-1 py-0.5" value={editDraft.make} onChange={(e) => setEditDraft({ ...editDraft, make: e.target.value })} /></td>
+                    <td className="px-2 py-1"><input className="w-16 rounded border px-1 py-0.5" value={editDraft.uom} onChange={(e) => setEditDraft({ ...editDraft, uom: e.target.value })} /></td>
+                    <td className="px-2 py-1"><input type="number" className="w-24 rounded border px-1 py-0.5 text-right" value={editDraft.unit_cost} onChange={(e) => setEditDraft({ ...editDraft, unit_cost: e.target.value })} /></td>
+                    <td className="px-2 py-1"><input type="number" className="w-24 rounded border px-1 py-0.5 text-right" value={editDraft.list_price} onChange={(e) => setEditDraft({ ...editDraft, list_price: e.target.value })} /></td>
+                    <td className="px-2 py-1"><input type="number" className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.discount_pct} onChange={(e) => setEditDraft({ ...editDraft, discount_pct: e.target.value })} /></td>
+                    <td className="px-2 py-1"><input type="number" className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.amps} onChange={(e) => setEditDraft({ ...editDraft, amps: e.target.value })} /></td>
+                    <td className="px-2 py-1"><input type="number" className="w-14 rounded border px-1 py-0.5 text-right" value={editDraft.poles} onChange={(e) => setEditDraft({ ...editDraft, poles: e.target.value })} /></td>
+                    <td className="px-2 py-1"><input type="number" className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.ka} onChange={(e) => setEditDraft({ ...editDraft, ka: e.target.value })} /></td>
+                    <td className="px-2 py-1">
+                      <select className="rounded border px-1 py-0.5" value={editDraft.status} onChange={(e) => setEditDraft({ ...editDraft, status: e.target.value as ItemStatus })}>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                        <option value="discontinued">Discontinued</option>
+                      </select>
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-1 text-right">
+                      <button onClick={() => saveEdit(item.id)} className="mr-2 text-xs font-medium text-emerald-600 hover:underline">Save</button>
+                      <button onClick={() => setEditingId(null)} className="text-xs text-slate-500 hover:underline">Cancel</button>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={item.id} className="group h-8 hover:bg-slate-50">
+                    {isAdmin && (
+                      <td className="px-2 text-center">
+                        <input
+                          type="checkbox"
+                          className="cursor-pointer rounded"
+                          checked={selectedIds.has(item.id)}
+                          onChange={() => toggleSelected(item.id)}
+                        />
+                      </td>
+                    )}
+                    <td className="px-2 font-mono font-semibold text-brand-600">
+                      <div className="flex items-center gap-1">
+                        <span>{item.sku || "—"}</span>
+                        {item.sku && (
+                          <button
+                            onClick={() => copySku(item.sku!)}
+                            title="Copy SKU"
+                            className="text-slate-400 opacity-0 transition-opacity hover:text-brand-600 group-hover:opacity-100"
+                          >
+                            <Icon name="content_copy" size={12} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-2 font-mono text-slate-500">{item.vendor_cat || "—"}</td>
+                    <td className="max-w-[320px] truncate px-2 text-slate-700" title={item.description}>
+                      {item.description}
+                    </td>
+                    <td className="px-2">
+                      {item.category ? (
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">{item.category}</span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-2">
+                      {item.make ? (
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${makeColor(item.make)}`}>{item.make}</span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-2 text-center text-slate-500">{item.uom}</td>
+                    <td className="px-2 text-right font-semibold tabular-nums">₹{item.unit_cost.toLocaleString("en-IN")}</td>
+                    <td className="px-2 text-right tabular-nums text-slate-400 line-through">
+                      {item.list_price != null ? `₹${item.list_price.toLocaleString("en-IN")}` : ""}
+                    </td>
+                    <td className="px-2 text-center">
+                      {item.discount_pct != null ? (
+                        <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-bold text-emerald-700">
+                          -{item.discount_pct}%
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-2 text-right tabular-nums text-slate-500">{item.amps ?? "—"}</td>
+                    <td className="px-2 text-center tabular-nums text-slate-500">{item.poles ?? "—"}</td>
+                    <td className="px-2 text-right tabular-nums font-semibold text-brand-600">{item.ka ?? "—"}</td>
+                    <td className="px-2">
+                      <StatusBadge status={item.status} />
+                    </td>
+                    {isAdmin && (
+                      <td className="sticky right-0 bg-white px-2 text-right group-hover:bg-slate-50">
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => startEdit(item)} title="Edit" className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-brand-600">
+                            <Icon name="edit" size={15} />
+                          </button>
+                          <button onClick={() => handleDelete(item.id)} title="Delete" className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600">
+                            <Icon name="delete" size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                )
+              )}
+              {paged.length === 0 && (
+                <tr>
+                  <td colSpan={isAdmin ? 15 : 13} className="px-3 py-10 text-center text-sm text-slate-400">
+                    No items found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex flex-col items-center justify-between gap-2 border-t border-slate-100 bg-slate-50 px-4 py-2.5 sm:flex-row">
+          <div className="flex items-center gap-4">
+            <span className="text-xs text-slate-500">
+              Showing <span className="font-semibold text-slate-800">{filtered.length === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + rowsPerPage, filtered.length)}</span> of{" "}
+              <span className="font-semibold text-slate-800">{filtered.length}</span> items
+            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] uppercase text-slate-400">Rows:</span>
+              <select
+                value={rowsPerPage}
+                onChange={(e) => setRowsPerPage(Number(e.target.value))}
+                className="h-7 rounded border border-slate-200 bg-white px-1.5 text-xs focus:outline-none"
+              >
+                {ROWS_PER_PAGE_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <PageButton icon="first_page" disabled={currentPage === 1} onClick={() => setPage(1)} />
+            <PageButton icon="chevron_left" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} />
+            <span className="px-2 text-xs font-medium text-slate-600">
+              Page {currentPage} of {totalPages}
+            </span>
+            <PageButton icon="chevron_right" disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)} />
+            <PageButton icon="last_page" disabled={currentPage === totalPages} onClick={() => setPage(totalPages)} />
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function StatusBadge({ status }: { status: ItemStatus }) {
-  const styles: Record<ItemStatus, string> = {
-    active: "bg-emerald-50 text-emerald-600 border-emerald-200/60",
-    inactive: "bg-slate-100 text-slate-600 border-slate-200",
-    discontinued: "bg-rose-50 text-rose-600 border-rose-200/60",
+function KpiCard({
+  label,
+  value,
+  icon,
+  tone = "brand",
+}: {
+  label: string;
+  value: number;
+  icon: string;
+  tone?: "brand" | "emerald" | "slate" | "rose";
+}) {
+  const tones: Record<string, string> = {
+    brand: "text-brand-500",
+    emerald: "text-emerald-500",
+    slate: "text-slate-400",
+    rose: "text-rose-500",
   };
   return (
-    <span className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${styles[status]}`}>
-      {status}
+    <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-xs">
+      <div className="flex items-center justify-between">
+        <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
+        <Icon name={icon} size={16} className={tones[tone]} />
+      </div>
+      <p className="mt-1 font-display text-xl font-semibold text-slate-900">{value.toLocaleString("en-IN")}</p>
+    </div>
+  );
+}
+
+function StatusChip({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold transition-colors ${
+        active ? "bg-brand-500 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+      }`}
+    >
+      <span>{label}</span>
+      <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${active ? "bg-white/20" : "bg-slate-200 text-slate-500"}`}>{count}</span>
+    </button>
+  );
+}
+
+function PageButton({ icon, disabled, onClick }: { icon: string; disabled: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 disabled:opacity-30 disabled:hover:bg-transparent"
+    >
+      <Icon name={icon} size={16} />
+    </button>
+  );
+}
+
+function StatusBadge({ status }: { status: ItemStatus }) {
+  const styles: Record<ItemStatus, string> = {
+    active: "text-emerald-600",
+    inactive: "text-slate-500",
+    discontinued: "text-rose-600",
+  };
+  const dots: Record<ItemStatus, string> = {
+    active: "bg-emerald-500",
+    inactive: "bg-slate-400",
+    discontinued: "bg-rose-500",
+  };
+  const labels: Record<ItemStatus, string> = {
+    active: "Active",
+    inactive: "Inactive",
+    discontinued: "Discontinued",
+  };
+  return (
+    <span className={`flex items-center gap-1.5 text-[11px] font-semibold ${styles[status]}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${dots[status]}`} />
+      {labels[status]}
     </span>
   );
 }

@@ -21,7 +21,7 @@ export default async function ItemMasterPage({
     .order("sku", { ascending: true });
 
   return (
-    <div className="max-w-6xl space-y-4 px-8 py-6">
+    <div className="max-w-[1600px] space-y-4 px-8 py-6">
       <div>
         <h1 className="font-display text-xl font-semibold text-slate-900">Item Master</h1>
         <p className="text-sm text-slate-500">
