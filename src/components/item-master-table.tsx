@@ -48,12 +48,11 @@ const CSV_FIELDS: (keyof ItemMaster)[] = [
 const ROWS_PER_PAGE_OPTIONS = [25, 50, 100];
 
 const MAKE_COLORS = [
-  "bg-blue-50 text-blue-700",
-  "bg-violet-50 text-violet-700",
-  "bg-amber-50 text-amber-700",
-  "bg-teal-50 text-teal-700",
-  "bg-rose-50 text-rose-700",
-  "bg-indigo-50 text-indigo-700",
+  "bg-surface-container text-primary",
+  "bg-secondary-container text-on-secondary-container",
+  "bg-surface-container-high text-on-surface",
+  "bg-tertiary-fixed text-on-tertiary-fixed",
+  "bg-surface-container text-secondary",
 ];
 
 const STATUS_LABELS: Record<ItemStatus, string> = {
@@ -476,8 +475,8 @@ export function ItemMasterTable({
     <div className="space-y-3">
       <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
         <div>
-          <h1 className="font-display text-xl font-semibold text-slate-900">Item Master</h1>
-          <p className="text-sm text-slate-500">
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-on-surface">Item Master</h1>
+          <p className="text-sm text-secondary">
             Every component and its cost. Feeders in the Feeder Master are built from these items.
             {isAdmin ? "" : " Only admins can edit — ask an admin to make changes."}
           </p>
@@ -487,33 +486,33 @@ export function ItemMasterTable({
             <a
               href="/templates/item-master-template.xlsx"
               download
-              className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-500 hover:bg-slate-50"
+              className="flex h-8 items-center gap-1.5 rounded-[4px] bg-surface-container-lowest px-2.5 text-xs font-medium text-secondary shadow-sm hover:bg-surface-container-low"
             >
               Download template
             </a>
             <XlsUpload onDone={refresh} />
             <button
               onClick={() => downloadCsv("item-master-price-list.csv", sorted)}
-              className="flex h-8 items-center gap-1.5 rounded-lg bg-white px-2.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+              className="flex h-8 items-center gap-1.5 rounded-[4px] bg-surface-container-lowest px-2.5 text-xs font-medium text-on-surface shadow-sm hover:bg-surface-container-low"
             >
-              <Icon name="download" size={16} className="text-slate-400" /> Export Price List
+              <Icon name="download" size={16} className="text-secondary" /> Export Price List
             </button>
           </div>
         )}
       </div>
 
-      <div className="space-y-3 rounded-xl border border-slate-200/90 bg-white p-4 shadow-xs">
+      <div className="space-y-3 rounded-[8px] bg-surface-container-lowest p-4 shadow-sm">
         <div className="grid grid-cols-1 items-center gap-3 md:grid-cols-12">
           <div className="relative md:col-span-4">
-            <Icon name="search" size={16} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Icon name="search" size={16} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-secondary" />
             <input
               ref={searchRef}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by SKU, part code, description, or ratings..."
-              className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-12 text-sm focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+              className="h-9 w-full rounded-[4px] bg-surface-container-low pl-8 pr-12 text-sm text-on-surface placeholder:text-secondary focus:outline-none focus:ring-1 focus:ring-primary"
             />
-            <span className="absolute right-2 top-1/2 -translate-y-1/2 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
+            <span className="absolute right-2 top-1/2 -translate-y-1/2 rounded bg-surface-container-highest px-1.5 py-0.5 text-[10px] font-semibold text-secondary">
               ⌘K
             </span>
           </div>
@@ -547,9 +546,9 @@ export function ItemMasterTable({
           />
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-outline-variant/30 pt-3">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Status</span>
+            <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-secondary">Status</span>
             <StatusChip label="All" count={counts.all} active={statusFilter === "all"} onClick={() => setStatusFilter("all")} />
             <StatusChip
               label={STATUS_LABELS.active}
@@ -572,7 +571,7 @@ export function ItemMasterTable({
             {hasActiveFilters && (
               <button
                 onClick={clearFilters}
-                className="ml-1 flex items-center gap-1 text-xs text-slate-500 hover:text-rose-600"
+                className="ml-1 flex items-center gap-1 text-xs text-secondary hover:text-error"
               >
                 <Icon name="filter_alt_off" size={13} /> Clear all filters
               </button>
@@ -582,32 +581,32 @@ export function ItemMasterTable({
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={saveCurrentView}
-              className="flex h-8 items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-200"
+              className="flex h-8 items-center gap-1.5 rounded-[4px] bg-surface-container-low px-2.5 text-xs font-medium text-on-surface hover:bg-surface-container-high"
             >
-              <Icon name="bookmark_border" size={14} className="text-slate-400" />
+              <Icon name="bookmark_border" size={14} className="text-secondary" />
               {savedViewFlash ? "Saved!" : "Save Current View"}
             </button>
             <div className="relative">
               <button
                 onClick={() => setColumnsOpen((v) => !v)}
-                className="flex h-8 items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-200"
+                className="flex h-8 items-center gap-1.5 rounded-[4px] bg-surface-container-low px-2.5 text-xs font-medium text-on-surface hover:bg-surface-container-high"
               >
-                <Icon name="view_column" size={14} className="text-slate-400" /> Customize Columns ({visibleColumns.size + 5})
+                <Icon name="view_column" size={14} className="text-secondary" /> Customize Columns ({visibleColumns.size + 5})
               </button>
               {columnsOpen && (
-                <div className="absolute right-0 top-full z-20 mt-1 w-56 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
-                  <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                <div className="absolute right-0 top-full z-20 mt-1 w-56 rounded-[4px] bg-surface-container-lowest p-2 shadow-md">
+                  <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wide text-secondary">
                     Toggle optional columns
                   </p>
                   {TOGGLEABLE_COLUMNS.map((c) => (
-                    <label key={c.key} className="flex items-center gap-2 rounded px-1 py-1 text-xs text-slate-700 hover:bg-slate-50">
+                    <label key={c.key} className="flex items-center gap-2 rounded px-1 py-1 text-xs text-on-surface hover:bg-surface-container-low">
                       <input type="checkbox" checked={visibleColumns.has(c.key)} onChange={() => toggleColumn(c.key)} className="rounded" />
                       {c.label}
                     </label>
                   ))}
                   <button
                     onClick={() => setColumnsOpen(false)}
-                    className="mt-1 w-full rounded bg-slate-100 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200"
+                    className="mt-1 w-full rounded bg-surface-container-low py-1 text-xs font-medium text-on-surface-variant hover:bg-surface-container-high"
                   >
                     Done
                   </button>
@@ -619,7 +618,7 @@ export function ItemMasterTable({
                 <SheetSyncButton onDone={refresh} />
                 <button
                   onClick={() => setAdding((v) => !v)}
-                  className="flex h-8 items-center gap-1.5 rounded-lg bg-brand-500 px-3 text-xs font-medium text-white hover:bg-brand-600"
+                  className="flex h-8 items-center gap-1.5 rounded-[4px] bg-primary px-3 text-xs font-medium text-on-primary shadow-sm hover:bg-primary-container"
                 >
                   <Icon name="add" size={14} /> {adding ? "Cancel" : "Add item"}
                 </button>
@@ -629,10 +628,10 @@ export function ItemMasterTable({
         </div>
       </div>
 
-      {error && <p className="text-sm text-rose-600">{error}</p>}
+      {error && <p className="text-sm text-error">{error}</p>}
 
       {adding && (
-        <form onSubmit={handleAdd} className="grid grid-cols-2 gap-3 rounded-xl border border-slate-200/90 bg-white p-4 shadow-xs sm:grid-cols-4">
+        <form onSubmit={handleAdd} className="grid grid-cols-2 gap-3 rounded-[8px] bg-surface-container-lowest p-4 shadow-sm sm:grid-cols-4">
           <Field label="SKU" value={draft.sku} onChange={(v) => setDraft({ ...draft, sku: v })} />
           <Field label="Vendor Cat" value={draft.vendor_cat} onChange={(v) => setDraft({ ...draft, vendor_cat: v })} />
           <Field label="Description" value={draft.description} onChange={(v) => setDraft({ ...draft, description: v })} required className="sm:col-span-2" />
@@ -648,9 +647,9 @@ export function ItemMasterTable({
           <Field label="Discount %" value={draft.discount_pct} onChange={(v) => setDraft({ ...draft, discount_pct: v })} type="number" />
           <Field label="Supplier" value={draft.supplier} onChange={(v) => setDraft({ ...draft, supplier: v })} />
           <Field label="Notes" value={draft.notes} onChange={(v) => setDraft({ ...draft, notes: v })} className="sm:col-span-2" />
-          <p className="text-xs text-slate-400 sm:col-span-4">Either SKU or Vendor Cat is required (both are fine too).</p>
+          <p className="text-xs text-secondary sm:col-span-4">Either SKU or Vendor Cat is required (both are fine too).</p>
           <div className="sm:col-span-4">
-            <button type="submit" className="rounded-md bg-brand-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-600">
+            <button type="submit" className="rounded-[4px] bg-primary px-4 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-container">
               Save item
             </button>
           </div>
@@ -658,22 +657,22 @@ export function ItemMasterTable({
       )}
 
       {isAdmin && selectedIds.size > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-white shadow-md">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-[8px] bg-inverse-surface px-4 py-2.5 text-inverse-on-surface shadow-md">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="flex h-5 w-5 items-center justify-center rounded bg-brand-500 text-[11px] font-bold">
+            <span className="flex h-5 w-5 items-center justify-center rounded bg-primary text-on-primary text-[11px] font-bold">
               {selectedIds.size}
             </span>
             <span className="text-sm font-medium">item(s) selected</span>
-            <div className="h-4 w-px bg-white/20" />
+            <div className="h-4 w-px bg-outline" />
             <div className="relative">
               <button
                 onClick={() => setBulkDiscountOpen((v) => !v)}
-                className="flex items-center gap-1.5 rounded bg-white/10 px-2.5 py-1 text-xs font-medium hover:bg-white/20"
+                className="flex items-center gap-1.5 rounded bg-surface-container-low px-2.5 py-1 text-xs font-medium text-on-surface hover:bg-surface-container-high"
               >
                 Update Discount %
               </button>
               {bulkDiscountOpen && (
-                <div className="absolute left-0 top-full z-20 mt-1 flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+                <div className="absolute left-0 top-full z-20 mt-1 flex items-center gap-1.5 rounded-[4px] bg-surface-container-lowest p-2 shadow-md">
                   <input
                     autoFocus
                     type="number"
@@ -681,9 +680,9 @@ export function ItemMasterTable({
                     value={bulkDiscountValue}
                     onChange={(e) => setBulkDiscountValue(e.target.value)}
                     placeholder="%"
-                    className="w-16 rounded border border-slate-200 px-1.5 py-1 text-xs text-slate-800"
+                    className="w-16 rounded border border-outline-variant/50 px-1.5 py-1 text-xs text-on-surface"
                   />
-                  <button onClick={applyBulkDiscount} className="rounded bg-brand-500 px-2 py-1 text-xs font-medium text-white hover:bg-brand-600">
+                  <button onClick={applyBulkDiscount} className="rounded bg-primary px-2 py-1 text-xs font-medium text-on-primary hover:bg-primary-container">
                     Apply
                   </button>
                 </div>
@@ -691,36 +690,36 @@ export function ItemMasterTable({
             </div>
             <button
               onClick={() => downloadCsv("item-master-selected.csv", selectedItems)}
-              className="flex items-center gap-1.5 rounded bg-white/10 px-2.5 py-1 text-xs font-medium hover:bg-white/20"
+              className="flex items-center gap-1.5 rounded bg-surface-container-low px-2.5 py-1 text-xs font-medium text-on-surface hover:bg-surface-container-high"
             >
               <Icon name="file_download" size={14} /> Export selected
             </button>
             <button
               onClick={handleDeleteSelected}
-              className="flex items-center gap-1.5 rounded bg-rose-500/90 px-2.5 py-1 text-xs font-medium hover:bg-rose-500"
+              className="flex items-center gap-1.5 rounded bg-error/90 px-2.5 py-1 text-xs font-medium text-on-error hover:bg-error"
             >
               <Icon name="delete" size={14} /> Delete selected
             </button>
             {lastUpdatedAt && (
-              <div className="flex items-center gap-1.5 border-l border-white/20 pl-3 font-mono text-[11px] text-white/70">
-                <Icon name="schedule" size={14} className="text-white/50" />
+              <div className="flex items-center gap-1.5 border-l border-inverse-on-surface/20 pl-3 font-mono text-[11px] text-inverse-on-surface/80">
+                <Icon name="schedule" size={14} className="text-inverse-on-surface/60" />
                 Last updated:{" "}
                 {new Date(lastUpdatedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} by{" "}
                 {currentUserName}
               </div>
             )}
           </div>
-          <button onClick={() => setSelectedIds(new Set())} className="text-white/70 hover:text-white">
+          <button onClick={() => setSelectedIds(new Set())} className="text-inverse-on-surface/70 hover:text-inverse-on-surface">
             <Icon name="close" size={18} />
           </button>
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-xs">
+      <div className="overflow-hidden rounded-[8px] bg-surface-container-lowest shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full whitespace-nowrap text-left text-xs">
-            <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              <tr className="h-9 border-b border-slate-200">
+            <thead className="sticky top-0 z-10 bg-surface-container text-[10px] font-semibold uppercase tracking-wide text-secondary">
+              <tr className="h-9 border-b border-outline-variant/30">
                 {isAdmin && (
                   <th className="w-9 px-2 text-center">
                     <input
@@ -744,13 +743,13 @@ export function ItemMasterTable({
                 {col("poles") && <SortableTh label="Poles" sortKey="poles" current={sortKey} dir={sortDir} onSort={handleSort} align="center" />}
                 {col("ka") && <SortableTh label="kA" sortKey="ka" current={sortKey} dir={sortDir} onSort={handleSort} align="right" />}
                 <SortableTh label="Status" sortKey="status" current={sortKey} dir={sortDir} onSort={handleSort} />
-                {isAdmin && <th className="sticky right-0 bg-slate-50 px-2 text-right">Actions</th>}
+                {isAdmin && <th className="sticky right-0 bg-surface-container px-2 text-right">Actions</th>}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-surface-container">
               {paged.map((item) =>
                 editingId === item.id ? (
-                  <tr key={item.id} className="bg-amber-50">
+                  <tr key={item.id} className="bg-tertiary-fixed/40">
                     {isAdmin && <td />}
                     <td className="px-2 py-1"><input className="w-24 rounded border px-1 py-0.5" value={editDraft.sku} onChange={(e) => setEditDraft({ ...editDraft, sku: e.target.value })} /></td>
                     {col("vendor_cat") && <td className="px-2 py-1"><input className="w-24 rounded border px-1 py-0.5" value={editDraft.vendor_cat} onChange={(e) => setEditDraft({ ...editDraft, vendor_cat: e.target.value })} /></td>}
@@ -772,12 +771,12 @@ export function ItemMasterTable({
                       </select>
                     </td>
                     <td className="whitespace-nowrap px-2 py-1 text-right">
-                      <button onClick={() => saveEdit(item.id)} className="mr-2 text-xs font-medium text-emerald-600 hover:underline">Save</button>
-                      <button onClick={() => setEditingId(null)} className="text-xs text-slate-500 hover:underline">Cancel</button>
+                      <button onClick={() => saveEdit(item.id)} className="mr-2 text-xs font-medium text-tertiary hover:underline">Save</button>
+                      <button onClick={() => setEditingId(null)} className="text-xs text-secondary hover:underline">Cancel</button>
                     </td>
                   </tr>
                 ) : (
-                  <tr key={item.id} className="group h-8 hover:bg-slate-50">
+                  <tr key={item.id} className="group h-8 hover:bg-surface-container-low">
                     {isAdmin && (
                       <td className="px-2 text-center">
                         <input
@@ -788,30 +787,30 @@ export function ItemMasterTable({
                         />
                       </td>
                     )}
-                    <td className="px-2 font-mono font-semibold text-brand-600">
+                    <td className="px-2 font-display font-semibold text-primary">
                       <div className="flex items-center gap-1">
                         <span>{item.sku || "—"}</span>
                         {item.sku && (
                           <button
                             onClick={() => copySku(item.sku!)}
                             title="Copy SKU"
-                            className="text-slate-400 opacity-0 transition-opacity hover:text-brand-600 group-hover:opacity-100"
+                            className="text-secondary opacity-0 transition-opacity hover:text-primary group-hover:opacity-100"
                           >
                             <Icon name="content_copy" size={12} />
                           </button>
                         )}
                       </div>
                     </td>
-                    {col("vendor_cat") && <td className="px-2 font-mono text-slate-500">{item.vendor_cat || "—"}</td>}
-                    <td className="max-w-[320px] truncate px-2 text-slate-700" title={item.description}>
+                    {col("vendor_cat") && <td className="px-2 font-display text-secondary">{item.vendor_cat || "—"}</td>}
+                    <td className="max-w-[320px] truncate px-2 text-on-surface" title={item.description}>
                       {item.description}
                     </td>
                     {col("category") && (
                       <td className="px-2">
                         {item.category ? (
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">{item.category}</span>
+                          <span className="rounded bg-surface-container-high px-1.5 py-0.5 text-[10px] font-bold text-on-surface-variant">{item.category}</span>
                         ) : (
-                          <span className="text-slate-300">—</span>
+                          <span className="text-outline-variant">—</span>
                         )}
                       </td>
                     )}
@@ -820,48 +819,48 @@ export function ItemMasterTable({
                         {item.make ? (
                           <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${makeColor(item.make)}`}>{item.make}</span>
                         ) : (
-                          <span className="text-slate-300">—</span>
+                          <span className="text-outline-variant">—</span>
                         )}
                       </td>
                     )}
-                    {col("uom") && <td className="px-2 text-center text-slate-500">{item.uom}</td>}
-                    <td className="px-2 text-right font-semibold tabular-nums">₹{item.unit_cost.toLocaleString("en-IN")}</td>
+                    {col("uom") && <td className="px-2 text-center font-display text-secondary">{item.uom}</td>}
+                    <td className="px-2 text-right font-display font-bold tabular-nums text-on-surface">₹{item.unit_cost.toLocaleString("en-IN")}</td>
                     {col("list_price") && (
-                      <td className="px-2 text-right tabular-nums text-slate-400 line-through">
+                      <td className="px-2 text-right font-display tabular-nums text-secondary line-through">
                         {item.list_price != null ? `₹${item.list_price.toLocaleString("en-IN")}` : ""}
                       </td>
                     )}
                     {col("discount_pct") && (
                       <td className="px-2 text-center">
                         {item.discount_pct != null ? (
-                          <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-bold text-emerald-700">
+                          <span className="rounded bg-tertiary-fixed px-1.5 py-0.5 font-display text-[11px] font-bold text-on-tertiary-fixed">
                             -{item.discount_pct}%
                           </span>
                         ) : (
-                          <span className="text-slate-300">—</span>
+                          <span className="text-outline-variant">—</span>
                         )}
                       </td>
                     )}
-                    {col("amps") && <td className="px-2 text-right tabular-nums text-slate-500">{item.amps ?? "—"}</td>}
-                    {col("poles") && <td className="px-2 text-center tabular-nums text-slate-500">{item.poles ?? "—"}</td>}
-                    {col("ka") && <td className="px-2 text-right tabular-nums font-semibold text-brand-600">{item.ka ?? "—"}</td>}
+                    {col("amps") && <td className="px-2 text-right font-display font-semibold tabular-nums text-on-surface">{item.amps ?? "—"}</td>}
+                    {col("poles") && <td className="px-2 text-center font-display tabular-nums text-on-surface">{item.poles ?? "—"}</td>}
+                    {col("ka") && <td className="px-2 text-right font-display font-bold tabular-nums text-primary">{item.ka ?? "—"}</td>}
                     <td className="px-2">
                       <StatusBadge status={item.status} />
                     </td>
                     {isAdmin && (
-                      <td className="sticky right-0 bg-white px-2 text-right group-hover:bg-slate-50">
+                      <td className="sticky right-0 bg-surface-container-lowest px-2 text-right group-hover:bg-surface-container-low">
                         <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => startEdit(item)} title="Edit" className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-brand-600">
+                          <button onClick={() => startEdit(item)} title="Edit" className="rounded p-1 text-secondary hover:bg-surface-container hover:text-primary">
                             <Icon name="edit" size={15} />
                           </button>
                           <button
                             onClick={() => alert("No spec sheet uploaded for this item yet.")}
                             title="View Spec PDF"
-                            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                            className="rounded p-1 text-secondary hover:bg-surface-container hover:text-tertiary"
                           >
                             <Icon name="picture_as_pdf" size={15} />
                           </button>
-                          <button onClick={() => handleDelete(item.id)} title="Delete" className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600">
+                          <button onClick={() => handleDelete(item.id)} title="Delete" className="rounded p-1 text-secondary hover:bg-error-container hover:text-error">
                             <Icon name="delete" size={15} />
                           </button>
                         </div>
@@ -872,7 +871,7 @@ export function ItemMasterTable({
               )}
               {paged.length === 0 && (
                 <tr>
-                  <td colSpan={16} className="px-3 py-10 text-center text-sm text-slate-400">
+                  <td colSpan={16} className="px-3 py-10 text-center text-sm text-secondary">
                     No items found.
                   </td>
                 </tr>
@@ -881,18 +880,18 @@ export function ItemMasterTable({
           </table>
         </div>
 
-        <div className="flex flex-col items-center justify-between gap-2 border-t border-slate-100 bg-slate-50 px-4 py-2.5 sm:flex-row">
+        <div className="flex flex-col items-center justify-between gap-2 border-t border-outline-variant/30 bg-surface-container-low px-4 py-2.5 sm:flex-row">
           <div className="flex items-center gap-4">
-            <span className="text-xs text-slate-500">
-              Showing <span className="font-semibold text-slate-800">{sorted.length === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + rowsPerPage, sorted.length)}</span> of{" "}
-              <span className="font-semibold text-slate-800">{sorted.length}</span> items
+            <span className="text-xs text-secondary">
+              Showing <span className="font-semibold text-on-surface">{sorted.length === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + rowsPerPage, sorted.length)}</span> of{" "}
+              <span className="font-semibold text-on-surface">{sorted.length}</span> items
             </span>
             <div className="flex items-center gap-1.5">
-              <span className="text-[10px] uppercase text-slate-400">Rows:</span>
+              <span className="text-[10px] uppercase text-secondary">Rows:</span>
               <select
                 value={rowsPerPage}
                 onChange={(e) => setRowsPerPage(Number(e.target.value))}
-                className="h-7 rounded border border-slate-200 bg-white px-1.5 text-xs focus:outline-none"
+                className="h-7 rounded border border-outline-variant/50 bg-surface-container-lowest px-1.5 text-xs focus:outline-none"
               >
                 {ROWS_PER_PAGE_OPTIONS.map((n) => (
                   <option key={n} value={n}>
@@ -907,15 +906,15 @@ export function ItemMasterTable({
             <PageButton icon="chevron_left" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} />
             {getPageNumbers(currentPage, totalPages).map((p, i) =>
               p === "..." ? (
-                <span key={`ellipsis-${i}`} className="px-1 font-mono text-xs text-slate-400">
+                <span key={`ellipsis-${i}`} className="px-1 font-display text-xs text-secondary">
                   ...
                 </span>
               ) : (
                 <button
                   key={p}
                   onClick={() => setPage(p)}
-                  className={`flex h-7 w-7 items-center justify-center rounded font-mono text-xs font-semibold ${
-                    p === currentPage ? "bg-brand-500 text-white" : "text-slate-500 hover:bg-slate-200"
+                  className={`flex h-7 w-7 items-center justify-center rounded font-display text-xs font-semibold ${
+                    p === currentPage ? "bg-primary text-on-primary" : "text-secondary hover:bg-surface-container"
                   }`}
                 >
                   {p}
@@ -949,7 +948,7 @@ function FilterSelect({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-9 w-full appearance-none rounded-lg border border-slate-200 bg-slate-50 px-3 pr-8 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+        className="h-9 w-full appearance-none rounded-[4px] bg-surface-container-low px-3 pr-8 text-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
       >
         <option value="">{allLabel}</option>
         {options.map((o) => (
@@ -958,7 +957,7 @@ function FilterSelect({
           </option>
         ))}
       </select>
-      <Icon name="expand_more" size={16} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
+      <Icon name="expand_more" size={16} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-secondary" />
     </div>
   );
 }
@@ -978,11 +977,11 @@ function StatusChip({
     <button
       onClick={onClick}
       className={`flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold transition-colors ${
-        active ? "bg-brand-500 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+        active ? "bg-primary-container text-on-primary-container" : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high"
       }`}
     >
       <span>{label}</span>
-      <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${active ? "bg-white/20" : "bg-slate-200 text-slate-500"}`}>{count}</span>
+      <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${active ? "bg-primary text-on-primary" : "bg-surface-container-highest text-secondary"}`}>{count}</span>
     </button>
   );
 }
@@ -1007,13 +1006,13 @@ function SortableTh({
   const active = current === sortKey;
   const justify = align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-between";
   return (
-    <th className={`cursor-pointer select-none px-2 hover:text-slate-700 ${className}`} onClick={() => onSort(sortKey)}>
+    <th className={`cursor-pointer select-none px-2 hover:text-on-surface ${className}`} onClick={() => onSort(sortKey)}>
       <div className={`flex items-center gap-1 ${justify}`}>
         <span>{label}</span>
         {active ? (
-          <Icon name={dir === "asc" ? "arrow_upward" : "arrow_downward"} size={13} className="text-brand-500" />
+          <Icon name={dir === "asc" ? "arrow_upward" : "arrow_downward"} size={13} className="text-primary" />
         ) : (
-          <Icon name="unfold_more" size={13} className="text-slate-300" />
+          <Icon name="unfold_more" size={13} className="text-outline-variant" />
         )}
       </div>
     </th>
@@ -1025,7 +1024,7 @@ function PageButton({ icon, disabled, onClick }: { icon: string; disabled: boole
     <button
       onClick={onClick}
       disabled={disabled}
-      className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 disabled:opacity-30 disabled:hover:bg-transparent"
+      className="rounded p-1 text-secondary transition-colors hover:bg-surface-container hover:text-on-surface disabled:opacity-30 disabled:hover:bg-transparent"
     >
       <Icon name={icon} size={16} />
     </button>
@@ -1034,14 +1033,14 @@ function PageButton({ icon, disabled, onClick }: { icon: string; disabled: boole
 
 function StatusBadge({ status }: { status: ItemStatus }) {
   const styles: Record<ItemStatus, string> = {
-    active: "text-emerald-600",
-    inactive: "text-slate-500",
-    discontinued: "text-rose-600",
+    active: "text-tertiary",
+    inactive: "text-secondary",
+    discontinued: "text-error",
   };
   const dots: Record<ItemStatus, string> = {
-    active: "bg-emerald-500",
-    inactive: "bg-slate-400",
-    discontinued: "bg-rose-500",
+    active: "bg-tertiary-container",
+    inactive: "bg-secondary",
+    discontinued: "bg-error",
   };
   return (
     <span className={`flex items-center gap-1.5 text-[11px] font-semibold ${styles[status]}`}>
@@ -1054,11 +1053,11 @@ function StatusBadge({ status }: { status: ItemStatus }) {
 function StatusField({ value, onChange }: { value: ItemStatus; onChange: (v: ItemStatus) => void }) {
   return (
     <div>
-      <label className="mb-1 block text-xs font-medium text-slate-600">Status</label>
+      <label className="mb-1 block text-xs font-medium text-on-surface-variant">Status</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value as ItemStatus)}
-        className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+        className="w-full rounded-[4px] border border-outline-variant/60 px-2 py-1.5 text-sm"
       >
         <option value="active">{STATUS_LABELS.active}</option>
         <option value="inactive">{STATUS_LABELS.inactive}</option>
@@ -1085,13 +1084,13 @@ function Field({
 }) {
   return (
     <div className={className}>
-      <label className="mb-1 block text-xs font-medium text-slate-600">{label}</label>
+      <label className="mb-1 block text-xs font-medium text-on-surface-variant">{label}</label>
       <input
         type={type}
         required={required}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+        className="w-full rounded-[4px] border border-outline-variant/60 px-2 py-1.5 text-sm"
       />
     </div>
   );

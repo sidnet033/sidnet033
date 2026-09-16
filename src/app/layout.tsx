@@ -24,7 +24,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${spaceGrotesk.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-slate-50/70 text-slate-800">{children}</body>
+      <body className="min-h-full flex flex-col bg-background text-on-surface">{children}</body>
     </html>
   );
 }

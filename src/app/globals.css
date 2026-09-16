@@ -12,7 +12,7 @@
 }
 
 :root {
-  --background: #ffffff;
+  --background: #f8f9ff;
   --foreground: #0b1c30;
 }
 
@@ -28,6 +28,56 @@
   --color-brand-600: #006194;
   --color-brand-700: #004b73;
   --color-brand-900: #0b1c30;
+
+  /* Material-3 tonal palette, taken verbatim from the Stitch mockups so
+     component classes (bg-surface-container-lowest, text-on-surface, ...)
+     reproduce the mockups exactly rather than approximating with the
+     generic Tailwind slate/blue palette. */
+  --color-primary: #006194;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #007bb9;
+  --color-on-primary-container: #fdfcff;
+  --color-primary-fixed: #cce5ff;
+  --color-primary-fixed-dim: #93ccff;
+  --color-inverse-primary: #93ccff;
+
+  --color-secondary: #545f73;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #d5e0f8;
+  --color-on-secondary-container: #586377;
+  --color-secondary-fixed: #d8e3fb;
+  --color-secondary-fixed-dim: #bcc7de;
+
+  --color-tertiary: #00685f;
+  --color-on-tertiary: #ffffff;
+  --color-tertiary-container: #008378;
+  --color-on-tertiary-container: #f4fffc;
+  --color-tertiary-fixed: #89f5e7;
+  --color-tertiary-fixed-dim: #6bd8cb;
+  --color-on-tertiary-fixed: #00201d;
+  --color-on-tertiary-fixed-variant: #005049;
+
+  --color-error: #ba1a1a;
+  --color-on-error: #ffffff;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+
+  --color-surface: #f8f9ff;
+  --color-surface-dim: #cbdbf5;
+  --color-surface-bright: #f8f9ff;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #eff4ff;
+  --color-surface-container: #e5eeff;
+  --color-surface-container-high: #dce9ff;
+  --color-surface-container-highest: #d3e4fe;
+  --color-surface-variant: #d3e4fe;
+  --color-on-surface: #0b1c30;
+  --color-on-surface-variant: #3f4850;
+  --color-inverse-surface: #213145;
+  --color-inverse-on-surface: #eaf1ff;
+
+  --color-outline: #707881;
+  --color-outline-variant: #bfc7d2;
 }
 
 body {
