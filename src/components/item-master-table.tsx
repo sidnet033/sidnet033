@@ -502,23 +502,6 @@ export function ItemMasterTable({
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <KpiCard label="Total items" value={items.length} icon="inventory_2" />
-        <KpiCard label="Active" value={items.filter((i) => i.status === "active").length} icon="check_circle" tone="emerald" />
-        <KpiCard
-          label="Pending review"
-          value={items.filter((i) => i.status === "inactive").length}
-          icon="pause_circle"
-          tone="slate"
-        />
-        <KpiCard
-          label="Discontinued"
-          value={items.filter((i) => i.status === "discontinued").length}
-          icon="cancel"
-          tone="rose"
-        />
-      </div>
-
       <div className="space-y-3 rounded-xl border border-slate-200/90 bg-white p-4 shadow-xs">
         <div className="grid grid-cols-1 items-center gap-3 md:grid-cols-12">
           <div className="relative md:col-span-4">
@@ -944,34 +927,6 @@ export function ItemMasterTable({
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function KpiCard({
-  label,
-  value,
-  icon,
-  tone = "brand",
-}: {
-  label: string;
-  value: number;
-  icon: string;
-  tone?: "brand" | "emerald" | "slate" | "rose";
-}) {
-  const tones: Record<string, string> = {
-    brand: "text-brand-500",
-    emerald: "text-emerald-500",
-    slate: "text-slate-400",
-    rose: "text-rose-500",
-  };
-  return (
-    <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-xs">
-      <div className="flex items-center justify-between">
-        <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
-        <Icon name={icon} size={16} className={tones[tone]} />
-      </div>
-      <p className="mt-1 font-display text-xl font-semibold text-slate-900">{value.toLocaleString("en-IN")}</p>
     </div>
   );
 }
