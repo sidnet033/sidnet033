@@ -341,6 +341,13 @@ export function BomBuilder({
     await supabase.from("feeders").update({ [field]: value || null, updated_at: new Date().toISOString() }).eq("id", mod.feeder.id);
   }
 
+  async function updateLaborPct(field: "labor_wiring_pct" | "labor_assembly_pct" | "labor_testing_pct", value: number) {
+    if (!sb) return;
+    const updated = { ...sb, [field]: value };
+    setSb(updated);
+    await supabase.from("switchboards").update({ [field]: value }).eq("id", sb.id);
+  }
+
   async function addBusbar() {
     if (!sb) return;
     const { data, error } = await supabase
@@ -392,7 +399,7 @@ export function BomBuilder({
         </div>
       )}
 
-      <CostBreakdownCard breakdown={breakdown} switchboard={sb} />
+      <CostBreakdownCard breakdown={breakdown} switchboard={sb} readOnly={readOnly} onLaborChange={updateLaborPct} />
 
       {!readOnly && (
         <div className="flex flex-wrap items-start gap-3">

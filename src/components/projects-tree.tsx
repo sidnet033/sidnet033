@@ -108,20 +108,27 @@ export function ProjectsTree({ customers }: { customers: CustomerNode[] }) {
             </button>
             {expanded.has(c.id) && (
               <div className="pb-1 pl-8">
-                {c.projects.map((p) => (
+                {c.projects.map((p) => {
+                  const latestRevisionId = p.revisions.find((r) => r.isLatest)?.id ?? p.revisions[0]?.id;
+                  return (
                   <div key={p.id}>
-                    <button
-                      onClick={() => toggle(p.id)}
-                      className="flex w-full items-center justify-between gap-3 px-4 py-2 text-left hover:bg-slate-50"
-                    >
-                      <span className="flex items-center gap-2">
-                        <Icon name={expanded.has(p.id) ? "expand_more" : "chevron_right"} size={15} className="text-slate-400" />
-                        <span className="font-mono text-xs text-slate-400">{p.code}</span>
-                        <span className="text-sm font-medium text-slate-800">{p.title}</span>
-                        <span className="text-xs text-slate-400">{p.revisions.length} revision(s)</span>
-                      </span>
-                      <span className="text-sm text-slate-500">{money(p.cost)}</span>
-                    </button>
+                    <div className="flex w-full items-center justify-between gap-3 px-4 py-2 hover:bg-slate-50">
+                      <button onClick={() => toggle(p.id)} className="rounded p-0.5 text-slate-400 hover:text-slate-600">
+                        <Icon name={expanded.has(p.id) ? "expand_more" : "chevron_right"} size={15} />
+                      </button>
+                      <Link
+                        href={latestRevisionId ? `/revisions/${latestRevisionId}?tab=costing` : "#"}
+                        title="Open project costing"
+                        className="flex flex-1 items-center justify-between gap-3 text-left"
+                      >
+                        <span className="flex items-center gap-2">
+                          <span className="font-mono text-xs text-slate-400">{p.code}</span>
+                          <span className="text-sm font-medium text-slate-800 hover:text-brand-600 hover:underline">{p.title}</span>
+                          <span className="text-xs text-slate-400">{p.revisions.length} revision(s)</span>
+                        </span>
+                        <span className="text-sm text-slate-500">{money(p.cost)}</span>
+                      </Link>
+                    </div>
                     {expanded.has(p.id) && (
                       <div className="pb-1 pl-8">
                         {p.revisions.map((r) => (
@@ -154,7 +161,7 @@ export function ProjectsTree({ customers }: { customers: CustomerNode[] }) {
                                 {r.switchboards.map((sb) => (
                                   <Link
                                     key={sb.id}
-                                    href={`/revisions/${r.id}?sb=${sb.id}&tab=summary`}
+                                    href={`/revisions/${r.id}?sb=${sb.id}&tab=bom`}
                                     className="flex items-center justify-between gap-3 rounded-md px-3 py-1.5 text-sm hover:bg-slate-50"
                                   >
                                     <span>
@@ -182,7 +189,8 @@ export function ProjectsTree({ customers }: { customers: CustomerNode[] }) {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

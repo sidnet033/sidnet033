@@ -5,18 +5,16 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { RevisionControls } from "@/components/revision-controls";
 import { ProjectDetailTab } from "@/components/project-detail-tab";
-import { SwitchboardSummaryView } from "@/components/switchboard-summary-view";
 import { BomBuilder } from "@/components/bom-builder";
 import { GaCanvas } from "@/components/ga-canvas";
 import { CostingMatrix } from "@/components/costing-matrix";
 import type { RevisionContext } from "@/lib/revision-context";
 import type { ItemMaster } from "@/types/database";
 
-export type Tab = "detail" | "summary" | "bom" | "ga" | "costing";
+export type Tab = "detail" | "bom" | "ga" | "costing";
 
 const TABS: { id: Tab; label: string; needsSwitchboard: boolean }[] = [
   { id: "detail", label: "Project Detail", needsSwitchboard: false },
-  { id: "summary", label: "Summary", needsSwitchboard: true },
   { id: "bom", label: "BOM Builder", needsSwitchboard: true },
   { id: "ga", label: "GA Builder", needsSwitchboard: true },
   { id: "costing", label: "Costing Summary", needsSwitchboard: false },
@@ -43,7 +41,7 @@ export function RevisionWorkspace({
   const [selectedSwitchboardId, setSelectedSwitchboardId] = useState<string | null>(initialSwitchboard);
   const [archived, setArchived] = useState(ctx.revision.archived);
 
-  const { revision, project, customer, siblingRevisions, switchboards } = ctx;
+  const { revision, project, customer, createdByName, consultantName, salesExecName, siblingRevisions, switchboards } = ctx;
 
   function openSwitchboard(switchboardId: string, tab: Tab = "bom") {
     setSelectedSwitchboardId(switchboardId);
@@ -119,6 +117,11 @@ export function RevisionWorkspace({
         {activeTab === "detail" && (
           <ProjectDetailTab
             project={project}
+            revision={revision}
+            customer={customer}
+            createdByName={createdByName}
+            consultantName={consultantName}
+            salesExecName={salesExecName}
             switchboards={switchboards}
             currentUserId={currentUserId}
             isAdmin={isAdmin}
@@ -126,17 +129,6 @@ export function RevisionWorkspace({
             revisionArchived={archived}
             onOpenSwitchboard={openSwitchboard}
             onSwitchboardDeleted={handleSwitchboardDeleted}
-          />
-        )}
-
-        {activeTab === "summary" && selectedSwitchboardId && (
-          <SwitchboardSummaryView
-            key={selectedSwitchboardId}
-            switchboardId={selectedSwitchboardId}
-            currentUserId={currentUserId}
-            revisionArchived={archived}
-            onOpenBom={() => setActiveTab("bom")}
-            onOpenGa={() => setActiveTab("ga")}
           />
         )}
 

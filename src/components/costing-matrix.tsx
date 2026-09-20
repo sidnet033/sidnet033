@@ -47,8 +47,11 @@ export function CostingMatrix({
     await supabase.from("revisions").update({ [field]: value }).eq("id", revision.id);
   }
 
-  const totalMfg = columns.reduce((s, c) => s + c.breakdown.mfgTotal, 0);
-  const totalTender = columns.reduce((s, c) => s + c.breakdown.mfgTotal * (1 + c.switchboard.profit_pct / 100), 0);
+  const totalMfg = columns.reduce((s, c) => s + c.breakdown.mfgTotal * c.switchboard.qty, 0);
+  const totalTender = columns.reduce(
+    (s, c) => s + c.breakdown.mfgTotal * c.switchboard.qty * (1 + c.switchboard.profit_pct / 100),
+    0
+  );
   const avgProfitPct = columns.length > 0 ? columns.reduce((s, c) => s + c.switchboard.profit_pct, 0) / columns.length : 0;
   const totalLogistics = freightAmount + installAmount + commissioningAmount;
   const finalPrice = totalTender + totalLogistics;
@@ -82,6 +85,7 @@ export function CostingMatrix({
               {columns.map((c) => (
                 <th key={c.switchboard.id} className="px-3 py-2 text-right">
                   {c.switchboard.tag}
+                  {c.switchboard.qty > 1 && <span className="ml-1 font-normal normal-case text-slate-400">× {c.switchboard.qty}</span>}
                   {c.specSummary && <div className="mt-0.5 font-normal normal-case text-slate-400">{c.specSummary}</div>}
                 </th>
               ))}
@@ -94,13 +98,18 @@ export function CostingMatrix({
                 Direct Manufacturing Cost Breakdown
               </td>
             </tr>
-            <CostRow label="Electrical" values={columns.map((c) => c.breakdown.electrical)} rowLabel={rowLabel} />
-            <CostRow label="Busbars" values={columns.map((c) => c.breakdown.busbars)} rowLabel={rowLabel} />
-            <CostRow label="Enclosure" values={columns.map((c) => c.breakdown.enclosure)} rowLabel={rowLabel} />
-            <CostRow label="Wiring" values={columns.map((c) => c.breakdown.wiringAmt)} rowLabel={rowLabel} />
-            <CostRow label="Assembly" values={columns.map((c) => c.breakdown.assemblyAmt)} rowLabel={rowLabel} />
-            <CostRow label="Testing" values={columns.map((c) => c.breakdown.testingAmt)} rowLabel={rowLabel} />
-            <CostRow label="Total MFG Cost" values={columns.map((c) => c.breakdown.mfgTotal)} bold rowLabel={rowLabel} />
+            <CostRow label="Electrical" values={columns.map((c) => c.breakdown.electrical * c.switchboard.qty)} rowLabel={rowLabel} />
+            <CostRow label="Busbars" values={columns.map((c) => c.breakdown.busbars * c.switchboard.qty)} rowLabel={rowLabel} />
+            <CostRow label="Enclosure" values={columns.map((c) => c.breakdown.enclosure * c.switchboard.qty)} rowLabel={rowLabel} />
+            <CostRow label="Wiring" values={columns.map((c) => c.breakdown.wiringAmt * c.switchboard.qty)} rowLabel={rowLabel} />
+            <CostRow label="Assembly" values={columns.map((c) => c.breakdown.assemblyAmt * c.switchboard.qty)} rowLabel={rowLabel} />
+            <CostRow label="Testing" values={columns.map((c) => c.breakdown.testingAmt * c.switchboard.qty)} rowLabel={rowLabel} />
+            <CostRow
+              label="Total MFG Cost"
+              values={columns.map((c) => c.breakdown.mfgTotal * c.switchboard.qty)}
+              bold
+              rowLabel={rowLabel}
+            />
 
             <tr className="border-t border-slate-200 bg-slate-50/50">
               <td colSpan={columns.length + 2} className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
@@ -125,14 +134,14 @@ export function CostingMatrix({
             </tr>
             <CostRow
               label="Absolute Profit"
-              values={columns.map((c) => c.breakdown.mfgTotal * (c.switchboard.profit_pct / 100))}
+              values={columns.map((c) => c.breakdown.mfgTotal * c.switchboard.qty * (c.switchboard.profit_pct / 100))}
               rowLabel={rowLabel}
             />
             <tr className="border-t border-slate-200 bg-brand-50/40 font-semibold">
               {rowLabel("Tender Price", true)}
               {columns.map((c) => (
                 <td key={c.switchboard.id} className="px-3 py-1.5 text-right tabular-nums text-brand-700">
-                  {money(c.breakdown.mfgTotal * (1 + c.switchboard.profit_pct / 100))}
+                  {money(c.breakdown.mfgTotal * c.switchboard.qty * (1 + c.switchboard.profit_pct / 100))}
                 </td>
               ))}
               <td className="px-3 py-1.5 text-right tabular-nums text-brand-700">{money(totalTender)}</td>

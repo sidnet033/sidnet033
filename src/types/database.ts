@@ -78,6 +78,8 @@ export type Customer = {
   created_at: string;
 };
 
+export type ProjectStage = "new" | "wip" | "quoted" | "finalization" | "won" | "lost" | "hold" | "budgetary";
+
 export type Project = {
   id: string;
   customer_id: string | null;
@@ -86,7 +88,17 @@ export type Project = {
   notes: string | null;
   created_by: string | null;
   created_at: string;
+  crm_enquiry_number: string | null;
+  crm_enquiry_date: string | null;
+  site_country: string | null;
+  consultant_id: string | null;
+  sales_exec_id: string | null;
+  stage: ProjectStage;
 };
+
+export type Consultant = { id: string; name: string; created_by: string | null; created_at: string };
+export type SalesExec = { id: string; name: string; created_by: string | null; created_at: string };
+export type SwitchboardType = { id: string; name: string; created_by: string | null; created_at: string };
 
 // A revision is a snapshot of a project (Rev 01, Rev 02, ...) — its only
 // per-revision state is "archived" (read-only for everyone). Holds one or
@@ -120,12 +132,16 @@ export type Switchboard = {
   revision_id: string;
   tag: string;
   title: string | null;
+  description: string | null;
+  switchboard_type_id: string | null;
   form_of_separation: string | null;
   plinth_height_mm: number | null;
   panel_height_mm: number | null;
   amps: number | null;
   ka: number | null;
+  ip_rating: string | null;
   poles: number | null;
+  qty: number;
   sort_order: number;
   labor_wiring_pct: number;
   labor_assembly_pct: number;
@@ -133,6 +149,8 @@ export type Switchboard = {
   profit_pct: number;
   locked_by: string | null;
   locked_at: string | null;
+  updated_at: string;
+  updated_by: string | null;
   created_at: string;
 };
 

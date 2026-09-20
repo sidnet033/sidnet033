@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { CostBreakdown } from "@/lib/switchboard-cost";
 import type { Switchboard } from "@/types/database";
 
@@ -8,9 +9,13 @@ function money(n: number) {
 export function CostBreakdownCard({
   breakdown,
   switchboard,
+  readOnly = true,
+  onLaborChange,
 }: {
   breakdown: CostBreakdown;
   switchboard: Pick<Switchboard, "labor_wiring_pct" | "labor_assembly_pct" | "labor_testing_pct">;
+  readOnly?: boolean;
+  onLaborChange?: (field: "labor_wiring_pct" | "labor_assembly_pct" | "labor_testing_pct", value: number) => void;
 }) {
   const rmShare = breakdown.mfgTotal > 0 ? (breakdown.rmTotal / breakdown.mfgTotal) * 100 : 0;
   const valueAddShare = 100 - rmShare;
@@ -28,9 +33,37 @@ export function CostBreakdownCard({
         </div>
         <div className="space-y-1.5">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Labor (% of RM)</p>
-          <Row label={`Wiring ${switchboard.labor_wiring_pct}%`} value={money(breakdown.wiringAmt)} />
-          <Row label={`Assembly ${switchboard.labor_assembly_pct}%`} value={money(breakdown.assemblyAmt)} />
-          <Row label={`Testing ${switchboard.labor_testing_pct}%`} value={money(breakdown.testingAmt)} />
+          {onLaborChange ? (
+            <>
+              <PctRow
+                label="Wiring"
+                pct={switchboard.labor_wiring_pct}
+                amount={breakdown.wiringAmt}
+                readOnly={readOnly}
+                onChange={(v) => onLaborChange("labor_wiring_pct", v)}
+              />
+              <PctRow
+                label="Assembly"
+                pct={switchboard.labor_assembly_pct}
+                amount={breakdown.assemblyAmt}
+                readOnly={readOnly}
+                onChange={(v) => onLaborChange("labor_assembly_pct", v)}
+              />
+              <PctRow
+                label="Testing"
+                pct={switchboard.labor_testing_pct}
+                amount={breakdown.testingAmt}
+                readOnly={readOnly}
+                onChange={(v) => onLaborChange("labor_testing_pct", v)}
+              />
+            </>
+          ) : (
+            <>
+              <Row label={`Wiring ${switchboard.labor_wiring_pct}%`} value={money(breakdown.wiringAmt)} />
+              <Row label={`Assembly ${switchboard.labor_assembly_pct}%`} value={money(breakdown.assemblyAmt)} />
+              <Row label={`Testing ${switchboard.labor_testing_pct}%`} value={money(breakdown.testingAmt)} />
+            </>
+          )}
           <Row label="Total Adders" value={money(breakdown.laborTotal)} bold />
         </div>
         <div className="flex flex-col justify-between rounded-lg bg-slate-50 p-3">
@@ -53,6 +86,41 @@ function Row({ label, value, bold = false }: { label: string; value: string; bol
     <div className={`flex items-center justify-between text-xs ${bold ? "border-t border-slate-100 pt-1.5 font-semibold text-slate-800" : "text-slate-600"}`}>
       <span>{label}</span>
       <span className="tabular-nums">{value}</span>
+    </div>
+  );
+}
+
+function PctRow({
+  label,
+  pct,
+  amount,
+  readOnly,
+  onChange,
+}: {
+  label: string;
+  pct: number;
+  amount: number;
+  readOnly: boolean;
+  onChange: (v: number) => void;
+}) {
+  const [local, setLocal] = useState(String(pct));
+
+  return (
+    <div className="flex items-center justify-between text-xs text-slate-600">
+      <span className="flex items-center gap-1">
+        {label}
+        <input
+          type="number"
+          step="0.1"
+          disabled={readOnly}
+          value={local}
+          onChange={(e) => setLocal(e.target.value)}
+          onBlur={() => onChange(Number(local) || 0)}
+          className="w-14 rounded border border-slate-200 px-1 py-0.5 text-right text-xs disabled:border-transparent disabled:bg-transparent"
+        />
+        %
+      </span>
+      <span className="tabular-nums">{money(amount)}</span>
     </div>
   );
 }
