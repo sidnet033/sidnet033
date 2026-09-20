@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 import { formatMoneyDual } from "@/lib/money";
@@ -13,6 +14,30 @@ export type SwitchboardColumn = {
   specSummary: string;
   breakdown: CostBreakdown;
 };
+
+type Logistics = {
+  freightAmount: number;
+  freightDesc: string;
+  installAmount: number;
+  installDesc: string;
+  commissioningAmount: number;
+  commissioningDesc: string;
+};
+
+function logisticsOf(revision: Revision): Logistics {
+  return {
+    freightAmount: revision.freight_amount,
+    freightDesc: revision.freight_description ?? "",
+    installAmount: revision.installation_amount,
+    installDesc: revision.installation_description ?? "",
+    commissioningAmount: revision.commissioning_amount,
+    commissioningDesc: revision.commissioning_description ?? "",
+  };
+}
+
+function profitPctSnapshot(cols: SwitchboardColumn[]): Record<string, number> {
+  return Object.fromEntries(cols.map((c) => [c.switchboard.id, c.switchboard.profit_pct]));
+}
 
 export function CostingMatrix({
   revision,
@@ -28,50 +53,87 @@ export function CostingMatrix({
   archived: boolean;
 }) {
   const supabase = useMemo(() => createClient(), []);
+  const router = useRouter();
   const money = (n: number) => formatMoneyDual(n, project.currency, project.exchange_rate);
 
   // Resync local state whenever fresh props arrive (e.g. after a
-  // router.refresh() triggered by saving changes in BOM Builder) — this
-  // is what keeps this page's cost breakdown in sync with BOM edits.
+  // router.refresh() triggered by saving changes in BOM Builder, or by
+  // this page's own Save below) — this is what keeps this page's cost
+  // breakdown and last-saved snapshots in sync with the DB.
   const [prevInitialColumns, setPrevInitialColumns] = useState(initialColumns);
   const [columns, setColumns] = useState(initialColumns);
+  const [savedProfitPct, setSavedProfitPct] = useState(() => profitPctSnapshot(initialColumns));
+  const [draftProfitPct, setDraftProfitPct] = useState(() => profitPctSnapshot(initialColumns));
   if (initialColumns !== prevInitialColumns) {
     setPrevInitialColumns(initialColumns);
     setColumns(initialColumns);
+    setSavedProfitPct(profitPctSnapshot(initialColumns));
+    setDraftProfitPct(profitPctSnapshot(initialColumns));
   }
 
   const [prevRevision, setPrevRevision] = useState(revision);
-  const [freightAmount, setFreightAmount] = useState(revision.freight_amount);
-  const [freightDesc, setFreightDesc] = useState(revision.freight_description ?? "");
-  const [installAmount, setInstallAmount] = useState(revision.installation_amount);
-  const [installDesc, setInstallDesc] = useState(revision.installation_description ?? "");
-  const [commissioningAmount, setCommissioningAmount] = useState(revision.commissioning_amount);
-  const [commissioningDesc, setCommissioningDesc] = useState(revision.commissioning_description ?? "");
+  const [savedLogistics, setSavedLogistics] = useState(() => logisticsOf(revision));
+  const [draftLogistics, setDraftLogistics] = useState(() => logisticsOf(revision));
   if (revision !== prevRevision) {
     setPrevRevision(revision);
-    setFreightAmount(revision.freight_amount);
-    setFreightDesc(revision.freight_description ?? "");
-    setInstallAmount(revision.installation_amount);
-    setInstallDesc(revision.installation_description ?? "");
-    setCommissioningAmount(revision.commissioning_amount);
-    setCommissioningDesc(revision.commissioning_description ?? "");
+    setSavedLogistics(logisticsOf(revision));
+    setDraftLogistics(logisticsOf(revision));
   }
 
-  async function updateProfitPct(switchboardId: string, pct: number) {
-    setColumns(columns.map((c) => (c.switchboard.id === switchboardId ? { ...c, switchboard: { ...c.switchboard, profit_pct: pct } } : c)));
-    await supabase.from("switchboards").update({ profit_pct: pct }).eq("id", switchboardId);
+  const [saving, setSaving] = useState(false);
+
+  const dirty =
+    JSON.stringify(draftProfitPct) !== JSON.stringify(savedProfitPct) || JSON.stringify(draftLogistics) !== JSON.stringify(savedLogistics);
+
+  function updateProfitPct(switchboardId: string, pct: number) {
+    setDraftProfitPct((prev) => ({ ...prev, [switchboardId]: pct }));
   }
 
-  async function saveLogistics(field: keyof Revision, value: number | string | null) {
-    await supabase.from("revisions").update({ [field]: value }).eq("id", revision.id);
+  function updateLogistics<K extends keyof Logistics>(field: K, value: Logistics[K]) {
+    setDraftLogistics((prev) => ({ ...prev, [field]: value }));
   }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      for (const c of columns) {
+        const next = draftProfitPct[c.switchboard.id];
+        if (next !== undefined && next !== savedProfitPct[c.switchboard.id]) {
+          const { error } = await supabase.from("switchboards").update({ profit_pct: next }).eq("id", c.switchboard.id);
+          if (error) throw error;
+        }
+      }
+      if (JSON.stringify(draftLogistics) !== JSON.stringify(savedLogistics)) {
+        const { error } = await supabase
+          .from("revisions")
+          .update({
+            freight_amount: draftLogistics.freightAmount,
+            freight_description: draftLogistics.freightDesc || null,
+            installation_amount: draftLogistics.installAmount,
+            installation_description: draftLogistics.installDesc || null,
+            commissioning_amount: draftLogistics.commissioningAmount,
+            commissioning_description: draftLogistics.commissioningDesc || null,
+          })
+          .eq("id", revision.id);
+        if (error) throw error;
+      }
+      setColumns((prev) => prev.map((c) => ({ ...c, switchboard: { ...c.switchboard, profit_pct: draftProfitPct[c.switchboard.id] ?? c.switchboard.profit_pct } })));
+      setSavedProfitPct(draftProfitPct);
+      setSavedLogistics(draftLogistics);
+      router.refresh();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not save changes.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const pctFor = (switchboardId: string) => draftProfitPct[switchboardId] ?? 0;
+  const { freightAmount, freightDesc, installAmount, installDesc, commissioningAmount, commissioningDesc } = draftLogistics;
 
   const totalMfg = columns.reduce((s, c) => s + c.breakdown.mfgTotal * c.switchboard.qty, 0);
-  const totalTender = columns.reduce(
-    (s, c) => s + c.breakdown.mfgTotal * c.switchboard.qty * (1 + c.switchboard.profit_pct / 100),
-    0
-  );
-  const avgProfitPct = columns.length > 0 ? columns.reduce((s, c) => s + c.switchboard.profit_pct, 0) / columns.length : 0;
+  const totalTender = columns.reduce((s, c) => s + c.breakdown.mfgTotal * c.switchboard.qty * (1 + pctFor(c.switchboard.id) / 100), 0);
+  const avgProfitPct = columns.length > 0 ? columns.reduce((s, c) => s + pctFor(c.switchboard.id), 0) / columns.length : 0;
   const totalLogistics = freightAmount + installAmount + commissioningAmount;
   const finalPrice = totalTender + totalLogistics;
 
@@ -93,13 +155,27 @@ export function CostingMatrix({
             {customer ? ` · Client: ${customer.name}` : ""}
           </p>
         </div>
-        <button
-          disabled
-          title="Export coming soon"
-          className="flex items-center gap-1 rounded bg-surface-container-low px-space-md py-space-sm font-label-md text-label-md text-on-surface-variant opacity-60"
-        >
-          <Icon name="file_save" size={16} /> Export Costing (XLSX/PDF)
-        </button>
+        <div className="flex items-center gap-space-sm">
+          {!archived && dirty && <span className="font-body-sm text-body-sm text-amber-600">Unsaved changes</span>}
+          {!archived && !dirty && <span className="font-body-sm text-body-sm text-tertiary">Saved</span>}
+          <button
+            disabled
+            title="Export coming soon"
+            className="flex items-center gap-1 rounded bg-surface-container-low px-space-md py-space-sm font-label-md text-label-md text-on-surface-variant opacity-60"
+          >
+            <Icon name="file_save" size={16} /> Export Costing (XLSX/PDF)
+          </button>
+          {!archived && (
+            <button
+              onClick={handleSave}
+              disabled={!dirty || saving}
+              className="flex items-center gap-1 rounded bg-primary px-space-lg py-space-sm font-label-md text-label-md text-on-primary shadow-sm transition-all hover:bg-primary-container disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Icon name="save" size={16} />
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-space-md sm:grid-cols-4">
@@ -157,7 +233,7 @@ export function CostingMatrix({
                     type="number"
                     step="0.5"
                     disabled={archived}
-                    value={c.switchboard.profit_pct}
+                    value={pctFor(c.switchboard.id)}
                     onChange={(e) => updateProfitPct(c.switchboard.id, Number(e.target.value) || 0)}
                     className="w-16 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
                   />
@@ -167,7 +243,7 @@ export function CostingMatrix({
             </tr>
             <CostRow
               label="Absolute Profit"
-              values={columns.map((c) => c.breakdown.mfgTotal * c.switchboard.qty * (c.switchboard.profit_pct / 100))}
+              values={columns.map((c) => c.breakdown.mfgTotal * c.switchboard.qty * (pctFor(c.switchboard.id) / 100))}
               rowLabel={rowLabel}
               money={money}
             />
@@ -175,7 +251,7 @@ export function CostingMatrix({
               {rowLabel("Tender Price", true)}
               {columns.map((c) => (
                 <td key={c.switchboard.id} className="px-3 py-1.5 text-right tabular-nums text-primary">
-                  {money(c.breakdown.mfgTotal * c.switchboard.qty * (1 + c.switchboard.profit_pct / 100))}
+                  {money(c.breakdown.mfgTotal * c.switchboard.qty * (1 + pctFor(c.switchboard.id) / 100))}
                 </td>
               ))}
               <td className="px-3 py-1.5 text-right tabular-nums text-primary">{money(totalTender)}</td>
@@ -192,14 +268,8 @@ export function CostingMatrix({
               description={freightDesc}
               readOnly={archived}
               span={columns.length}
-              onAmountChange={(v) => {
-                setFreightAmount(v);
-                saveLogistics("freight_amount", v);
-              }}
-              onDescChange={(v) => {
-                setFreightDesc(v);
-                saveLogistics("freight_description", v || null);
-              }}
+              onAmountChange={(v) => updateLogistics("freightAmount", v)}
+              onDescChange={(v) => updateLogistics("freightDesc", v)}
             />
             <LogisticsRow
               label="Installation"
@@ -207,14 +277,8 @@ export function CostingMatrix({
               description={installDesc}
               readOnly={archived}
               span={columns.length}
-              onAmountChange={(v) => {
-                setInstallAmount(v);
-                saveLogistics("installation_amount", v);
-              }}
-              onDescChange={(v) => {
-                setInstallDesc(v);
-                saveLogistics("installation_description", v || null);
-              }}
+              onAmountChange={(v) => updateLogistics("installAmount", v)}
+              onDescChange={(v) => updateLogistics("installDesc", v)}
             />
             <LogisticsRow
               label="Commissioning"
@@ -222,14 +286,8 @@ export function CostingMatrix({
               description={commissioningDesc}
               readOnly={archived}
               span={columns.length}
-              onAmountChange={(v) => {
-                setCommissioningAmount(v);
-                saveLogistics("commissioning_amount", v);
-              }}
-              onDescChange={(v) => {
-                setCommissioningDesc(v);
-                saveLogistics("commissioning_description", v || null);
-              }}
+              onAmountChange={(v) => updateLogistics("commissioningAmount", v)}
+              onDescChange={(v) => updateLogistics("commissioningDesc", v)}
             />
             <tr className="border-t border-surface-container-high bg-surface-container-low font-semibold">
               {rowLabel("Total Logistics", true)}
@@ -301,7 +359,7 @@ function LogisticsRow({
           disabled={readOnly}
           value={description}
           onChange={(e) => onDescChange(e.target.value)}
-          placeholder="Description..."
+          placeholder="Remarks..."
           className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-secondary focus:border-surface-container-high disabled:bg-transparent"
         />
       </td>
