@@ -25,8 +25,47 @@ function feederCost(lines: FeederItemWithDetails[]) {
   return lines.reduce((s, l) => s + l.qty * netRate(l.item), 0);
 }
 
+// FDR-{IG incomer / OG outgoing / ...}-{rated amps}-{make of the first
+// device added}-{incrementing number, unique among feeders sharing the
+// same type/amps/make prefix}. Regenerated live as those inputs change,
+// so the code field is always a read-only reflection of them.
+function typeCode(category: string): string {
+  switch (category) {
+    case "Incomer":
+      return "IG";
+    case "Outgoing":
+      return "OG";
+    case "Sub-Incomer":
+      return "SI";
+    case "Bus Coupler":
+      return "BC";
+    case "APFC Capacitor Bank":
+      return "PFC";
+    default:
+      return "GEN";
+  }
+}
+
+function makeCode(make: string | null): string {
+  return make ? make.trim().split(/\s+/)[0].toUpperCase() : "";
+}
+
+function computeTag(category: string, ratedCurrent: string, firstMake: string | null, feeders: Feeder[], excludeId: string | null): string {
+  if (!category) return "FDR-—";
+  const tCode = typeCode(category);
+  if (!ratedCurrent) return `FDR-${tCode}-—`;
+  const mCode = makeCode(firstMake);
+  if (!mCode) return `FDR-${tCode}-${ratedCurrent}-—`;
+  const prefix = `FDR-${tCode}-${ratedCurrent}-${mCode}-`;
+  const seqs = feeders
+    .filter((f) => f.id !== excludeId && f.tag?.startsWith(prefix))
+    .map((f) => Number(f.tag!.slice(prefix.length)))
+    .filter((n) => !Number.isNaN(n));
+  const seq = seqs.length ? Math.max(...seqs) + 1 : 1;
+  return `${prefix}${seq}`;
+}
+
 type FeederFormState = {
-  tag: string;
   name: string;
   rated_current: string;
   category: string;
@@ -37,7 +76,6 @@ type FeederFormState = {
 
 function formOf(f: Feeder): FeederFormState {
   return {
-    tag: f.tag ?? "",
     name: f.name,
     rated_current: f.rated_current != null ? String(f.rated_current) : "",
     category: f.category ?? "",
@@ -74,11 +112,11 @@ export function FeederMasterWorkspace({
   const [itemSearch, setItemSearch] = useState("");
   const [selectedItem, setSelectedItem] = useState<ItemMaster | null>(null);
   const [categoryChip, setCategoryChip] = useState<string | null>(null);
-  const [addQty, setAddQty] = useState("1");
 
   const selectedFeeder = feeders.find((f) => f.id === selectedId) ?? null;
   const selectedLines = selectedId ? linesByFeeder[selectedId] ?? [] : [];
   const dirty = form && savedForm && JSON.stringify(form) !== JSON.stringify(savedForm);
+  const displayedTag = form ? computeTag(form.category, form.rated_current, selectedLines[0]?.item.make ?? null, feeders, selectedId) : "";
 
   const typeOptions = Array.from(new Set(feeders.map((f) => f.category).filter((c): c is string => !!c))).sort();
   const filteredFeeders = typeFilter === "ALL" ? feeders : feeders.filter((f) => f.category === typeFilter);
@@ -204,7 +242,7 @@ export function FeederMasterWorkspace({
     if (!selectedFeeder || !form) return;
     setSaving(true);
     const patch = {
-      tag: form.tag || null,
+      tag: displayedTag,
       name: form.name,
       rated_current: form.rated_current ? Number(form.rated_current) : null,
       category: form.category || null,
@@ -225,11 +263,10 @@ export function FeederMasterWorkspace({
 
   async function addSelectedItem() {
     if (!selectedId || !selectedItem) return;
-    const qty = Number(addQty) || 1;
     const sortOrder = (linesByFeeder[selectedId] ?? []).length;
     const { data, error } = await supabase
       .from("feeder_items")
-      .insert({ feeder_id: selectedId, item_id: selectedItem.id, qty, sort_order: sortOrder })
+      .insert({ feeder_id: selectedId, item_id: selectedItem.id, qty: 1, sort_order: sortOrder })
       .select("*")
       .single();
     if (error) {
@@ -242,7 +279,6 @@ export function FeederMasterWorkspace({
     }));
     setItemSearch("");
     setSelectedItem(null);
-    setAddQty("1");
   }
 
   async function updateLineQty(lineId: string, qty: number) {
@@ -275,7 +311,7 @@ export function FeederMasterWorkspace({
   }
 
   return (
-    <div className="w-full gap-space-lg px-gutter-lg py-gutter">
+    <div className="w-full bg-surface px-gutter-lg py-gutter">
       <div className="flex flex-col gap-space-lg pb-space-2xl">
         {/* Top context & actions bar */}
         <div className="flex flex-col justify-between gap-space-md md:flex-row md:items-center">
@@ -294,14 +330,14 @@ export function FeederMasterWorkspace({
               <button
                 disabled
                 title="Import coming soon"
-                className="flex items-center gap-space-xs rounded bg-surface-container-lowest px-space-md py-space-sm font-body-md text-body-md text-on-surface opacity-60 shadow-sm"
+                className="flex cursor-not-allowed items-center gap-space-xs rounded bg-surface-container-lowest px-space-md py-space-sm font-body-md text-body-md text-on-surface shadow-sm"
               >
                 <Icon name="input" size={18} /> Import Feeder XLS
               </button>
               <button
                 disabled
                 title="Export coming soon"
-                className="flex items-center gap-space-xs rounded bg-surface-container-lowest px-space-md py-space-sm font-body-md text-body-md text-on-surface opacity-60 shadow-sm"
+                className="flex cursor-not-allowed items-center gap-space-xs rounded bg-surface-container-lowest px-space-md py-space-sm font-body-md text-body-md text-on-surface shadow-sm"
               >
                 <Icon name="file_download" size={18} /> Export Feeder Master
               </button>
@@ -399,7 +435,7 @@ export function FeederMasterWorkspace({
                           <button
                             disabled
                             title="Open a switchboard's BOM Builder to add this feeder"
-                            className="flex items-center gap-1 rounded bg-primary px-space-sm py-space-xs font-label-md text-label-md font-medium text-on-primary opacity-60 shadow-sm"
+                            className="flex cursor-not-allowed items-center gap-1 rounded bg-primary px-space-sm py-space-xs font-label-md text-label-md font-medium text-on-primary opacity-60 shadow-sm"
                           >
                             <Icon name="add_box" size={14} /> Use in BOM
                           </button>
@@ -463,150 +499,152 @@ export function FeederMasterWorkspace({
           </div>
         </section>
 
-        {/* Feeder Attributes */}
         {isAdmin && selectedFeeder && form && (
-          <section className="flex flex-col gap-space-md rounded bg-surface-container-lowest p-space-lg shadow-sm">
-            <div className="flex flex-col justify-between gap-space-sm border-b border-surface-container-high pb-space-sm md:flex-row md:items-center">
-              <div className="flex items-center gap-space-sm">
-                <div className="flex h-7 w-7 items-center justify-center rounded bg-primary/10 text-primary">
-                  <Icon name="tune" size={18} />
+          <>
+            {/* Section 1: Feeder Attributes */}
+            <section className="flex flex-col gap-space-md rounded bg-surface-container-lowest p-space-lg shadow-sm">
+              <div className="flex flex-col justify-between gap-space-sm border-b border-surface-container-high pb-space-sm md:flex-row md:items-center">
+                <div className="flex items-center gap-space-sm">
+                  <div className="flex h-7 w-7 items-center justify-center rounded bg-primary/10 text-primary">
+                    <Icon name="tune" size={18} />
+                  </div>
+                  <div className="flex flex-col">
+                    <h2 className="font-headline-sm text-headline-sm leading-tight text-on-surface">Feeder Attributes</h2>
+                    <span className="font-label-sm text-label-sm text-on-surface-variant">Define electrical parameters and switchgear specifications</span>
+                  </div>
                 </div>
-                <div className="flex flex-col">
-                  <h2 className="font-headline-sm text-headline-sm leading-tight text-on-surface">Feeder Attributes</h2>
-                  <span className="font-label-sm text-label-sm text-on-surface-variant">Define electrical parameters and switchgear specifications</span>
+                <div className="flex items-center gap-space-sm">
+                  <button
+                    onClick={resetForm}
+                    disabled={!dirty}
+                    type="button"
+                    className="rounded border border-outline-variant bg-surface-container-lowest px-space-md py-space-xs font-body-sm text-body-sm font-medium text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container hover:text-on-surface disabled:opacity-50"
+                  >
+                    Reset Form
+                  </button>
+                  <button
+                    onClick={saveFeeder}
+                    disabled={saving || !dirty}
+                    type="button"
+                    className="flex items-center gap-space-xs rounded bg-primary px-space-md py-space-xs font-body-sm text-body-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-container disabled:opacity-50"
+                  >
+                    <Icon name="save" size={16} />
+                    {saving ? "Saving..." : "Save Feeder to Master"}
+                  </button>
                 </div>
               </div>
-              <div className="flex items-center gap-space-sm">
-                <button
-                  onClick={resetForm}
-                  disabled={!dirty}
-                  type="button"
-                  className="rounded border border-outline-variant bg-surface-container-lowest px-space-md py-space-xs font-body-sm text-body-sm font-medium text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container hover:text-on-surface disabled:opacity-50"
-                >
-                  Reset Form
-                </button>
-                <button
-                  onClick={saveFeeder}
-                  disabled={saving || !dirty}
-                  type="button"
-                  className="flex items-center gap-space-xs rounded bg-primary px-space-md py-space-xs font-body-sm text-body-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-container disabled:opacity-50"
-                >
-                  <Icon name="save" size={16} />
-                  {saving ? "Saving..." : "Save Feeder to Master"}
-                </button>
-              </div>
-            </div>
 
-            <div className="grid grid-cols-1 items-start gap-space-lg pt-space-xs md:grid-cols-3">
-              <div className="flex flex-col gap-space-md">
-                <FormField label="Feeder Code">
-                  <input
-                    value={form.tag}
-                    onChange={(e) => updateField("tag", e.target.value)}
-                    placeholder="e.g. FDR-OUT-MCCB-630A"
-                    className="h-9 rounded border border-outline-variant bg-surface-container-lowest px-space-sm font-telemetry-md text-telemetry-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </FormField>
-                <FormField label="Feeder Type">
-                  <div className="relative flex items-center">
-                    <select
-                      value={form.category}
-                      onChange={(e) => updateField("category", e.target.value)}
-                      className="h-9 w-full appearance-none rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-8 font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              <div className="grid grid-cols-1 items-start gap-space-lg pt-space-xs md:grid-cols-3">
+                <div className="flex flex-col gap-space-md">
+                  <FormField label="Feeder Code">
+                    <div
+                      title="Auto-generated from Feeder Type, Rated Current and the first item's make"
+                      className="flex h-9 items-center rounded border border-outline-variant bg-surface-container-low px-space-sm font-telemetry-md text-telemetry-md text-on-surface-variant"
                     >
-                      <option value="">Select type...</option>
-                      {FEEDER_TYPES.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                      {form.category && !FEEDER_TYPES.includes(form.category) && <option value={form.category}>{form.category}</option>}
-                    </select>
-                    <Icon name="expand_more" size={18} className="pointer-events-none absolute right-space-sm text-on-surface-variant" />
-                  </div>
-                </FormField>
-              </div>
-
-              <div className="flex flex-col gap-space-md">
-                <FormField label="Feeder Name">
-                  <input
-                    value={form.name}
-                    onChange={(e) => updateField("name", e.target.value)}
-                    className="h-9 rounded border border-outline-variant bg-surface-container-lowest px-space-sm font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </FormField>
-                <FormField label="Feeder Description">
-                  <textarea
-                    value={form.description}
-                    onChange={(e) => updateField("description", e.target.value)}
-                    rows={3}
-                    placeholder="Engineering specification details..."
-                    className="w-full resize-none rounded border border-outline-variant bg-surface-container-lowest p-space-sm font-body-sm text-body-sm text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </FormField>
-              </div>
-
-              <div className="flex flex-col gap-space-md">
-                <FormField label="Rated Current">
-                  <div className="relative flex items-center">
-                    <input
-                      type="number"
-                      min="0"
-                      value={form.rated_current}
-                      onChange={(e) => updateField("rated_current", e.target.value)}
-                      className="h-9 w-full rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-10 text-right font-telemetry-md text-telemetry-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                    />
-                    <span className="pointer-events-none absolute right-0 top-0 bottom-0 flex items-center rounded-r border-l border-outline-variant bg-surface-container-low px-space-sm font-telemetry-md text-telemetry-md font-bold text-on-surface-variant">
-                      A
-                    </span>
-                  </div>
-                </FormField>
-                <div className="grid grid-cols-2 gap-space-sm">
-                  <FormField label="Pole Config">
-                    <div className="relative flex items-center">
-                      <select
-                        value={form.pole_config}
-                        onChange={(e) => updateField("pole_config", e.target.value)}
-                        className="h-9 w-full appearance-none rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-7 font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                      >
-                        <option value="">—</option>
-                        {POLE_CONFIGS.map((p) => (
-                          <option key={p} value={p}>
-                            {p}
-                          </option>
-                        ))}
-                        {form.pole_config && !POLE_CONFIGS.includes(form.pole_config) && <option value={form.pole_config}>{form.pole_config}</option>}
-                      </select>
-                      <Icon name="expand_more" size={16} className="pointer-events-none absolute right-space-xs text-on-surface-variant" />
+                      {displayedTag}
                     </div>
                   </FormField>
-                  <FormField label="Breaking Capacity">
+                  <FormField label="Feeder Type">
                     <div className="relative flex items-center">
                       <select
-                        value={form.breaking_capacity}
-                        onChange={(e) => updateField("breaking_capacity", e.target.value)}
-                        className="h-9 w-full appearance-none rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-7 font-telemetry-md text-telemetry-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        value={form.category}
+                        onChange={(e) => updateField("category", e.target.value)}
+                        className="h-9 w-full appearance-none rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-8 font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
                       >
-                        <option value="">—</option>
-                        {BREAKING_CAPACITIES.map((b) => (
-                          <option key={b} value={b}>
-                            {b}
+                        <option value="">Select type...</option>
+                        {FEEDER_TYPES.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
                           </option>
                         ))}
-                        {form.breaking_capacity && !BREAKING_CAPACITIES.includes(form.breaking_capacity) && (
-                          <option value={form.breaking_capacity}>{form.breaking_capacity}</option>
-                        )}
+                        {form.category && !FEEDER_TYPES.includes(form.category) && <option value={form.category}>{form.category}</option>}
                       </select>
-                      <Icon name="expand_more" size={16} className="pointer-events-none absolute right-space-xs text-on-surface-variant" />
+                      <Icon name="expand_more" size={18} className="pointer-events-none absolute right-space-sm text-on-surface-variant" />
                     </div>
                   </FormField>
                 </div>
-              </div>
-            </div>
 
-            {/* Add Item + BOM table, one card per mockup */}
-            <section className="-mx-space-lg -mb-space-lg mt-space-sm flex flex-col gap-space-sm overflow-hidden rounded-b bg-surface-container-lowest">
-              <div className="flex flex-col gap-space-sm px-space-lg pt-space-md">
+                <div className="flex flex-col gap-space-md">
+                  <FormField label="Feeder Name">
+                    <input
+                      value={form.name}
+                      onChange={(e) => updateField("name", e.target.value)}
+                      className="h-9 rounded border border-outline-variant bg-surface-container-lowest px-space-sm font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </FormField>
+                  <FormField label="Feeder Description">
+                    <textarea
+                      value={form.description}
+                      onChange={(e) => updateField("description", e.target.value)}
+                      rows={3}
+                      placeholder="Engineering specification details..."
+                      className="w-full resize-none rounded border border-outline-variant bg-surface-container-lowest p-space-sm font-body-sm text-body-sm text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </FormField>
+                </div>
+
+                <div className="flex flex-col gap-space-md">
+                  <FormField label="Rated Current">
+                    <div className="relative flex items-center">
+                      <input
+                        type="number"
+                        min="0"
+                        value={form.rated_current}
+                        onChange={(e) => updateField("rated_current", e.target.value)}
+                        className="h-9 w-full rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-10 text-right font-telemetry-md text-telemetry-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                      <span className="pointer-events-none absolute right-0 top-0 bottom-0 flex items-center rounded-r border-l border-outline-variant bg-surface-container-low px-space-sm font-telemetry-md text-telemetry-md font-bold text-on-surface-variant">
+                        A
+                      </span>
+                    </div>
+                  </FormField>
+                  <div className="grid grid-cols-2 gap-space-sm">
+                    <FormField label="Pole Config">
+                      <div className="relative flex items-center">
+                        <select
+                          value={form.pole_config}
+                          onChange={(e) => updateField("pole_config", e.target.value)}
+                          className="h-9 w-full appearance-none rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-7 font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                          <option value="">—</option>
+                          {POLE_CONFIGS.map((p) => (
+                            <option key={p} value={p}>
+                              {p}
+                            </option>
+                          ))}
+                          {form.pole_config && !POLE_CONFIGS.includes(form.pole_config) && <option value={form.pole_config}>{form.pole_config}</option>}
+                        </select>
+                        <Icon name="expand_more" size={16} className="pointer-events-none absolute right-space-xs text-on-surface-variant" />
+                      </div>
+                    </FormField>
+                    <FormField label="Breaking Capacity">
+                      <div className="relative flex items-center">
+                        <select
+                          value={form.breaking_capacity}
+                          onChange={(e) => updateField("breaking_capacity", e.target.value)}
+                          className="h-9 w-full appearance-none rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-7 font-telemetry-md text-telemetry-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                          <option value="">—</option>
+                          {BREAKING_CAPACITIES.map((b) => (
+                            <option key={b} value={b}>
+                              {b}
+                            </option>
+                          ))}
+                          {form.breaking_capacity && !BREAKING_CAPACITIES.includes(form.breaking_capacity) && (
+                            <option value={form.breaking_capacity}>{form.breaking_capacity}</option>
+                          )}
+                        </select>
+                        <Icon name="expand_more" size={16} className="pointer-events-none absolute right-space-xs text-on-surface-variant" />
+                      </div>
+                    </FormField>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Section 2: Add Item + configured feeder BOM table */}
+            <section className="flex flex-col gap-space-sm overflow-hidden rounded bg-surface-container-lowest shadow-sm">
+              <div className="flex flex-col gap-space-sm p-space-md pb-0">
                 <div className="flex flex-col justify-between gap-space-sm md:flex-row md:items-center">
                   <div className="flex items-center gap-space-sm">
                     <div className="flex h-7 w-7 items-center justify-center rounded bg-primary/10 text-primary">
@@ -616,6 +654,8 @@ export function FeederMasterWorkspace({
                   </div>
                   <a
                     href="/item-master"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="flex items-center gap-space-xs self-start rounded bg-surface-container-low px-space-sm py-space-xs font-body-sm text-body-sm font-medium text-on-surface shadow-sm transition-colors hover:bg-surface-container md:self-auto"
                   >
                     <Icon name="open_in_new" size={16} /> Browse Item Master Catalog
@@ -655,24 +695,14 @@ export function FeederMasterWorkspace({
                       </div>
                     )}
                   </div>
-                  <div className="flex shrink-0 items-center gap-space-xs">
-                    <input
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      value={addQty}
-                      onChange={(e) => setAddQty(e.target.value)}
-                      className="h-9 w-16 rounded border border-outline-variant px-space-sm text-right text-body-sm"
-                    />
-                    <button
-                      type="button"
-                      onClick={addSelectedItem}
-                      disabled={!selectedItem}
-                      className="flex h-9 items-center gap-space-xs rounded bg-primary px-space-md font-body-sm text-body-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-container disabled:opacity-50"
-                    >
-                      <Icon name="add" size={16} /> Add to Feeder
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={addSelectedItem}
+                    disabled={!selectedItem}
+                    className="flex h-9 shrink-0 items-center gap-space-xs rounded bg-primary px-space-md font-body-sm text-body-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-container disabled:opacity-50"
+                  >
+                    <Icon name="add" size={16} /> Add to Feeder
+                  </button>
                 </div>
                 <div className="flex items-center gap-space-xs overflow-x-auto pt-space-2xs font-label-sm text-label-sm">
                   <span className="shrink-0 font-medium text-on-surface-variant">Quick Filters:</span>
@@ -696,7 +726,6 @@ export function FeederMasterWorkspace({
                 </div>
               </div>
 
-              {/* Configured feeder BOM table */}
               <div className="w-full overflow-x-auto">
                 <table className="w-full text-left">
                   <thead>
@@ -712,7 +741,7 @@ export function FeederMasterWorkspace({
                       <th className="w-20 px-space-sm py-space-sm text-right">Disc %</th>
                       <th className="px-space-sm py-space-sm text-right">Net Rate</th>
                       <th className="w-16 px-space-sm py-space-sm text-center">UOM</th>
-                      <th className="px-space-sm py-space-sm text-right">Amount ($)</th>
+                      <th className="px-space-sm py-space-sm text-right">Amount</th>
                       <th className="w-28 py-space-sm pl-space-xs pr-space-lg text-right">Actions</th>
                     </tr>
                   </thead>
@@ -786,7 +815,7 @@ export function FeederMasterWorkspace({
                 </table>
               </div>
             </section>
-          </section>
+          </>
         )}
       </div>
     </div>
