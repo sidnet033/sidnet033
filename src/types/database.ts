@@ -141,6 +141,7 @@ export type Switchboard = {
   ka: number | null;
   ip_rating: string | null;
   poles: number | null;
+  std: "ArTuK" | "61439" | "60439" | null;
   qty: number;
   sort_order: number;
   labor_wiring_pct: number;

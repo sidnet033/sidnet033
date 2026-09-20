@@ -15,29 +15,41 @@ export function LookupSelect({
   onChange,
   disabled,
   placeholder = "Select or add...",
+  options: sharedOptions,
+  onOptionsChange,
 }: {
   table: "consultants" | "sales_execs" | "switchboard_types";
   value: string | null;
   onChange: (id: string | null, name: string | null) => void;
   disabled?: boolean;
   placeholder?: string;
+  // When provided, this list is used instead of each instance fetching its
+  // own copy (avoids one request per table row). onOptionsChange is called
+  // when a new option is added so the caller can keep its shared list in sync.
+  options?: Option[];
+  onOptionsChange?: (options: Option[]) => void;
 }) {
   const supabase = useMemo(() => createClient(), []);
-  const [options, setOptions] = useState<Option[]>([]);
+  const [ownOptions, setOwnOptions] = useState<Option[]>([]);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
 
+  const options = sharedOptions ?? ownOptions;
+  const setOptions = onOptionsChange ?? setOwnOptions;
+
   useEffect(() => {
+    if (sharedOptions) return;
     let cancelled = false;
     (async () => {
       const { data } = await supabase.from(table).select("id, name").order("name");
-      if (!cancelled) setOptions((data ?? []) as Option[]);
+      if (!cancelled) setOwnOptions((data ?? []) as Option[]);
     })();
     return () => {
       cancelled = true;
     };
-  }, [supabase, table]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase, table, !!sharedOptions]);
 
   const selected = options.find((o) => o.id === value) ?? null;
   const matches = search

@@ -8,8 +8,11 @@ import { LookupSelect } from "@/components/lookup-select";
 import { StageStepper } from "@/components/stage-stepper";
 import { COUNTRIES } from "@/lib/countries";
 import type { SwitchboardListItem } from "@/lib/revision-context";
-import type { Customer, Project, ProjectStage, Revision } from "@/types/database";
+import type { Customer, Project, ProjectStage, Revision, Switchboard } from "@/types/database";
 import type { Tab } from "@/components/revision-workspace";
+
+const STD_OPTIONS = ["ArTuK", "61439", "60439"] as const;
+const IP_OPTIONS = ["42", "52", "54", "55", "63"];
 
 function money(n: number) {
   return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
@@ -18,6 +21,37 @@ function money(n: number) {
 function formatDate(iso: string | null) {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" });
+}
+
+function formatDateTime(iso: string | null) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("en-IN", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+type ProjectPatch = {
+  title: string;
+  notes: string | null;
+  crm_enquiry_number: string | null;
+  crm_enquiry_date: string | null;
+  site_country: string | null;
+  consultant_id: string | null;
+  sales_exec_id: string | null;
+  stage: ProjectStage;
+  customer_id: string | null;
+};
+
+function snapshotOf(project: Project): ProjectPatch {
+  return {
+    title: project.title,
+    notes: project.notes,
+    crm_enquiry_number: project.crm_enquiry_number,
+    crm_enquiry_date: project.crm_enquiry_date,
+    site_country: project.site_country,
+    consultant_id: project.consultant_id,
+    sales_exec_id: project.sales_exec_id,
+    stage: project.stage,
+    customer_id: project.customer_id,
+  };
 }
 
 export function ProjectDetailTab({
@@ -52,19 +86,16 @@ export function ProjectDetailTab({
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
-  const [title, setTitle] = useState(project.title);
-  const [notes, setNotes] = useState(project.notes ?? "");
-  const [crmNumber, setCrmNumber] = useState(project.crm_enquiry_number ?? "");
-  const [crmDate, setCrmDate] = useState(project.crm_enquiry_date ?? "");
-  const [siteCountry, setSiteCountry] = useState(project.site_country ?? "");
-  const [consultantId, setConsultantId] = useState(project.consultant_id);
-  const [salesExecId, setSalesExecId] = useState(project.sales_exec_id);
-  const [stage, setStage] = useState<ProjectStage>(project.stage);
-  const [customerId, setCustomerId] = useState(project.customer_id);
-  const [customerName, setCustomerName] = useState(customer?.name ?? "");
+  const [savedSnapshot, setSavedSnapshot] = useState<ProjectPatch>(() => snapshotOf(project));
+  const [form, setForm] = useState<ProjectPatch>(savedSnapshot);
+  const [consultantLabel, setConsultantLabel] = useState(consultantName);
+  const [salesExecLabel, setSalesExecLabel] = useState(salesExecName);
+  const [customerLabel, setCustomerLabel] = useState(customer?.name ?? "");
   const [customerOptions, setCustomerOptions] = useState<Customer[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
 
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const dirty = JSON.stringify(form) !== JSON.stringify(savedSnapshot);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -78,21 +109,46 @@ export function ProjectDetailTab({
     };
   }, [supabase, isAdmin]);
 
-  async function saveProjectField(field: keyof Project, value: string | null) {
-    await supabase.from("projects").update({ [field]: value }).eq("id", project.id);
+  function patch<K extends keyof ProjectPatch>(field: K, value: ProjectPatch[K]) {
+    setForm((f) => ({ ...f, [field]: value }));
+    setJustSaved(false);
   }
 
-  async function handleStageChange(next: ProjectStage) {
-    setStage(next);
-    await supabase.from("projects").update({ stage: next }).eq("id", project.id);
+  async function handleSave() {
+    setSaving(true);
+    const { error } = await supabase.from("projects").update(form).eq("id", project.id);
+    setSaving(false);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    setSavedSnapshot(form);
+    setJustSaved(true);
   }
 
-  async function handleCustomerChange(id: string) {
-    const c = customerOptions.find((o) => o.id === id);
-    setCustomerId(id || null);
-    setCustomerName(c?.name ?? "");
-    await supabase.from("projects").update({ customer_id: id || null }).eq("id", project.id);
+  // switchboard table: local optimistic state so field edits (which fire on
+  // every blur) never need a full-page refresh, which is what was causing
+  // the "Failed to fetch" errors on this table.
+  const [prevSwitchboards, setPrevSwitchboards] = useState(switchboards);
+  const [boards, setBoards] = useState(switchboards);
+  if (switchboards !== prevSwitchboards) {
+    setPrevSwitchboards(switchboards);
+    setBoards(switchboards);
   }
+
+  const [typeOptions, setTypeOptions] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from("switchboard_types").select("id, name").order("name");
+      if (!cancelled) setTypeOptions((data ?? []) as { id: string; name: string }[]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
+
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   async function handleLockAndOpen(switchboardId: string, alreadyLockedByMe: boolean) {
     if (!alreadyLockedByMe) {
@@ -143,12 +199,12 @@ export function ProjectDetailTab({
   }
 
   async function handleAddSwitchboard() {
-    const nextNum = switchboards.length + 1;
+    const nextNum = boards.length + 1;
     const { error } = await supabase.from("switchboards").insert({
       revision_id: revisionId,
       tag: `SB-${String(nextNum).padStart(2, "0")}`,
       title: `Board ${nextNum}`,
-      sort_order: switchboards.length,
+      sort_order: boards.length,
     });
     if (error) {
       alert(error.message);
@@ -157,16 +213,37 @@ export function ProjectDetailTab({
     router.refresh();
   }
 
-  async function updateSwitchboardField(switchboardId: string, patch: Record<string, string | number | null>) {
-    const { error } = await supabase.from("switchboards").update(patch).eq("id", switchboardId);
+  // Optimistic, local-only update: reflects instantly in the table and
+  // fires the write in the background. No router.refresh() here — this
+  // runs on every field blur, and refreshing the whole page each time is
+  // what produced the "Failed to fetch" errors.
+  async function updateSwitchboardField(switchboardId: string, fieldPatch: Partial<Switchboard>) {
+    setBoards((prev) =>
+      prev.map((item) => (item.switchboard.id === switchboardId ? { ...item, switchboard: { ...item.switchboard, ...fieldPatch } } : item))
+    );
+    const { error } = await supabase.from("switchboards").update(fieldPatch).eq("id", switchboardId);
     if (error) alert(error.message);
-    router.refresh();
   }
 
   return (
     <div className="max-w-6xl space-y-6 px-8 py-6">
       <div className="rounded-xl border border-slate-200/90 bg-white p-5 shadow-xs">
-        <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-900">Project Details</h2>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-900">Project Details</h2>
+          {!revisionArchived && (
+            <div className="flex items-center gap-2">
+              {justSaved && !dirty && <span className="text-xs text-emerald-600">Saved</span>}
+              {dirty && <span className="text-xs text-amber-600">Unsaved changes</span>}
+              <button
+                onClick={handleSave}
+                disabled={!dirty || saving}
+                className="rounded-md bg-brand-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {saving ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+          )}
+        </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Field label="Project Code">
@@ -182,17 +259,20 @@ export function ProjectDetailTab({
           <Field label="Project Name">
             <input
               disabled={revisionArchived}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onBlur={() => saveProjectField("title", title)}
+              value={form.title}
+              onChange={(e) => patch("title", e.target.value)}
               className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm disabled:bg-slate-50"
             />
           </Field>
           <Field label="Customer">
             {isAdmin && !revisionArchived ? (
               <select
-                value={customerId ?? ""}
-                onChange={(e) => handleCustomerChange(e.target.value)}
+                value={form.customer_id ?? ""}
+                onChange={(e) => {
+                  const id = e.target.value || null;
+                  patch("customer_id", id);
+                  setCustomerLabel(customerOptions.find((o) => o.id === id)?.name ?? "");
+                }}
                 className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm"
               >
                 <option value="">No customer</option>
@@ -203,7 +283,7 @@ export function ProjectDetailTab({
                 ))}
               </select>
             ) : (
-              <ReadOnlyValue value={customerName || "—"} />
+              <ReadOnlyValue value={customerLabel || "—"} />
             )}
           </Field>
           <Field label="Created By">
@@ -213,9 +293,8 @@ export function ProjectDetailTab({
           <Field label="CRM Enquiry Number">
             <input
               disabled={revisionArchived}
-              value={crmNumber}
-              onChange={(e) => setCrmNumber(e.target.value)}
-              onBlur={() => saveProjectField("crm_enquiry_number", crmNumber || null)}
+              value={form.crm_enquiry_number ?? ""}
+              onChange={(e) => patch("crm_enquiry_number", e.target.value || null)}
               className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm disabled:bg-slate-50"
             />
           </Field>
@@ -223,20 +302,16 @@ export function ProjectDetailTab({
             <input
               type="date"
               disabled={revisionArchived}
-              value={crmDate}
-              onChange={(e) => setCrmDate(e.target.value)}
-              onBlur={() => saveProjectField("crm_enquiry_date", crmDate || null)}
+              value={form.crm_enquiry_date ?? ""}
+              onChange={(e) => patch("crm_enquiry_date", e.target.value || null)}
               className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm disabled:bg-slate-50"
             />
           </Field>
           <Field label="Site Country">
             <select
               disabled={revisionArchived}
-              value={siteCountry}
-              onChange={(e) => {
-                setSiteCountry(e.target.value);
-                saveProjectField("site_country", e.target.value || null);
-              }}
+              value={form.site_country ?? ""}
+              onChange={(e) => patch("site_country", e.target.value || null)}
               className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm disabled:bg-slate-50"
             >
               <option value="">Select country...</option>
@@ -250,14 +325,14 @@ export function ProjectDetailTab({
 
           <Field label="Consultant">
             {revisionArchived ? (
-              <ReadOnlyValue value={consultantName || "—"} />
+              <ReadOnlyValue value={consultantLabel || "—"} />
             ) : (
               <LookupSelect
                 table="consultants"
-                value={consultantId}
-                onChange={(id) => {
-                  setConsultantId(id);
-                  saveProjectField("consultant_id", id);
+                value={form.consultant_id}
+                onChange={(id, name) => {
+                  patch("consultant_id", id);
+                  setConsultantLabel(name);
                 }}
                 placeholder="Select or add consultant..."
               />
@@ -265,14 +340,14 @@ export function ProjectDetailTab({
           </Field>
           <Field label="Sales Exec">
             {revisionArchived ? (
-              <ReadOnlyValue value={salesExecName || "—"} />
+              <ReadOnlyValue value={salesExecLabel || "—"} />
             ) : (
               <LookupSelect
                 table="sales_execs"
-                value={salesExecId}
-                onChange={(id) => {
-                  setSalesExecId(id);
-                  saveProjectField("sales_exec_id", id);
+                value={form.sales_exec_id}
+                onChange={(id, name) => {
+                  patch("sales_exec_id", id);
+                  setSalesExecLabel(name);
                 }}
                 placeholder="Select or add sales exec..."
               />
@@ -284,9 +359,8 @@ export function ProjectDetailTab({
           <label className="mb-1 block text-xs font-medium text-slate-600">Project Description</label>
           <textarea
             disabled={revisionArchived}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            onBlur={() => saveProjectField("notes", notes || null)}
+            value={form.notes ?? ""}
+            onChange={(e) => patch("notes", e.target.value || null)}
             rows={3}
             placeholder="Scope, site details, special requirements..."
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-50"
@@ -295,7 +369,7 @@ export function ProjectDetailTab({
 
         <div className="mt-4">
           <label className="mb-1.5 block text-xs font-medium text-slate-600">Stage</label>
-          <StageStepper value={stage} onChange={handleStageChange} disabled={revisionArchived} />
+          <StageStepper value={form.stage} onChange={(s) => patch("stage", s)} disabled={revisionArchived} />
         </div>
       </div>
 
@@ -319,6 +393,7 @@ export function ProjectDetailTab({
                 <th className="px-2 py-2">#</th>
                 <th className="px-2 py-2">Switchboard</th>
                 <th className="px-2 py-2">Type</th>
+                <th className="px-2 py-2">Std</th>
                 <th className="px-2 py-2 text-right">Amps</th>
                 <th className="px-2 py-2">IP</th>
                 <th className="px-2 py-2 text-right">kA</th>
@@ -332,7 +407,7 @@ export function ProjectDetailTab({
               </tr>
             </thead>
             <tbody>
-              {switchboards.map((item, index) => {
+              {boards.map((item, index) => {
                 const sb = item.switchboard;
                 const isLockedByMe = sb.locked_by === currentUserId;
                 const isLockedByOther = sb.locked_by !== null && !isLockedByMe;
@@ -357,7 +432,10 @@ export function ProjectDetailTab({
                         disabled={rowDisabled}
                         defaultValue={sb.description ?? ""}
                         placeholder="Description..."
-                        onBlur={(e) => updateSwitchboardField(sb.id, { description: e.target.value || null })}
+                        onBlur={(e) => {
+                          if (e.target.value === (sb.description ?? "")) return;
+                          updateSwitchboardField(sb.id, { description: e.target.value || null });
+                        }}
                         className="mt-0.5 w-full rounded border border-transparent bg-transparent px-0 py-0.5 text-[11px] font-normal text-slate-400 focus:border-slate-200 focus:bg-white disabled:bg-transparent"
                       />
                       <div className="mt-1 flex flex-wrap gap-1">
@@ -373,44 +451,77 @@ export function ProjectDetailTab({
                         )}
                       </div>
                     </td>
-                    <td className="w-40 px-2 py-2">
+                    <td className="w-36 px-2 py-2">
                       <LookupSelect
                         table="switchboard_types"
                         value={sb.switchboard_type_id}
                         disabled={rowDisabled}
+                        options={typeOptions}
+                        onOptionsChange={setTypeOptions}
                         onChange={(id) => updateSwitchboardField(sb.id, { switchboard_type_id: id })}
                         placeholder="Type..."
                       />
                     </td>
+                    <td className="w-24 px-2 py-2">
+                      <select
+                        disabled={rowDisabled}
+                        value={sb.std ?? ""}
+                        onChange={(e) => updateSwitchboardField(sb.id, { std: (e.target.value || null) as Switchboard["std"] })}
+                        className="w-full rounded border border-slate-200 bg-white px-1 py-0.5 disabled:border-transparent disabled:bg-transparent"
+                      >
+                        <option value="">—</option>
+                        {STD_OPTIONS.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
                     <td className="px-2 py-2 text-right">
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="numeric"
                         disabled={rowDisabled}
                         defaultValue={sb.amps ?? ""}
-                        onBlur={(e) =>
-                          updateSwitchboardField(sb.id, { amps: e.target.value === "" ? null : Number(e.target.value) })
-                        }
-                        className="w-16 rounded border border-slate-200 px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
+                        onBlur={(e) => {
+                          const digits = e.target.value.replace(/[^0-9]/g, "");
+                          e.target.value = digits;
+                          const next = digits === "" ? null : Number(digits);
+                          if (next === (sb.amps ?? null)) return;
+                          updateSwitchboardField(sb.id, { amps: next });
+                        }}
+                        className="w-14 rounded border border-slate-200 px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
                       />
                     </td>
                     <td className="px-2 py-2">
-                      <input
+                      <select
                         disabled={rowDisabled}
-                        defaultValue={sb.ip_rating ?? ""}
-                        placeholder="IP54"
-                        onBlur={(e) => updateSwitchboardField(sb.id, { ip_rating: e.target.value || null })}
-                        className="w-16 rounded border border-slate-200 px-1 py-0.5 disabled:border-transparent disabled:bg-transparent"
-                      />
+                        value={sb.ip_rating ?? ""}
+                        onChange={(e) => updateSwitchboardField(sb.id, { ip_rating: e.target.value || null })}
+                        className="w-16 rounded border border-slate-200 bg-white px-1 py-0.5 disabled:border-transparent disabled:bg-transparent"
+                      >
+                        <option value="">—</option>
+                        {IP_OPTIONS.map((ip) => (
+                          <option key={ip} value={ip}>
+                            IP{ip}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td className="px-2 py-2 text-right">
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="numeric"
                         disabled={rowDisabled}
                         defaultValue={sb.ka ?? ""}
-                        onBlur={(e) =>
-                          updateSwitchboardField(sb.id, { ka: e.target.value === "" ? null : Number(e.target.value) })
-                        }
-                        className="w-14 rounded border border-slate-200 px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
+                        onBlur={(e) => {
+                          const digits = e.target.value.replace(/[^0-9]/g, "");
+                          e.target.value = digits;
+                          const next = digits === "" ? null : Number(digits);
+                          if (next === (sb.ka ?? null)) return;
+                          updateSwitchboardField(sb.id, { ka: next });
+                        }}
+                        className="w-12 rounded border border-slate-200 px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
                       />
                     </td>
                     <td className="px-2 py-2 text-right">
@@ -419,7 +530,11 @@ export function ProjectDetailTab({
                         min="1"
                         disabled={rowDisabled}
                         defaultValue={sb.qty}
-                        onBlur={(e) => updateSwitchboardField(sb.id, { qty: Number(e.target.value) || 1 })}
+                        onBlur={(e) => {
+                          const next = Number(e.target.value) || 1;
+                          if (next === sb.qty) return;
+                          updateSwitchboardField(sb.id, { qty: next });
+                        }}
                         className="w-14 rounded border border-slate-200 px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
                       />
                     </td>
@@ -428,7 +543,7 @@ export function ProjectDetailTab({
                     <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums font-semibold text-slate-900">
                       {money(totalPrice)}
                     </td>
-                    <td className="whitespace-nowrap px-2 py-2 text-slate-500">{formatDate(sb.updated_at)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-slate-500">{formatDateTime(sb.updated_at)}</td>
                     <td className="whitespace-nowrap px-2 py-2 text-slate-500">{item.updatedByName || "—"}</td>
                     <td className="px-2 py-2">
                       <div className="flex items-center gap-1.5">
@@ -487,9 +602,9 @@ export function ProjectDetailTab({
                   </tr>
                 );
               })}
-              {switchboards.length === 0 && (
+              {boards.length === 0 && (
                 <tr>
-                  <td colSpan={13} className="px-3 py-10 text-center text-slate-400">
+                  <td colSpan={14} className="px-3 py-10 text-center text-slate-400">
                     No switchboards yet. Add one to start building its BOM and GA.
                   </td>
                 </tr>
