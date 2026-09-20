@@ -21,3 +21,13 @@ export function formatMoney(amountInr: number, currency: string = "INR", exchang
     return `${currency} ${converted.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
   }
 }
+
+// For switchboard/project price displays only (Costing Summary, Project
+// Detail, Dashboard rollups): show the base currency (INR) alongside the
+// project's own currency, so nothing is hidden behind a conversion. When
+// the project's currency already is INR, there's nothing to add.
+export function formatMoneyDual(amountInr: number, currency: string, exchangeRate: number): string {
+  const base = formatMoney(amountInr, "INR", 1);
+  if (!currency || currency === "INR") return base;
+  return `${base} (${formatMoney(amountInr, currency, exchangeRate)})`;
+}

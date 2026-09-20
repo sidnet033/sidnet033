@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 import { itemCode } from "@/lib/item-display";
+import { effectiveNetRate } from "@/lib/feeder-cost";
 import type { Feeder, FeederItemWithDetails, ItemMaster } from "@/types/database";
 
 const FEEDER_TYPES = ["Incomer", "Outgoing", "Bus Coupler", "Sub-Incomer", "APFC Capacitor Bank"];
@@ -15,14 +16,18 @@ function money(n: number) {
 }
 
 function netRate(item: ItemMaster) {
-  if (item.list_price != null && item.discount_pct != null) {
-    return item.list_price * (1 - item.discount_pct / 100);
-  }
-  return item.unit_cost;
+  return effectiveNetRate(item);
+}
+
+// A feeder placed in a switchboard's BOM may have edited a line's price
+// there (see bom-builder.tsx) — that override sticks even when the same
+// feeder is viewed here in the library.
+function lineNetRate(line: FeederItemWithDetails) {
+  return effectiveNetRate(line.item, line.list_price_override, line.discount_pct_override);
 }
 
 function feederCost(lines: FeederItemWithDetails[]) {
-  return lines.reduce((s, l) => s + l.qty * netRate(l.item), 0);
+  return lines.reduce((s, l) => s + l.qty * lineNetRate(l), 0);
 }
 
 // FDR-{IG incomer / OG outgoing / ...}-{rated amps}-{make of the first
@@ -477,9 +482,9 @@ export function FeederMasterWorkspace({
                                 <td className="px-space-sm py-space-xs text-on-surface-variant">{line.item.category || "—"}</td>
                                 <td className="px-space-sm py-space-xs">{line.item.description}</td>
                                 <td className="px-space-sm py-space-xs text-center tabular-nums">{line.qty}</td>
-                                <td className="px-space-sm py-space-xs text-right tabular-nums">{money(netRate(line.item))}</td>
+                                <td className="px-space-sm py-space-xs text-right tabular-nums">{money(lineNetRate(line))}</td>
                                 <td className="py-space-xs pr-space-lg pl-space-xs text-right font-semibold tabular-nums">
-                                  {money(line.qty * netRate(line.item))}
+                                  {money(line.qty * lineNetRate(line))}
                                 </td>
                               </tr>
                             ))}
@@ -770,10 +775,10 @@ export function FeederMasterWorkspace({
                         <td className="px-space-sm py-space-sm text-right font-telemetry-md text-tertiary">
                           {line.item.discount_pct != null ? `${line.item.discount_pct}%` : "—"}
                         </td>
-                        <td className="px-space-sm py-space-sm text-right font-telemetry-md text-on-surface">{money(netRate(line.item))}</td>
+                        <td className="px-space-sm py-space-sm text-right font-telemetry-md text-on-surface">{money(lineNetRate(line))}</td>
                         <td className="px-space-sm py-space-sm text-center font-label-md text-label-md uppercase text-on-surface-variant">{line.item.uom}</td>
                         <td className="px-space-sm py-space-sm text-right font-telemetry-md text-telemetry-md font-bold text-on-surface">
-                          {money(line.qty * netRate(line.item))}
+                          {money(line.qty * lineNetRate(line))}
                         </td>
                         <td className="py-space-sm pl-space-xs pr-space-lg text-right">
                           <div className="flex items-center justify-end gap-1 opacity-80 group-hover:opacity-100">

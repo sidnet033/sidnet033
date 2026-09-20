@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Icon } from "@/components/icon";
-import { formatMoney } from "@/lib/money";
+import { formatMoney, formatMoneyDual } from "@/lib/money";
 
 export type SwitchboardNode = {
   id: string;
@@ -33,12 +33,14 @@ export type ProjectNode = {
 export type CustomerNode = { id: string; name: string; projects: ProjectNode[]; cost: number };
 
 // Each project can have its own currency, so a project/revision/switchboard
-// row converts using that project's own rate. A customer's rollup can span
-// several projects with different currencies, so it's shown in INR (the
-// base currency everything is actually stored and priced in) rather than
-// picking one project's currency arbitrarily.
-function money(n: number, currency = "INR", exchangeRate = 1) {
-  return formatMoney(n, currency, exchangeRate);
+// row shows both INR (base currency) and that project's own currency. A
+// customer's rollup can span several projects with different currencies,
+// so it stays INR-only rather than picking one project's currency arbitrarily.
+function money(n: number) {
+  return formatMoney(n, "INR", 1);
+}
+function moneyDual(n: number, currency: string, exchangeRate: number) {
+  return formatMoneyDual(n, currency, exchangeRate);
 }
 
 type Filter = "all" | "active" | "archived";
@@ -140,7 +142,7 @@ export function ProjectsTree({ customers }: { customers: CustomerNode[] }) {
                           <span className="text-sm font-medium text-slate-800 hover:text-brand-600 hover:underline">{p.title}</span>
                           <span className="text-xs text-slate-400">{p.revisions.length} revision(s)</span>
                         </span>
-                        <span className="text-sm text-slate-500">{money(p.cost, p.currency, p.exchangeRate)}</span>
+                        <span className="text-sm text-slate-500">{moneyDual(p.cost, p.currency, p.exchangeRate)}</span>
                       </Link>
                     </div>
                     {expanded.has(p.id) && (
@@ -168,7 +170,7 @@ export function ProjectsTree({ customers }: { customers: CustomerNode[] }) {
                                 )}
                                 <span className="text-xs text-slate-400">{r.switchboards.length} switchboard(s)</span>
                               </button>
-                              <span className="text-sm text-slate-500">{money(r.cost, p.currency, p.exchangeRate)}</span>
+                              <span className="text-sm text-slate-500">{moneyDual(r.cost, p.currency, p.exchangeRate)}</span>
                             </div>
                             {expanded.has(r.id) && (
                               <div className="space-y-1 pb-2 pl-10">
@@ -190,7 +192,7 @@ export function ProjectsTree({ customers }: { customers: CustomerNode[] }) {
                                         </span>
                                       )}
                                     </span>
-                                    <span className="text-slate-500">{money(sb.cost, p.currency, p.exchangeRate)}</span>
+                                    <span className="text-slate-500">{moneyDual(sb.cost, p.currency, p.exchangeRate)}</span>
                                   </Link>
                                 ))}
                                 {r.switchboards.length === 0 && (

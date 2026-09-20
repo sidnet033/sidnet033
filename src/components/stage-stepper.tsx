@@ -11,10 +11,10 @@ const MAIN_FLOW: { id: ProjectStage; label: string }[] = [
 ];
 
 const OUTCOMES: { id: ProjectStage; label: string; activeClass: string }[] = [
-  { id: "won", label: "Won", activeClass: "text-tertiary" },
+  { id: "won", label: "Won", activeClass: "text-emerald-600" },
   { id: "lost", label: "Lost", activeClass: "text-error" },
-  { id: "hold", label: "Hold", activeClass: "text-amber-600" },
-  { id: "budgetary", label: "Budgetary", activeClass: "text-secondary" },
+  { id: "hold", label: "Hold", activeClass: "text-on-surface-variant" },
+  { id: "budgetary", label: "Budgetary", activeClass: "text-on-surface-variant" },
 ];
 
 const MAIN_ORDER: ProjectStage[] = ["new", "wip", "quoted", "finalization", "won"];

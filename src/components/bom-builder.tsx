@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { CostBreakdownCard } from "@/components/cost-breakdown-card";
 import { AdHocFeederPanel } from "@/components/ad-hoc-feeder-panel";
 import { findDuplicateLibraryFeeder } from "@/lib/feeder-duplicate";
 import { ensureUnassignedVertical } from "@/lib/switchboard-bom";
+import { effectiveNetRate } from "@/lib/feeder-cost";
 import { itemCode } from "@/lib/item-display";
 import { Icon } from "@/components/icon";
 import { formatMoney } from "@/lib/money";
@@ -18,21 +20,61 @@ import type {
   SwitchboardEnclosureLine,
 } from "@/types/database";
 
-type FeederPlacement = { id: string; vertical_id: string; tier_number: number; qty: number };
-type FeederModule = {
-  feeder: Feeder;
-  placements: FeederPlacement[];
-  placementQty: number;
-  lines: FeederItemWithDetails[];
-};
+// BOM Builder always works in the base currency (INR) — it's the internal
+// costing/build tool, not a customer-facing price. Only switchboard/project
+// price rollups (Costing Summary, Project Detail, Dashboard) convert to the
+// project's currency.
+const money = (n: number) => formatMoney(n);
+
 type LibraryFeederOption = { id: string; name: string; category: string | null; tag: string | null; rating_summary: string | null };
 
-function money(n: number, currency: string, exchangeRate: number) {
-  return formatMoney(n, currency, exchangeRate);
+type DraftLine = {
+  id: string; // real feeder_items id, or "new-<uuid>" if not yet persisted
+  item_id: string;
+  item: ItemMaster;
+  qty: number;
+  list_price_override: number | null;
+  discount_pct_override: number | null;
+};
+
+type DraftModule = {
+  feeder: Feeder;
+  baselineFeeder: Feeder;
+  placementId: string; // real placed_feeders id, or "new-<uuid>" if not yet placed
+  qty: number;
+  lines: DraftLine[];
+  baselineLines: DraftLine[]; // what's actually in the DB right now, for diffing on Save
+};
+
+type DraftBusbar = { id: string; description: string; qty: number; rate: number };
+type DraftEnclosure = { id: string; description: string; qty: number; rate: number };
+
+type BomDraft = {
+  modules: DraftModule[];
+  busbars: DraftBusbar[];
+  enclosureLines: DraftEnclosure[];
+  laborWiring: number;
+  laborAssembly: number;
+  laborTesting: number;
+};
+
+function newId() {
+  return `new-${crypto.randomUUID()}`;
 }
 
-function lineTotal(lines: FeederItemWithDetails[]) {
-  return lines.reduce((s, l) => s + l.qty * l.item.unit_cost, 0);
+function toDraftLine(l: FeederItemWithDetails): DraftLine {
+  return {
+    id: l.id,
+    item_id: l.item_id,
+    item: l.item,
+    qty: l.qty,
+    list_price_override: l.list_price_override,
+    discount_pct_override: l.discount_pct_override,
+  };
+}
+
+function lineTotal(lines: DraftLine[]) {
+  return lines.reduce((s, l) => s + l.qty * effectiveNetRate(l.item, l.list_price_override, l.discount_pct_override), 0);
 }
 
 async function loadBomData(supabase: ReturnType<typeof createClient>, switchboardId: string) {
@@ -54,21 +96,21 @@ async function loadBomData(supabase: ReturnType<typeof createClient>, switchboar
     supabase.from("feeders").select("id, name, category, tag, rating_summary").eq("is_library", true).order("name"),
   ]);
 
-  type PlacedRow = FeederPlacement & { feeder: Feeder };
+  type PlacedRow = { id: string; vertical_id: string; tier_number: number; qty: number; feeder: Feeder };
   const placedRows = (placed ?? []) as unknown as PlacedRow[];
 
   const feederById = new Map<string, Feeder>();
-  const placementsByFeeder = new Map<string, FeederPlacement[]>();
+  const placementIdByFeeder = new Map<string, string>();
+  const qtyByFeeder = new Map<string, number>();
   for (const p of placedRows) {
     feederById.set(p.feeder.id, p.feeder);
-    const list = placementsByFeeder.get(p.feeder.id) ?? [];
-    list.push({ id: p.id, vertical_id: p.vertical_id, tier_number: p.tier_number, qty: p.qty });
-    placementsByFeeder.set(p.feeder.id, list);
+    placementIdByFeeder.set(p.feeder.id, p.id);
+    qtyByFeeder.set(p.feeder.id, p.qty);
   }
 
   const feederIds = Array.from(feederById.keys());
   const { data: feederLines } = feederIds.length
-    ? await supabase.from("feeder_items").select("*, item:item_master(*)").in("feeder_id", feederIds).order("created_at")
+    ? await supabase.from("feeder_items").select("*, item:item_master(*)").in("feeder_id", feederIds).order("sort_order")
     : { data: [] };
 
   const linesByFeeder = new Map<string, FeederItemWithDetails[]>();
@@ -78,26 +120,72 @@ async function loadBomData(supabase: ReturnType<typeof createClient>, switchboar
     linesByFeeder.set(line.feeder_id, list);
   }
 
-  const modules: FeederModule[] = feederIds.map((fid) => {
-    const placements = placementsByFeeder.get(fid) ?? [];
+  const modules: DraftModule[] = feederIds.map((fid) => {
+    const feeder = feederById.get(fid)!;
+    const lines = (linesByFeeder.get(fid) ?? []).map(toDraftLine);
     return {
-      feeder: feederById.get(fid)!,
-      placements,
-      placementQty: placements.reduce((s, p) => s + p.qty, 0),
-      lines: linesByFeeder.get(fid) ?? [],
+      feeder,
+      baselineFeeder: feeder,
+      placementId: placementIdByFeeder.get(fid)!,
+      qty: qtyByFeeder.get(fid) ?? 1,
+      lines,
+      baselineLines: lines,
     };
   });
-
-  const placedFeederIds = new Set(feederIds);
-  const libraryFeederOptions = ((libraryFeeders ?? []) as LibraryFeederOption[]).filter((f) => !placedFeederIds.has(f.id));
 
   return {
     switchboard: switchboard as Switchboard,
     modules,
     busbars: (busbarRows ?? []) as SwitchboardBusbarLine[],
     enclosureLines: (enclosureRows ?? []) as SwitchboardEnclosureLine[],
-    libraryFeederOptions,
+    libraryFeedersAll: (libraryFeeders ?? []) as LibraryFeederOption[],
   };
+}
+
+type LoadedBomData = NonNullable<Awaited<ReturnType<typeof loadBomData>>>;
+
+function toDraft(data: LoadedBomData): BomDraft {
+  return {
+    modules: data.modules,
+    busbars: data.busbars.map((b) => ({ id: b.id, description: b.description, qty: b.qty, rate: b.rate })),
+    enclosureLines: data.enclosureLines.map((e) => ({ id: e.id, description: e.description, qty: e.qty, rate: e.rate })),
+    laborWiring: data.switchboard.labor_wiring_pct,
+    laborAssembly: data.switchboard.labor_assembly_pct,
+    laborTesting: data.switchboard.labor_testing_pct,
+  };
+}
+
+async function saveLineTable(
+  supabase: ReturnType<typeof createClient>,
+  table: "switchboard_busbars" | "switchboard_enclosure_lines",
+  switchboardId: string,
+  saved: (DraftBusbar | DraftEnclosure)[],
+  draft: (DraftBusbar | DraftEnclosure)[]
+) {
+  const draftIds = new Set(draft.map((r) => r.id));
+  for (const r of saved) {
+    if (!draftIds.has(r.id)) {
+      const { error } = await supabase.from(table).delete().eq("id", r.id);
+      if (error) throw error;
+    }
+  }
+  for (const [i, r] of draft.entries()) {
+    if (r.id.startsWith("new-")) {
+      const { error } = await supabase
+        .from(table)
+        .insert({ switchboard_id: switchboardId, description: r.description, qty: r.qty, rate: r.rate, sort_order: i });
+      if (error) throw error;
+    } else {
+      const prior = saved.find((x) => x.id === r.id);
+      if (!prior || prior.description !== r.description || prior.qty !== r.qty || prior.rate !== r.rate) {
+        const { error } = await supabase
+          .from(table)
+          .update({ description: r.description, qty: r.qty, rate: r.rate, sort_order: i })
+          .eq("id", r.id);
+        if (error) throw error;
+      }
+    }
+  }
 }
 
 export function BomBuilder({
@@ -106,25 +194,23 @@ export function BomBuilder({
   isAdmin,
   revisionArchived,
   allItems,
-  currency,
-  exchangeRate,
 }: {
   switchboardId: string;
   currentUserId: string;
   isAdmin: boolean;
   revisionArchived: boolean;
   allItems: ItemMaster[];
-  currency: string;
-  exchangeRate: number;
 }) {
   const supabase = useMemo(() => createClient(), []);
+  const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [sb, setSb] = useState<Switchboard | null>(null);
-  const [modules, setModules] = useState<FeederModule[]>([]);
-  const [busbars, setBusbars] = useState<SwitchboardBusbarLine[]>([]);
-  const [enclosureLines, setEnclosureLines] = useState<SwitchboardEnclosureLine[]>([]);
-  const [libraryOptions, setLibraryOptions] = useState<LibraryFeederOption[]>([]);
+  const [saved, setSaved] = useState<BomDraft | null>(null);
+  const [draft, setDraft] = useState<BomDraft | null>(null);
+  const [libraryFeedersAll, setLibraryFeedersAll] = useState<LibraryFeederOption[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [resetKey, setResetKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -133,10 +219,10 @@ export function BomBuilder({
       const data = await loadBomData(supabase, switchboardId);
       if (cancelled || !data) return;
       setSb(data.switchboard);
-      setModules(data.modules);
-      setBusbars(data.busbars);
-      setEnclosureLines(data.enclosureLines);
-      setLibraryOptions(data.libraryFeederOptions);
+      const d = toDraft(data);
+      setSaved(d);
+      setDraft(d);
+      setLibraryFeedersAll(data.libraryFeedersAll);
       setLoading(false);
     })();
     return () => {
@@ -145,14 +231,15 @@ export function BomBuilder({
   }, [supabase, switchboardId]);
 
   const readOnly = !sb || revisionArchived || (sb.locked_by !== null && sb.locked_by !== currentUserId);
+  const dirty = !!draft && !!saved && JSON.stringify(draft) !== JSON.stringify(saved);
 
-  const electrical = modules.reduce((s, m) => s + m.placementQty * lineTotal(m.lines), 0);
-  const busbarsTotal = busbars.reduce((s, b) => s + b.qty * b.rate, 0);
-  const enclosureTotal = enclosureLines.reduce((s, e) => s + e.qty * e.rate, 0);
+  const electrical = draft ? draft.modules.reduce((s, m) => s + m.qty * lineTotal(m.lines), 0) : 0;
+  const busbarsTotal = draft ? draft.busbars.reduce((s, b) => s + b.qty * b.rate, 0) : 0;
+  const enclosureTotal = draft ? draft.enclosureLines.reduce((s, e) => s + e.qty * e.rate, 0) : 0;
   const rmTotal = electrical + busbarsTotal + enclosureTotal;
-  const wiringAmt = sb ? (rmTotal * sb.labor_wiring_pct) / 100 : 0;
-  const assemblyAmt = sb ? (rmTotal * sb.labor_assembly_pct) / 100 : 0;
-  const testingAmt = sb ? (rmTotal * sb.labor_testing_pct) / 100 : 0;
+  const wiringAmt = draft ? (rmTotal * draft.laborWiring) / 100 : 0;
+  const assemblyAmt = draft ? (rmTotal * draft.laborAssembly) / 100 : 0;
+  const testingAmt = draft ? (rmTotal * draft.laborTesting) / 100 : 0;
   const laborTotal = wiringAmt + assemblyAmt + testingAmt;
   const mfgTotal = rmTotal + laborTotal;
   const breakdown = {
@@ -168,56 +255,37 @@ export function BomBuilder({
   };
 
   async function addLibraryFeeder(opt: LibraryFeederOption) {
-    if (!sb) return;
-    const vId = await ensureUnassignedVertical(supabase, sb.id);
-    const { data: placement, error } = await supabase
-      .from("placed_feeders")
-      .insert({ vertical_id: vId, feeder_id: opt.id, qty: 1, tier_number: 1, sort_order: 0 })
-      .select("*")
-      .single();
-    if (error) return alert(error.message);
     const { data: feeder } = await supabase.from("feeders").select("*").eq("id", opt.id).single();
-    const { data: lines } = await supabase
-      .from("feeder_items")
-      .select("*, item:item_master(*)")
-      .eq("feeder_id", opt.id);
-    setModules([
-      ...modules,
-      {
-        feeder: feeder as Feeder,
-        placements: [{ id: placement.id, vertical_id: vId, tier_number: 1, qty: 1 }],
-        placementQty: 1,
-        lines: (lines ?? []) as FeederItemWithDetails[],
-      },
-    ]);
-    setLibraryOptions(libraryOptions.filter((f) => f.id !== opt.id));
+    const { data: lines } = await supabase.from("feeder_items").select("*, item:item_master(*)").eq("feeder_id", opt.id).order("sort_order");
+    if (!feeder) return;
+    const draftLines = ((lines ?? []) as unknown as FeederItemWithDetails[]).map(toDraftLine);
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            modules: [
+              ...d.modules,
+              { feeder: feeder as Feeder, baselineFeeder: feeder as Feeder, placementId: newId(), qty: 1, lines: draftLines, baselineLines: draftLines },
+            ],
+          }
+        : d
+    );
   }
 
   async function handleAdHocCreated(feeder: Feeder & { cost: number }) {
-    if (!sb) return;
-    const vId = await ensureUnassignedVertical(supabase, sb.id);
-    const { data: placement, error } = await supabase
-      .from("placed_feeders")
-      .insert({ vertical_id: vId, feeder_id: feeder.id, qty: 1, tier_number: 1, sort_order: 0 })
-      .select("*")
-      .single();
-    if (error) return alert(error.message);
-    const { data: lines } = await supabase
-      .from("feeder_items")
-      .select("*, item:item_master(*)")
-      .eq("feeder_id", feeder.id);
-    setModules([
-      ...modules,
-      {
-        feeder,
-        placements: [{ id: placement.id, vertical_id: vId, tier_number: 1, qty: 1 }],
-        placementQty: 1,
-        lines: (lines ?? []) as FeederItemWithDetails[],
-      },
-    ]);
+    const { data: lines } = await supabase.from("feeder_items").select("*, item:item_master(*)").eq("feeder_id", feeder.id).order("sort_order");
+    const draftLines = ((lines ?? []) as unknown as FeederItemWithDetails[]).map(toDraftLine);
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            modules: [...d.modules, { feeder, baselineFeeder: feeder, placementId: newId(), qty: 1, lines: draftLines, baselineLines: draftLines }],
+          }
+        : d
+    );
   }
 
-  async function duplicateModule(mod: FeederModule) {
+  async function duplicateModule(mod: DraftModule) {
     if (!sb) return;
     const {
       data: { user },
@@ -240,14 +308,26 @@ export function BomBuilder({
       alert(error?.message ?? "Could not duplicate feeder.");
       return;
     }
+    let newLines: FeederItemWithDetails[] = [];
     if (mod.lines.length) {
-      const { error: linesError } = await supabase
+      const { data: inserted, error: linesError } = await supabase
         .from("feeder_items")
-        .insert(mod.lines.map((l) => ({ feeder_id: newFeeder.id, item_id: l.item_id, qty: l.qty })));
+        .insert(
+          mod.lines.map((l, i) => ({
+            feeder_id: newFeeder.id,
+            item_id: l.item_id,
+            qty: l.qty,
+            sort_order: i,
+            list_price_override: l.list_price_override,
+            discount_pct_override: l.discount_pct_override,
+          }))
+        )
+        .select("*, item:item_master(*)");
       if (linesError) {
         alert(linesError.message);
         return;
       }
+      newLines = (inserted ?? []) as unknown as FeederItemWithDetails[];
     }
     const vId = await ensureUnassignedVertical(supabase, sb.id);
     const { data: placement, error: placeError } = await supabase
@@ -259,28 +339,25 @@ export function BomBuilder({
       alert(placeError.message);
       return;
     }
-    setModules([
-      ...modules,
-      {
-        feeder: newFeeder as Feeder,
-        placements: [{ id: placement.id, vertical_id: vId, tier_number: 1, qty: 1 }],
-        placementQty: 1,
-        lines: mod.lines.map((l) => ({ ...l, feeder_id: newFeeder.id })),
-      },
-    ]);
+    const draftLines = newLines.map(toDraftLine);
+    const newModule: DraftModule = {
+      feeder: newFeeder as Feeder,
+      baselineFeeder: newFeeder as Feeder,
+      placementId: placement.id,
+      qty: 1,
+      lines: draftLines,
+      baselineLines: draftLines,
+    };
+    setSaved((s) => (s ? { ...s, modules: [...s.modules, newModule] } : s));
+    setDraft((d) => (d ? { ...d, modules: [...d.modules, newModule] } : d));
+    router.refresh();
   }
 
-  async function deleteModule(mod: FeederModule) {
-    if (!sb) return;
-    if (!confirm(`Remove "${mod.feeder.name}" from this switchboard's BOM?`)) return;
-    await supabase.from("placed_feeders").delete().in("id", mod.placements.map((p) => p.id));
-    if (mod.feeder.switchboard_id === sb.id && !mod.feeder.is_library) {
-      await supabase.from("feeders").delete().eq("id", mod.feeder.id);
-    }
-    setModules(modules.filter((m) => m.feeder.id !== mod.feeder.id));
+  function deleteModule(mod: DraftModule) {
+    setDraft((d) => (d ? { ...d, modules: d.modules.filter((m) => m.feeder.id !== mod.feeder.id) } : d));
   }
 
-  async function promoteToLibrary(mod: FeederModule) {
+  async function promoteToLibrary(mod: DraftModule) {
     const itemIds = mod.lines.map((l) => l.item_id);
     const duplicate = await findDuplicateLibraryFeeder(supabase, itemIds, mod.feeder.id);
     if (duplicate) {
@@ -292,106 +369,192 @@ export function BomBuilder({
       alert(error.message);
       return;
     }
-    setModules(modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, feeder: { ...m.feeder, is_library: true } } : m)));
+    const flip = (m: DraftModule) => (m.feeder.id === mod.feeder.id ? { ...m, feeder: { ...m.feeder, is_library: true }, baselineFeeder: { ...m.baselineFeeder, is_library: true } } : m);
+    setSaved((s) => (s ? { ...s, modules: s.modules.map(flip) } : s));
+    setDraft((d) => (d ? { ...d, modules: d.modules.map(flip) } : d));
   }
 
-  async function updateModuleQty(mod: FeederModule, qty: number) {
-    const first = mod.placements[0];
-    if (!first) return;
-    setModules(
-      modules.map((m) =>
-        m.feeder.id === mod.feeder.id
-          ? { ...m, placementQty: qty, placements: [{ ...first, qty }, ...m.placements.slice(1)] }
-          : m
-      )
+  function updateModuleQty(mod: DraftModule, qty: number) {
+    setDraft((d) => (d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, qty } : m)) } : d));
+  }
+
+  function addLine(mod: DraftModule, item: ItemMaster, qty: number) {
+    const line: DraftLine = { id: newId(), item_id: item.id, item, qty, list_price_override: null, discount_pct_override: null };
+    setDraft((d) => (d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, lines: [...m.lines, line] } : m)) } : d));
+  }
+
+  function updateLineQty(mod: DraftModule, lineId: string, qty: number) {
+    setDraft((d) =>
+      d
+        ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, lines: m.lines.map((l) => (l.id === lineId ? { ...l, qty } : l)) } : m)) }
+        : d
     );
-    await supabase.from("placed_feeders").update({ qty }).eq("id", first.id);
   }
 
-  async function addLine(mod: FeederModule, item: ItemMaster, qty: number) {
-    const { data, error } = await supabase
-      .from("feeder_items")
-      .insert({ feeder_id: mod.feeder.id, item_id: item.id, qty })
-      .select("*")
-      .single();
-    if (error) {
-      alert(error.message);
-      return;
+  function updateLineOverride(mod: DraftModule, lineId: string, field: "list_price_override" | "discount_pct_override", value: number | null) {
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            modules: d.modules.map((m) =>
+              m.feeder.id === mod.feeder.id ? { ...m, lines: m.lines.map((l) => (l.id === lineId ? { ...l, [field]: value } : l)) } : m
+            ),
+          }
+        : d
+    );
+  }
+
+  function removeLine(mod: DraftModule, lineId: string) {
+    setDraft((d) =>
+      d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, lines: m.lines.filter((l) => l.id !== lineId) } : m)) } : d
+    );
+  }
+
+  function renameFeeder(mod: DraftModule, field: "name" | "tag" | "rating_summary", value: string) {
+    setDraft((d) =>
+      d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, feeder: { ...m.feeder, [field]: value || null } } : m)) } : d
+    );
+  }
+
+  function updateLaborPct(field: "labor_wiring_pct" | "labor_assembly_pct" | "labor_testing_pct", value: number) {
+    const key = field === "labor_wiring_pct" ? "laborWiring" : field === "labor_assembly_pct" ? "laborAssembly" : "laborTesting";
+    setDraft((d) => (d ? { ...d, [key]: value } : d));
+  }
+
+  function addBusbar() {
+    setDraft((d) => (d ? { ...d, busbars: [...d.busbars, { id: newId(), description: "New busbar run", qty: 1, rate: 0 }] } : d));
+  }
+  function updateBusbar(id: string, patch: Partial<DraftBusbar>) {
+    setDraft((d) => (d ? { ...d, busbars: d.busbars.map((b) => (b.id === id ? { ...b, ...patch } : b)) } : d));
+  }
+  function removeBusbar(id: string) {
+    setDraft((d) => (d ? { ...d, busbars: d.busbars.filter((b) => b.id !== id) } : d));
+  }
+
+  function addEnclosureLine() {
+    setDraft((d) => (d ? { ...d, enclosureLines: [...d.enclosureLines, { id: newId(), description: "New enclosure line", qty: 1, rate: 0 }] } : d));
+  }
+  function updateEnclosureLine(id: string, patch: Partial<DraftEnclosure>) {
+    setDraft((d) => (d ? { ...d, enclosureLines: d.enclosureLines.map((e) => (e.id === id ? { ...e, ...patch } : e)) } : d));
+  }
+  function removeEnclosureLine(id: string) {
+    setDraft((d) => (d ? { ...d, enclosureLines: d.enclosureLines.filter((e) => e.id !== id) } : d));
+  }
+
+  function handleCancel() {
+    if (!saved) return;
+    setDraft(structuredClone(saved));
+    setResetKey((k) => k + 1);
+  }
+
+  async function handleSave() {
+    if (!sb || !draft || !saved) return;
+    setSaving(true);
+    try {
+      const laborPatch: Partial<Pick<Switchboard, "labor_wiring_pct" | "labor_assembly_pct" | "labor_testing_pct">> = {};
+      if (draft.laborWiring !== saved.laborWiring) laborPatch.labor_wiring_pct = draft.laborWiring;
+      if (draft.laborAssembly !== saved.laborAssembly) laborPatch.labor_assembly_pct = draft.laborAssembly;
+      if (draft.laborTesting !== saved.laborTesting) laborPatch.labor_testing_pct = draft.laborTesting;
+      if (Object.keys(laborPatch).length) {
+        const { error } = await supabase.from("switchboards").update(laborPatch).eq("id", sb.id);
+        if (error) throw error;
+      }
+
+      await saveLineTable(supabase, "switchboard_busbars", sb.id, saved.busbars, draft.busbars);
+      await saveLineTable(supabase, "switchboard_enclosure_lines", sb.id, saved.enclosureLines, draft.enclosureLines);
+
+      const savedModuleIds = new Set(saved.modules.map((m) => m.feeder.id));
+      const draftModuleIds = new Set(draft.modules.map((m) => m.feeder.id));
+
+      for (const m of saved.modules) {
+        if (!draftModuleIds.has(m.feeder.id)) {
+          const { error } = await supabase.from("placed_feeders").delete().eq("id", m.placementId);
+          if (error) throw error;
+          if (m.feeder.switchboard_id === sb.id && !m.feeder.is_library) {
+            await supabase.from("feeders").delete().eq("id", m.feeder.id);
+          }
+        }
+      }
+
+      for (const m of draft.modules) {
+        const isNewPlacement = !savedModuleIds.has(m.feeder.id);
+        if (isNewPlacement) {
+          const vId = await ensureUnassignedVertical(supabase, sb.id);
+          const { error } = await supabase
+            .from("placed_feeders")
+            .insert({ vertical_id: vId, feeder_id: m.feeder.id, qty: m.qty, tier_number: 1, sort_order: 0 });
+          if (error) throw error;
+        } else {
+          const priorModule = saved.modules.find((x) => x.feeder.id === m.feeder.id)!;
+          if (priorModule.qty !== m.qty) {
+            const { error } = await supabase.from("placed_feeders").update({ qty: m.qty }).eq("id", m.placementId);
+            if (error) throw error;
+          }
+          const feederPatch: Partial<Pick<Feeder, "name" | "tag" | "rating_summary">> & { updated_at?: string } = {};
+          if (priorModule.feeder.name !== m.feeder.name) feederPatch.name = m.feeder.name;
+          if (priorModule.feeder.tag !== m.feeder.tag) feederPatch.tag = m.feeder.tag;
+          if (priorModule.feeder.rating_summary !== m.feeder.rating_summary) feederPatch.rating_summary = m.feeder.rating_summary;
+          if (Object.keys(feederPatch).length) {
+            feederPatch.updated_at = new Date().toISOString();
+            const { error } = await supabase.from("feeders").update(feederPatch).eq("id", m.feeder.id);
+            if (error) throw error;
+          }
+        }
+
+        const draftLineIds = new Set(m.lines.map((l) => l.id));
+        for (const l of m.baselineLines) {
+          if (!draftLineIds.has(l.id)) {
+            const { error } = await supabase.from("feeder_items").delete().eq("id", l.id);
+            if (error) throw error;
+          }
+        }
+        for (const [i, l] of m.lines.entries()) {
+          if (l.id.startsWith("new-")) {
+            const { error } = await supabase.from("feeder_items").insert({
+              feeder_id: m.feeder.id,
+              item_id: l.item_id,
+              qty: l.qty,
+              sort_order: i,
+              list_price_override: l.list_price_override,
+              discount_pct_override: l.discount_pct_override,
+            });
+            if (error) throw error;
+          } else {
+            const priorLine = m.baselineLines.find((x) => x.id === l.id);
+            if (
+              !priorLine ||
+              priorLine.qty !== l.qty ||
+              priorLine.list_price_override !== l.list_price_override ||
+              priorLine.discount_pct_override !== l.discount_pct_override
+            ) {
+              const { error } = await supabase
+                .from("feeder_items")
+                .update({ qty: l.qty, sort_order: i, list_price_override: l.list_price_override, discount_pct_override: l.discount_pct_override })
+                .eq("id", l.id);
+              if (error) throw error;
+            }
+          }
+        }
+      }
+
+      const fresh = await loadBomData(supabase, switchboardId);
+      if (fresh) {
+        setSb(fresh.switchboard);
+        const freshDraft = toDraft(fresh);
+        setSaved(freshDraft);
+        setDraft(freshDraft);
+        setLibraryFeedersAll(fresh.libraryFeedersAll);
+        setResetKey((k) => k + 1);
+      }
+      router.refresh();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not save changes.");
+    } finally {
+      setSaving(false);
     }
-    setModules(
-      modules.map((m) =>
-        m.feeder.id === mod.feeder.id ? { ...m, lines: [...m.lines, { ...(data as FeederItemWithDetails), item }] } : m
-      )
-    );
   }
 
-  async function updateLineQty(mod: FeederModule, lineId: string, qty: number) {
-    setModules(
-      modules.map((m) =>
-        m.feeder.id === mod.feeder.id ? { ...m, lines: m.lines.map((l) => (l.id === lineId ? { ...l, qty } : l)) } : m
-      )
-    );
-    await supabase.from("feeder_items").update({ qty }).eq("id", lineId);
-  }
-
-  async function removeLine(mod: FeederModule, lineId: string) {
-    setModules(
-      modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, lines: m.lines.filter((l) => l.id !== lineId) } : m))
-    );
-    await supabase.from("feeder_items").delete().eq("id", lineId);
-  }
-
-  async function renameFeeder(mod: FeederModule, field: "name" | "tag" | "rating_summary", value: string) {
-    setModules(modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, feeder: { ...m.feeder, [field]: value } } : m)));
-    await supabase.from("feeders").update({ [field]: value || null, updated_at: new Date().toISOString() }).eq("id", mod.feeder.id);
-  }
-
-  async function updateLaborPct(field: "labor_wiring_pct" | "labor_assembly_pct" | "labor_testing_pct", value: number) {
-    if (!sb) return;
-    const updated = { ...sb, [field]: value };
-    setSb(updated);
-    await supabase.from("switchboards").update({ [field]: value }).eq("id", sb.id);
-  }
-
-  async function addBusbar() {
-    if (!sb) return;
-    const { data, error } = await supabase
-      .from("switchboard_busbars")
-      .insert({ switchboard_id: sb.id, description: "New busbar run", qty: 1, rate: 0, sort_order: busbars.length })
-      .select("*")
-      .single();
-    if (error) return alert(error.message);
-    setBusbars([...busbars, data as SwitchboardBusbarLine]);
-  }
-  async function updateBusbar(id: string, patch: Partial<SwitchboardBusbarLine>) {
-    setBusbars(busbars.map((b) => (b.id === id ? { ...b, ...patch } : b)));
-    await supabase.from("switchboard_busbars").update(patch).eq("id", id);
-  }
-  async function removeBusbar(id: string) {
-    setBusbars(busbars.filter((b) => b.id !== id));
-    await supabase.from("switchboard_busbars").delete().eq("id", id);
-  }
-
-  async function addEnclosureLine() {
-    if (!sb) return;
-    const { data, error } = await supabase
-      .from("switchboard_enclosure_lines")
-      .insert({ switchboard_id: sb.id, description: "New enclosure line", qty: 1, rate: 0, sort_order: enclosureLines.length })
-      .select("*")
-      .single();
-    if (error) return alert(error.message);
-    setEnclosureLines([...enclosureLines, data as SwitchboardEnclosureLine]);
-  }
-  async function updateEnclosureLine(id: string, patch: Partial<SwitchboardEnclosureLine>) {
-    setEnclosureLines(enclosureLines.map((e) => (e.id === id ? { ...e, ...patch } : e)));
-    await supabase.from("switchboard_enclosure_lines").update(patch).eq("id", id);
-  }
-  async function removeEnclosureLine(id: string) {
-    setEnclosureLines(enclosureLines.filter((e) => e.id !== id));
-    await supabase.from("switchboard_enclosure_lines").delete().eq("id", id);
-  }
-
-  if (loading || !sb) {
+  if (loading || !sb || !draft) {
     return <div className="p-8 text-sm text-on-surface-variant">Loading...</div>;
   }
 
@@ -402,6 +565,9 @@ export function BomBuilder({
     sb.ka ? `${sb.ka}kA` : null,
     sb.ip_rating ? `IP${sb.ip_rating}` : null,
   ].filter((v): v is string => !!v);
+
+  const draftFeederIds = new Set(draft.modules.map((m) => m.feeder.id));
+  const libraryOptions = libraryFeedersAll.filter((f) => !draftFeederIds.has(f.id));
 
   return (
     <div className="space-y-space-lg p-margin-lg">
@@ -421,13 +587,36 @@ export function BomBuilder({
             </div>
           )}
         </div>
-        <button
-          disabled
-          title="Export coming soon"
-          className="flex items-center gap-1 rounded bg-surface-container-low px-space-md py-space-sm font-label-md text-label-md text-on-surface-variant opacity-60"
-        >
-          <Icon name="file_save" size={16} /> Export BOM (PDF/XLSX)
-        </button>
+        <div className="flex items-center gap-space-sm">
+          {!readOnly && dirty && <span className="font-body-sm text-body-sm text-amber-600">Unsaved changes</span>}
+          {!readOnly && !dirty && <span className="font-body-sm text-body-sm text-tertiary">Saved</span>}
+          <button
+            disabled
+            title="Export coming soon"
+            className="flex items-center gap-1 rounded bg-surface-container-low px-space-md py-space-sm font-label-md text-label-md text-on-surface-variant opacity-60"
+          >
+            <Icon name="file_save" size={16} /> Export BOM (PDF/XLSX)
+          </button>
+          {!readOnly && (
+            <>
+              <button
+                onClick={handleCancel}
+                disabled={!dirty || saving}
+                className="flex items-center gap-1 rounded border border-surface-container-high px-space-lg py-space-sm font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={!dirty || saving}
+                className="flex items-center gap-1 rounded bg-primary px-space-lg py-space-sm font-label-md text-label-md text-on-primary shadow-sm transition-all hover:bg-primary-container disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Icon name="save" size={16} />
+                {saving ? "Saving..." : "Save Changes"}
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {readOnly && (
@@ -437,14 +626,7 @@ export function BomBuilder({
         </div>
       )}
 
-      <CostBreakdownCard
-        breakdown={breakdown}
-        switchboard={sb}
-        readOnly={readOnly}
-        onLaborChange={updateLaborPct}
-        currency={currency}
-        exchangeRate={exchangeRate}
-      />
+      <CostBreakdownCard key={resetKey} breakdown={breakdown} switchboard={{ labor_wiring_pct: draft.laborWiring, labor_assembly_pct: draft.laborAssembly, labor_testing_pct: draft.laborTesting }} readOnly={readOnly} onLaborChange={updateLaborPct} />
 
       {!readOnly && (
         <div className="flex flex-wrap items-start gap-3">
@@ -456,63 +638,45 @@ export function BomBuilder({
       )}
 
       <div className="space-y-3">
-        {modules.map((mod) => (
+        {draft.modules.map((mod) => (
           <FeederModuleCard
             key={mod.feeder.id}
             mod={mod}
             readOnly={readOnly}
             canEditLines={!readOnly && (isAdmin || !mod.feeder.is_library)}
             allItems={allItems}
-            currency={currency}
-            exchangeRate={exchangeRate}
             onRename={(field, value) => renameFeeder(mod, field, value)}
             onQtyChange={(qty) => updateModuleQty(mod, qty)}
             onAddLine={(item, qty) => addLine(mod, item, qty)}
             onLineQtyChange={(lineId, qty) => updateLineQty(mod, lineId, qty)}
+            onLineOverrideChange={(lineId, field, value) => updateLineOverride(mod, lineId, field, value)}
             onRemoveLine={(lineId) => removeLine(mod, lineId)}
             onDuplicate={!readOnly ? () => duplicateModule(mod) : undefined}
             onDelete={!readOnly ? () => deleteModule(mod) : undefined}
             onPromote={!readOnly && !mod.feeder.is_library ? () => promoteToLibrary(mod) : undefined}
           />
         ))}
-        {modules.length === 0 && (
+        {draft.modules.length === 0 && (
           <p className="rounded-xl border border-dashed border-surface-container-high py-10 text-center text-sm text-on-surface-variant">
             No feeders in this switchboard&apos;s BOM yet. Add one from the library or build a custom feeder above.
           </p>
         )}
       </div>
 
-      <LineItemsSection
-        title="1. Busbars"
-        lines={busbars}
-        readOnly={readOnly}
-        onAdd={addBusbar}
-        onUpdate={updateBusbar}
-        onRemove={removeBusbar}
-        currency={currency}
-        exchangeRate={exchangeRate}
-      />
+      <LineItemsSection title="1. Busbars" lines={draft.busbars} readOnly={readOnly} onAdd={addBusbar} onUpdate={updateBusbar} onRemove={removeBusbar} />
       <LineItemsSection
         title="2. Enclosure & Cubicle Construction"
-        lines={enclosureLines}
+        lines={draft.enclosureLines}
         readOnly={readOnly}
         onAdd={addEnclosureLine}
         onUpdate={updateEnclosureLine}
         onRemove={removeEnclosureLine}
-        currency={currency}
-        exchangeRate={exchangeRate}
       />
     </div>
   );
 }
 
-function AddFromLibrary({
-  options,
-  onSelect,
-}: {
-  options: LibraryFeederOption[];
-  onSelect: (opt: LibraryFeederOption) => void;
-}) {
+function AddFromLibrary({ options, onSelect }: { options: LibraryFeederOption[]; onSelect: (opt: LibraryFeederOption) => void }) {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const matches = search
@@ -571,14 +735,13 @@ function FeederModuleCard({
   onQtyChange,
   onAddLine,
   onLineQtyChange,
+  onLineOverrideChange,
   onRemoveLine,
   onDuplicate,
   onDelete,
   onPromote,
-  currency,
-  exchangeRate,
 }: {
-  mod: FeederModule;
+  mod: DraftModule;
   readOnly: boolean;
   canEditLines: boolean;
   allItems: ItemMaster[];
@@ -586,22 +749,17 @@ function FeederModuleCard({
   onQtyChange: (qty: number) => void;
   onAddLine: (item: ItemMaster, qty: number) => void;
   onLineQtyChange: (lineId: string, qty: number) => void;
+  onLineOverrideChange: (lineId: string, field: "list_price_override" | "discount_pct_override", value: number | null) => void;
   onRemoveLine: (lineId: string) => void;
   onDuplicate?: () => void;
   onDelete?: () => void;
   onPromote?: () => void;
-  currency: string;
-  exchangeRate: number;
 }) {
   const [expanded, setExpanded] = useState(true);
-  const [name, setName] = useState(mod.feeder.name);
-  const [tag, setTag] = useState(mod.feeder.tag ?? "");
-  const [rating, setRating] = useState(mod.feeder.rating_summary ?? "");
   const [itemSearch, setItemSearch] = useState("");
   const [selectedItemId, setSelectedItemId] = useState("");
-  const [addQty, setAddQty] = useState("1");
 
-  const subtotal = mod.placementQty * lineTotal(mod.lines);
+  const subtotal = mod.qty * lineTotal(mod.lines);
 
   const matches = itemSearch
     ? allItems
@@ -622,16 +780,14 @@ function FeederModuleCard({
         <div className="flex flex-1 flex-wrap items-center gap-2">
           <input
             disabled={readOnly || !canEditLines}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onBlur={() => onRename("name", name)}
+            value={mod.feeder.name}
+            onChange={(e) => onRename("name", e.target.value)}
             className="min-w-40 rounded border-none bg-transparent px-1 py-0.5 text-sm font-semibold text-on-surface focus:bg-surface-container-lowest disabled:text-on-surface"
           />
           <input
             disabled={readOnly || !canEditLines}
-            value={tag}
-            onChange={(e) => setTag(e.target.value)}
-            onBlur={() => onRename("tag", tag)}
+            value={mod.feeder.tag ?? ""}
+            onChange={(e) => onRename("tag", e.target.value)}
             placeholder="TAG"
             className="w-32 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-0.5 font-mono text-[11px] text-secondary disabled:border-transparent disabled:bg-transparent"
           />
@@ -646,9 +802,8 @@ function FeederModuleCard({
           </span>
           <input
             disabled={readOnly || !canEditLines}
-            value={rating}
-            onChange={(e) => setRating(e.target.value)}
-            onBlur={() => onRename("rating_summary", rating)}
+            value={mod.feeder.rating_summary ?? ""}
+            onChange={(e) => onRename("rating_summary", e.target.value)}
             placeholder="Rating summary"
             className="w-48 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-0.5 text-[11px] text-secondary disabled:border-transparent disabled:bg-transparent"
           />
@@ -659,12 +814,12 @@ function FeederModuleCard({
             type="number"
             min="1"
             disabled={readOnly}
-            value={mod.placementQty}
+            value={mod.qty}
             onChange={(e) => onQtyChange(Number(e.target.value) || 1)}
             className="w-14 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:bg-surface-container-low"
           />
         </div>
-        <span className="font-display text-sm font-semibold text-on-surface">{money(subtotal, currency, exchangeRate)}</span>
+        <span className="font-display text-sm font-semibold text-on-surface">{money(subtotal)}</span>
         {!readOnly && (
           <div className="flex items-center gap-2 text-xs">
             {onPromote && (
@@ -678,7 +833,7 @@ function FeederModuleCard({
               </button>
             )}
             {onDelete && (
-              <button onClick={onDelete} className="text-error hover:text-error/70">
+              <button onClick={onDelete} title="Remove from BOM" className="text-error hover:text-error/70">
                 <Icon name="delete" size={15} />
               </button>
             )}
@@ -691,8 +846,10 @@ function FeederModuleCard({
           <table className="w-full text-xs">
             <thead className="text-left uppercase tracking-wide text-on-surface-variant">
               <tr>
+                <th className="px-2 py-1">#</th>
                 <th className="px-2 py-1">SKU</th>
-                <th className="px-2 py-1">Vendor Cat</th>
+                <th className="px-2 py-1">Make</th>
+                <th className="px-2 py-1">Category</th>
                 <th className="px-2 py-1">Description</th>
                 <th className="px-2 py-1 text-right">Qty</th>
                 <th className="px-2 py-1 text-right">List Price</th>
@@ -704,46 +861,82 @@ function FeederModuleCard({
               </tr>
             </thead>
             <tbody>
-              {mod.lines.map((line) => (
-                <tr key={line.id} className="border-t border-surface-container">
-                  <td className="px-2 py-1.5 font-mono">{line.item.sku || "—"}</td>
-                  <td className="px-2 py-1.5 font-mono text-secondary">{line.item.vendor_cat || "—"}</td>
-                  <td className="px-2 py-1.5">{line.item.description}</td>
-                  <td className="px-2 py-1.5 text-right">
-                    {canEditLines ? (
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={line.qty}
-                        onChange={(e) => onLineQtyChange(line.id, Number(e.target.value) || 0)}
-                        className="w-16 rounded border border-surface-container-high px-1 py-0.5 text-right"
-                      />
-                    ) : (
-                      line.qty
-                    )}
-                  </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums text-on-surface-variant">
-                    {line.item.list_price != null ? money(line.item.list_price, currency, exchangeRate) : "—"}
-                  </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums text-on-surface-variant">
-                    {line.item.discount_pct != null ? `${line.item.discount_pct}%` : "—"}
-                  </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums text-secondary">{money(line.item.unit_cost, currency, exchangeRate)}</td>
-                  <td className="px-2 py-1.5 text-secondary">{line.item.uom}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{money(line.qty * line.item.unit_cost, currency, exchangeRate)}</td>
-                  {canEditLines && (
+              {mod.lines.map((line, i) => {
+                const listPrice = line.list_price_override ?? line.item.list_price;
+                const discountPct = line.discount_pct_override ?? line.item.discount_pct;
+                const netRate = effectiveNetRate(line.item, line.list_price_override, line.discount_pct_override);
+                return (
+                  <tr key={line.id} className="border-t border-surface-container">
+                    <td className="px-2 py-1.5 text-on-surface-variant">{i + 1}</td>
+                    <td className="px-2 py-1.5 font-mono">{line.item.sku || "—"}</td>
+                    <td className="px-2 py-1.5 text-on-surface-variant">{line.item.make || "—"}</td>
+                    <td className="px-2 py-1.5 text-on-surface-variant">{line.item.category || "—"}</td>
+                    <td className="px-2 py-1.5">{line.item.description}</td>
                     <td className="px-2 py-1.5 text-right">
-                      <button onClick={() => onRemoveLine(line.id)} className="text-error hover:underline">
-                        ✕
-                      </button>
+                      {canEditLines ? (
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.qty}
+                          onChange={(e) => onLineQtyChange(line.id, Number(e.target.value) || 0)}
+                          className="w-16 rounded border border-surface-container-high px-1 py-0.5 text-right"
+                        />
+                      ) : (
+                        line.qty
+                      )}
                     </td>
-                  )}
-                </tr>
-              ))}
+                    <td className="px-2 py-1.5 text-right tabular-nums text-on-surface-variant">
+                      {canEditLines ? (
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={listPrice ?? ""}
+                          placeholder="—"
+                          onChange={(e) => onLineOverrideChange(line.id, "list_price_override", e.target.value === "" ? null : Number(e.target.value))}
+                          className="w-20 rounded border border-surface-container-high px-1 py-0.5 text-right"
+                        />
+                      ) : listPrice != null ? (
+                        money(listPrice)
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 text-right tabular-nums text-on-surface-variant">
+                      {canEditLines ? (
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          value={discountPct ?? ""}
+                          placeholder="—"
+                          onChange={(e) => onLineOverrideChange(line.id, "discount_pct_override", e.target.value === "" ? null : Number(e.target.value))}
+                          className="w-16 rounded border border-surface-container-high px-1 py-0.5 text-right"
+                        />
+                      ) : discountPct != null ? (
+                        `${discountPct}%`
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 text-right tabular-nums text-secondary">{money(netRate)}</td>
+                    <td className="px-2 py-1.5 text-secondary">{line.item.uom}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{money(line.qty * netRate)}</td>
+                    {canEditLines && (
+                      <td className="px-2 py-1.5 text-right">
+                        <button onClick={() => onRemoveLine(line.id)} className="text-error hover:underline">
+                          ✕
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
               {mod.lines.length === 0 && (
                 <tr>
-                  <td colSpan={canEditLines ? 10 : 9} className="px-2 py-4 text-center text-on-surface-variant">
+                  <td colSpan={canEditLines ? 12 : 11} className="px-2 py-4 text-center text-on-surface-variant">
                     No items in this feeder yet.
                   </td>
                 </tr>
@@ -781,22 +974,13 @@ function FeederModuleCard({
                   </div>
                 )}
               </div>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={addQty}
-                onChange={(e) => setAddQty(e.target.value)}
-                className="w-16 rounded border border-surface-container-high px-1.5 py-1 text-xs"
-              />
               <button
                 onClick={() => {
                   const item = allItems.find((i) => i.id === selectedItemId);
                   if (!item) return;
-                  onAddLine(item, Number(addQty) || 1);
+                  onAddLine(item, 1);
                   setSelectedItemId("");
                   setItemSearch("");
-                  setAddQty("1");
                 }}
                 disabled={!selectedItemId}
                 className="rounded bg-secondary px-2.5 py-1 text-xs font-medium text-white disabled:opacity-40"
@@ -808,7 +992,7 @@ function FeederModuleCard({
 
           <div className="mt-2 flex items-center justify-end gap-3 border-t border-surface-container pt-2 text-xs text-secondary">
             <span>{mod.lines.length} items</span>
-            <span className="font-semibold text-on-surface">Feeder Total: {money(subtotal, currency, exchangeRate)}</span>
+            <span className="font-semibold text-on-surface">Feeder Total: {money(subtotal)}</span>
           </div>
         </div>
       )}
@@ -823,8 +1007,6 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
   onAdd,
   onUpdate,
   onRemove,
-  currency,
-  exchangeRate,
 }: {
   title: string;
   lines: T[];
@@ -832,8 +1014,6 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
   onAdd: () => void;
   onUpdate: (id: string, patch: Partial<T>) => void;
   onRemove: (id: string) => void;
-  currency: string;
-  exchangeRate: number;
 }) {
   const total = lines.reduce((s, l) => s + l.qty * l.rate, 0);
   return (
@@ -885,7 +1065,7 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
                   className="w-24 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
                 />
               </td>
-              <td className="px-3 py-1.5 text-right tabular-nums">{money(l.qty * l.rate, currency, exchangeRate)}</td>
+              <td className="px-3 py-1.5 text-right tabular-nums">{money(l.qty * l.rate)}</td>
               {!readOnly && (
                 <td className="px-3 py-1.5 text-right">
                   <button onClick={() => onRemove(l.id)} className="text-error hover:underline">
@@ -908,7 +1088,7 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
             <td colSpan={3} className="px-3 py-1.5 text-right">
               Total
             </td>
-            <td className="px-3 py-1.5 text-right tabular-nums">{money(total, currency, exchangeRate)}</td>
+            <td className="px-3 py-1.5 text-right tabular-nums">{money(total)}</td>
             {!readOnly && <td />}
           </tr>
         </tfoot>

@@ -170,8 +170,6 @@ export function RevisionWorkspace({
             isAdmin={isAdmin}
             revisionArchived={archived}
             allItems={allItems}
-            currency={project.currency}
-            exchangeRate={project.exchange_rate}
           />
         )}
 

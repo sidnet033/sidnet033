@@ -8,7 +8,7 @@ import { LookupSelect } from "@/components/lookup-select";
 import { StageStepper } from "@/components/stage-stepper";
 import { COUNTRIES } from "@/lib/countries";
 import { CURRENCIES } from "@/lib/currencies";
-import { formatMoney } from "@/lib/money";
+import { formatMoneyDual } from "@/lib/money";
 import type { SwitchboardListItem } from "@/lib/revision-context";
 import type { Customer, Project, ProjectStage, Revision, Switchboard } from "@/types/database";
 import type { Tab } from "@/components/revision-workspace";
@@ -106,7 +106,7 @@ export function ProjectDetailTab({
   const [infoCollapsed, setInfoCollapsed] = useState(false);
 
   const dirty = JSON.stringify(form) !== JSON.stringify(savedSnapshot);
-  const money = (n: number) => formatMoney(n, form.currency, form.exchange_rate);
+  const money = (n: number) => formatMoneyDual(n, form.currency, form.exchange_rate);
 
   useEffect(() => {
     if (!isAdmin) return;

@@ -94,6 +94,8 @@ export type FeederItem = {
   qty: number;
   sort_order: number;
   created_at: string;
+  list_price_override: number | null;
+  discount_pct_override: number | null;
 };
 
 export type FeederItemWithDetails = FeederItem & { item: ItemMaster };

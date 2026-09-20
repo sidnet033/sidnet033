@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
-import { formatMoney } from "@/lib/money";
+import { formatMoneyDual } from "@/lib/money";
 import { CURRENCIES } from "@/lib/currencies";
 import type { CostBreakdown } from "@/lib/switchboard-cost";
 import type { Customer, Project, Revision, Switchboard } from "@/types/database";
@@ -28,15 +28,34 @@ export function CostingMatrix({
   archived: boolean;
 }) {
   const supabase = useMemo(() => createClient(), []);
-  const money = (n: number) => formatMoney(n, project.currency, project.exchange_rate);
+  const money = (n: number) => formatMoneyDual(n, project.currency, project.exchange_rate);
 
+  // Resync local state whenever fresh props arrive (e.g. after a
+  // router.refresh() triggered by saving changes in BOM Builder) — this
+  // is what keeps this page's cost breakdown in sync with BOM edits.
+  const [prevInitialColumns, setPrevInitialColumns] = useState(initialColumns);
   const [columns, setColumns] = useState(initialColumns);
+  if (initialColumns !== prevInitialColumns) {
+    setPrevInitialColumns(initialColumns);
+    setColumns(initialColumns);
+  }
+
+  const [prevRevision, setPrevRevision] = useState(revision);
   const [freightAmount, setFreightAmount] = useState(revision.freight_amount);
   const [freightDesc, setFreightDesc] = useState(revision.freight_description ?? "");
   const [installAmount, setInstallAmount] = useState(revision.installation_amount);
   const [installDesc, setInstallDesc] = useState(revision.installation_description ?? "");
   const [commissioningAmount, setCommissioningAmount] = useState(revision.commissioning_amount);
   const [commissioningDesc, setCommissioningDesc] = useState(revision.commissioning_description ?? "");
+  if (revision !== prevRevision) {
+    setPrevRevision(revision);
+    setFreightAmount(revision.freight_amount);
+    setFreightDesc(revision.freight_description ?? "");
+    setInstallAmount(revision.installation_amount);
+    setInstallDesc(revision.installation_description ?? "");
+    setCommissioningAmount(revision.commissioning_amount);
+    setCommissioningDesc(revision.commissioning_description ?? "");
+  }
 
   async function updateProfitPct(switchboardId: string, pct: number) {
     setColumns(columns.map((c) => (c.switchboard.id === switchboardId ? { ...c, switchboard: { ...c.switchboard, profit_pct: pct } } : c)));
