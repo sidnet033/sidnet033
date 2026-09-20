@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { itemCode } from "@/lib/item-display";
-import type { ItemMaster } from "@/types/database";
+import type { Feeder, ItemMaster } from "@/types/database";
 
 type NewFeederLine = { item: ItemMaster; qty: number };
 
@@ -14,20 +14,7 @@ export function AdHocFeederPanel({
 }: {
   switchboardId: string;
   allItems: ItemMaster[];
-  onCreated: (feeder: {
-    id: string;
-    name: string;
-    description: string | null;
-    category: string | null;
-    tag: string | null;
-    rating_summary: string | null;
-    switchboard_id: string | null;
-    is_library: boolean;
-    created_by: string | null;
-    created_at: string;
-    updated_at: string;
-    cost: number;
-  }) => void;
+  onCreated: (feeder: Feeder & { cost: number }) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");

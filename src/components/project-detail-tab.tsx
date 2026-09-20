@@ -8,16 +8,13 @@ import { LookupSelect } from "@/components/lookup-select";
 import { StageStepper } from "@/components/stage-stepper";
 import { COUNTRIES } from "@/lib/countries";
 import { CURRENCIES } from "@/lib/currencies";
+import { formatMoney } from "@/lib/money";
 import type { SwitchboardListItem } from "@/lib/revision-context";
 import type { Customer, Project, ProjectStage, Revision, Switchboard } from "@/types/database";
 import type { Tab } from "@/components/revision-workspace";
 
 const STD_OPTIONS = ["ArTuK", "61439", "60439"] as const;
 const IP_OPTIONS = ["42", "52", "54", "55", "63"];
-
-function money(n: number) {
-  return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
-}
 
 function formatDate(iso: string | null) {
   if (!iso) return "—";
@@ -109,6 +106,7 @@ export function ProjectDetailTab({
   const [infoCollapsed, setInfoCollapsed] = useState(false);
 
   const dirty = JSON.stringify(form) !== JSON.stringify(savedSnapshot);
+  const money = (n: number) => formatMoney(n, form.currency, form.exchange_rate);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -254,6 +252,14 @@ export function ProjectDetailTab({
 
   const currencyLabel = CURRENCIES.find((c) => c.code === form.currency)?.label ?? form.currency;
 
+  const totalUnits = boards.reduce((s, b) => s + b.switchboard.qty, 0);
+  const totalMfgCost = boards.reduce((s, b) => s + b.breakdown.mfgTotal * b.switchboard.qty, 0);
+  const avgMarginPct = boards.length > 0 ? boards.reduce((s, b) => s + b.switchboard.profit_pct, 0) / boards.length : 0;
+  const totalPriceSum = boards.reduce(
+    (s, b) => s + b.breakdown.mfgTotal * (1 + b.switchboard.profit_pct / 100) * b.switchboard.qty,
+    0
+  );
+
   return (
     <div className="w-full">
       <div className="flex flex-wrap items-center justify-between gap-space-md border-b border-surface-container-high bg-surface-container-lowest px-margin-lg py-space-lg">
@@ -266,10 +272,17 @@ export function ProjectDetailTab({
             {boards.length} Switchboard{boards.length === 1 ? "" : "s"} · Currency: {currencyLabel} · Client: {customerLabel || "—"}
           </p>
         </div>
-        {!revisionArchived && (
-          <div className="flex items-center gap-space-sm">
-            {justSaved && !dirty && <span className="font-body-sm text-body-sm text-tertiary">Saved</span>}
-            {dirty && <span className="font-body-sm text-body-sm text-amber-600">Unsaved changes</span>}
+        <div className="flex items-center gap-space-sm">
+          {!revisionArchived && justSaved && !dirty && <span className="font-body-sm text-body-sm text-tertiary">Saved</span>}
+          {!revisionArchived && dirty && <span className="font-body-sm text-body-sm text-amber-600">Unsaved changes</span>}
+          <button
+            disabled
+            title="Export coming soon"
+            className="flex items-center gap-1 rounded bg-surface-container-low px-space-md py-space-sm font-label-md text-label-md text-on-surface-variant opacity-60"
+          >
+            <Icon name="file_save" size={16} /> Export Project (PDF/XLSX)
+          </button>
+          {!revisionArchived && (
             <button
               onClick={handleSave}
               disabled={!dirty || saving}
@@ -278,8 +291,8 @@ export function ProjectDetailTab({
               <Icon name="save" size={16} />
               {saving ? "Saving..." : "Save Changes"}
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <div className="space-y-space-lg p-margin-lg">
@@ -757,6 +770,19 @@ export function ProjectDetailTab({
                   </tr>
                 )}
               </tbody>
+              {boards.length > 0 && (
+                <tfoot>
+                  <tr className="border-t-2 border-surface-container-high bg-surface-container-low font-semibold text-on-surface">
+                    <td colSpan={8} className="px-space-md py-space-sm">
+                      Total - {boards.length} Product{boards.length === 1 ? "" : "s"} / {totalUnits} unit{totalUnits === 1 ? "" : "s"}
+                    </td>
+                    <td className="whitespace-nowrap px-space-md py-space-sm text-right tabular-nums">{money(totalMfgCost)}</td>
+                    <td className="whitespace-nowrap px-space-md py-space-sm text-right tabular-nums text-tertiary">{avgMarginPct.toFixed(2)}% avg</td>
+                    <td className="whitespace-nowrap px-space-md py-space-sm text-right tabular-nums text-primary">{money(totalPriceSum)}</td>
+                    <td colSpan={3} />
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </div>

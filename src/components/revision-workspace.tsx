@@ -59,6 +59,7 @@ export function RevisionWorkspace({
 
   const selectedSwitchboard = switchboards.find((s) => s.switchboard.id === selectedSwitchboardId) ?? null;
   const onSwitchboardTab = TABS.find((t) => t.id === activeTab)?.needsSwitchboard ?? false;
+  const activeTabLabel = TABS.find((t) => t.id === activeTab)?.label ?? "";
 
   return (
     <div className="flex h-[calc(100vh-56px)] flex-col overflow-hidden">
@@ -77,11 +78,18 @@ export function RevisionWorkspace({
             <span className="rounded bg-surface-container-low px-1.5 py-0.5 font-mono text-[11px] font-semibold text-on-surface">
               REV {revision.revision_number}
             </span>
-            {selectedSwitchboard && onSwitchboardTab && (
+            <Icon name="chevron_right" size={14} />
+            {onSwitchboardTab && selectedSwitchboard ? (
               <>
+                <span>Switchboards</span>
                 <Icon name="chevron_right" size={14} />
-                <span className="font-medium text-on-surface">{selectedSwitchboard.switchboard.tag}</span>
+                <span className="font-medium text-on-surface">
+                  {selectedSwitchboard.switchboard.tag}
+                  {selectedSwitchboard.switchboard.title ? `: ${selectedSwitchboard.switchboard.title}` : ""}
+                </span>
               </>
+            ) : (
+              <span className="font-medium text-on-surface">{activeTabLabel}</span>
             )}
           </div>
           <RevisionControls
@@ -96,32 +104,40 @@ export function RevisionWorkspace({
           />
         </div>
 
-        <nav className="flex items-center gap-space-xs overflow-x-auto rounded-xl bg-surface-container-low px-space-xs">
-          {TABS.map((t) => {
-            const disabled = t.needsSwitchboard && !selectedSwitchboardId;
-            const active = activeTab === t.id;
-            return (
-              <button
-                key={t.id}
-                onClick={() => !disabled && setActiveTab(t.id)}
-                disabled={disabled}
-                title={disabled ? "Select a switchboard from Project Details first" : undefined}
-                className={`flex items-center gap-space-xs py-space-sm px-space-lg font-headline-sm text-headline-sm transition-all ${
-                  disabled
-                    ? "cursor-not-allowed text-on-surface-variant/50"
-                    : active
-                      ? "border-b-2 border-primary text-primary"
-                      : "text-secondary hover:text-on-surface"
-                }`}
-              >
-                <Icon name={t.icon} size={17} />
-                {t.label}
-                {t.needsSwitchboard && selectedSwitchboard && (
-                  <span className="font-mono text-[10px] text-on-surface-variant">{selectedSwitchboard.switchboard.tag}</span>
-                )}
-              </button>
-            );
-          })}
+        <nav className="flex items-center justify-between overflow-x-auto rounded-xl bg-surface-container-lowest px-space-md shadow-sm">
+          <div className="flex items-center gap-space-xs">
+            {TABS.map((t) => {
+              const disabled = t.needsSwitchboard && !selectedSwitchboardId;
+              const active = activeTab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => !disabled && setActiveTab(t.id)}
+                  disabled={disabled}
+                  title={disabled ? "Select a switchboard from Project Details first" : undefined}
+                  className={`flex items-center gap-space-xs py-space-md px-space-lg font-headline-sm text-headline-sm transition-all ${
+                    disabled
+                      ? "cursor-not-allowed text-on-surface-variant/50"
+                      : active
+                        ? "border-b-2 border-primary text-primary"
+                        : "text-secondary hover:text-on-surface"
+                  }`}
+                >
+                  <Icon name={t.icon} size={17} />
+                  {t.label}
+                  {active && (
+                    <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">Active</span>
+                  )}
+                  {t.needsSwitchboard && selectedSwitchboard && (
+                    <span className="font-mono text-[10px] text-on-surface-variant">{selectedSwitchboard.switchboard.tag}</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <span className="hidden shrink-0 font-body-sm text-body-sm text-secondary sm:block">
+            Last saved: {new Date(revision.updated_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+          </span>
         </nav>
       </div>
 
@@ -154,6 +170,8 @@ export function RevisionWorkspace({
             isAdmin={isAdmin}
             revisionArchived={archived}
             allItems={allItems}
+            currency={project.currency}
+            exchangeRate={project.exchange_rate}
           />
         )}
 

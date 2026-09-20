@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
+import { formatMoney } from "@/lib/money";
+import { CURRENCIES } from "@/lib/currencies";
 import type { CostBreakdown } from "@/lib/switchboard-cost";
 import type { Customer, Project, Revision, Switchboard } from "@/types/database";
 
@@ -11,10 +13,6 @@ export type SwitchboardColumn = {
   specSummary: string;
   breakdown: CostBreakdown;
 };
-
-function money(n: number) {
-  return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
-}
 
 export function CostingMatrix({
   revision,
@@ -30,6 +28,7 @@ export function CostingMatrix({
   archived: boolean;
 }) {
   const supabase = useMemo(() => createClient(), []);
+  const money = (n: number) => formatMoney(n, project.currency, project.exchange_rate);
 
   const [columns, setColumns] = useState(initialColumns);
   const [freightAmount, setFreightAmount] = useState(revision.freight_amount);
@@ -70,7 +69,8 @@ export function CostingMatrix({
             <span className="rounded bg-primary/10 px-2 py-0.5 font-mono text-xs font-bold text-primary">{project.code}</span>
           </div>
           <p className="mt-1 font-body-sm text-body-sm text-secondary">
-            {columns.length} Switchboard{columns.length === 1 ? "" : "s"} · Currency: {project.currency}
+            {columns.length} Switchboard{columns.length === 1 ? "" : "s"} · Currency:{" "}
+            {CURRENCIES.find((c) => c.code === project.currency)?.label ?? project.currency}
             {customer ? ` · Client: ${customer.name}` : ""}
           </p>
         </div>
@@ -111,17 +111,18 @@ export function CostingMatrix({
                 Direct Manufacturing Cost Breakdown
               </td>
             </tr>
-            <CostRow label="Electrical" values={columns.map((c) => c.breakdown.electrical * c.switchboard.qty)} rowLabel={rowLabel} />
-            <CostRow label="Busbars" values={columns.map((c) => c.breakdown.busbars * c.switchboard.qty)} rowLabel={rowLabel} />
-            <CostRow label="Enclosure" values={columns.map((c) => c.breakdown.enclosure * c.switchboard.qty)} rowLabel={rowLabel} />
-            <CostRow label="Wiring" values={columns.map((c) => c.breakdown.wiringAmt * c.switchboard.qty)} rowLabel={rowLabel} />
-            <CostRow label="Assembly" values={columns.map((c) => c.breakdown.assemblyAmt * c.switchboard.qty)} rowLabel={rowLabel} />
-            <CostRow label="Testing" values={columns.map((c) => c.breakdown.testingAmt * c.switchboard.qty)} rowLabel={rowLabel} />
+            <CostRow label="Electrical" values={columns.map((c) => c.breakdown.electrical * c.switchboard.qty)} rowLabel={rowLabel} money={money} />
+            <CostRow label="Busbars" values={columns.map((c) => c.breakdown.busbars * c.switchboard.qty)} rowLabel={rowLabel} money={money} />
+            <CostRow label="Enclosure" values={columns.map((c) => c.breakdown.enclosure * c.switchboard.qty)} rowLabel={rowLabel} money={money} />
+            <CostRow label="Wiring" values={columns.map((c) => c.breakdown.wiringAmt * c.switchboard.qty)} rowLabel={rowLabel} money={money} />
+            <CostRow label="Assembly" values={columns.map((c) => c.breakdown.assemblyAmt * c.switchboard.qty)} rowLabel={rowLabel} money={money} />
+            <CostRow label="Testing" values={columns.map((c) => c.breakdown.testingAmt * c.switchboard.qty)} rowLabel={rowLabel} money={money} />
             <CostRow
               label="Total MFG Cost"
               values={columns.map((c) => c.breakdown.mfgTotal * c.switchboard.qty)}
               bold
               rowLabel={rowLabel}
+              money={money}
             />
 
             <tr className="border-t border-surface-container-high bg-surface-container-low/50">
@@ -149,8 +150,9 @@ export function CostingMatrix({
               label="Absolute Profit"
               values={columns.map((c) => c.breakdown.mfgTotal * c.switchboard.qty * (c.switchboard.profit_pct / 100))}
               rowLabel={rowLabel}
+              money={money}
             />
-            <tr className="border-t border-surface-container-high bg-primary/10/40 font-semibold">
+            <tr className="border-t border-surface-container-high bg-primary/10 font-semibold">
               {rowLabel("Tender Price", true)}
               {columns.map((c) => (
                 <td key={c.switchboard.id} className="px-3 py-1.5 text-right tabular-nums text-primary">
@@ -233,11 +235,13 @@ function CostRow({
   values,
   bold = false,
   rowLabel,
+  money,
 }: {
   label: string;
   values: number[];
   bold?: boolean;
   rowLabel: (label: string, bold?: boolean) => React.ReactNode;
+  money: (n: number) => string;
 }) {
   const total = values.reduce((s, v) => s + v, 0);
   return (

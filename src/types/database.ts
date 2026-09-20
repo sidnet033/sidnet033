@@ -82,6 +82,9 @@ export type Feeder = {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  rated_current: number | null;
+  pole_config: string | null;
+  breaking_capacity: string | null;
 };
 
 export type FeederItem = {
@@ -89,6 +92,7 @@ export type FeederItem = {
   feeder_id: string;
   item_id: string;
   qty: number;
+  sort_order: number;
   created_at: string;
 };
 

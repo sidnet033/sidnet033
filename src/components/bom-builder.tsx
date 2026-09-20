@@ -8,6 +8,7 @@ import { findDuplicateLibraryFeeder } from "@/lib/feeder-duplicate";
 import { ensureUnassignedVertical } from "@/lib/switchboard-bom";
 import { itemCode } from "@/lib/item-display";
 import { Icon } from "@/components/icon";
+import { formatMoney } from "@/lib/money";
 import type {
   Feeder,
   FeederItemWithDetails,
@@ -26,8 +27,8 @@ type FeederModule = {
 };
 type LibraryFeederOption = { id: string; name: string; category: string | null; tag: string | null; rating_summary: string | null };
 
-function money(n: number) {
-  return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+function money(n: number, currency: string, exchangeRate: number) {
+  return formatMoney(n, currency, exchangeRate);
 }
 
 function lineTotal(lines: FeederItemWithDetails[]) {
@@ -105,12 +106,16 @@ export function BomBuilder({
   isAdmin,
   revisionArchived,
   allItems,
+  currency,
+  exchangeRate,
 }: {
   switchboardId: string;
   currentUserId: string;
   isAdmin: boolean;
   revisionArchived: boolean;
   allItems: ItemMaster[];
+  currency: string;
+  exchangeRate: number;
 }) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -432,7 +437,14 @@ export function BomBuilder({
         </div>
       )}
 
-      <CostBreakdownCard breakdown={breakdown} switchboard={sb} readOnly={readOnly} onLaborChange={updateLaborPct} />
+      <CostBreakdownCard
+        breakdown={breakdown}
+        switchboard={sb}
+        readOnly={readOnly}
+        onLaborChange={updateLaborPct}
+        currency={currency}
+        exchangeRate={exchangeRate}
+      />
 
       {!readOnly && (
         <div className="flex flex-wrap items-start gap-3">
@@ -451,6 +463,8 @@ export function BomBuilder({
             readOnly={readOnly}
             canEditLines={!readOnly && (isAdmin || !mod.feeder.is_library)}
             allItems={allItems}
+            currency={currency}
+            exchangeRate={exchangeRate}
             onRename={(field, value) => renameFeeder(mod, field, value)}
             onQtyChange={(qty) => updateModuleQty(mod, qty)}
             onAddLine={(item, qty) => addLine(mod, item, qty)}
@@ -475,6 +489,8 @@ export function BomBuilder({
         onAdd={addBusbar}
         onUpdate={updateBusbar}
         onRemove={removeBusbar}
+        currency={currency}
+        exchangeRate={exchangeRate}
       />
       <LineItemsSection
         title="2. Enclosure & Cubicle Construction"
@@ -483,6 +499,8 @@ export function BomBuilder({
         onAdd={addEnclosureLine}
         onUpdate={updateEnclosureLine}
         onRemove={removeEnclosureLine}
+        currency={currency}
+        exchangeRate={exchangeRate}
       />
     </div>
   );
@@ -557,6 +575,8 @@ function FeederModuleCard({
   onDuplicate,
   onDelete,
   onPromote,
+  currency,
+  exchangeRate,
 }: {
   mod: FeederModule;
   readOnly: boolean;
@@ -570,6 +590,8 @@ function FeederModuleCard({
   onDuplicate?: () => void;
   onDelete?: () => void;
   onPromote?: () => void;
+  currency: string;
+  exchangeRate: number;
 }) {
   const [expanded, setExpanded] = useState(true);
   const [name, setName] = useState(mod.feeder.name);
@@ -642,7 +664,7 @@ function FeederModuleCard({
             className="w-14 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:bg-surface-container-low"
           />
         </div>
-        <span className="font-display text-sm font-semibold text-on-surface">{money(subtotal)}</span>
+        <span className="font-display text-sm font-semibold text-on-surface">{money(subtotal, currency, exchangeRate)}</span>
         {!readOnly && (
           <div className="flex items-center gap-2 text-xs">
             {onPromote && (
@@ -702,14 +724,14 @@ function FeederModuleCard({
                     )}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-on-surface-variant">
-                    {line.item.list_price != null ? money(line.item.list_price) : "—"}
+                    {line.item.list_price != null ? money(line.item.list_price, currency, exchangeRate) : "—"}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-on-surface-variant">
                     {line.item.discount_pct != null ? `${line.item.discount_pct}%` : "—"}
                   </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums text-secondary">{money(line.item.unit_cost)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-secondary">{money(line.item.unit_cost, currency, exchangeRate)}</td>
                   <td className="px-2 py-1.5 text-secondary">{line.item.uom}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{money(line.qty * line.item.unit_cost)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{money(line.qty * line.item.unit_cost, currency, exchangeRate)}</td>
                   {canEditLines && (
                     <td className="px-2 py-1.5 text-right">
                       <button onClick={() => onRemoveLine(line.id)} className="text-error hover:underline">
@@ -786,7 +808,7 @@ function FeederModuleCard({
 
           <div className="mt-2 flex items-center justify-end gap-3 border-t border-surface-container pt-2 text-xs text-secondary">
             <span>{mod.lines.length} items</span>
-            <span className="font-semibold text-on-surface">Feeder Total: {money(subtotal)}</span>
+            <span className="font-semibold text-on-surface">Feeder Total: {money(subtotal, currency, exchangeRate)}</span>
           </div>
         </div>
       )}
@@ -801,6 +823,8 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
   onAdd,
   onUpdate,
   onRemove,
+  currency,
+  exchangeRate,
 }: {
   title: string;
   lines: T[];
@@ -808,6 +832,8 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
   onAdd: () => void;
   onUpdate: (id: string, patch: Partial<T>) => void;
   onRemove: (id: string) => void;
+  currency: string;
+  exchangeRate: number;
 }) {
   const total = lines.reduce((s, l) => s + l.qty * l.rate, 0);
   return (
@@ -859,7 +885,7 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
                   className="w-24 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
                 />
               </td>
-              <td className="px-3 py-1.5 text-right tabular-nums">{money(l.qty * l.rate)}</td>
+              <td className="px-3 py-1.5 text-right tabular-nums">{money(l.qty * l.rate, currency, exchangeRate)}</td>
               {!readOnly && (
                 <td className="px-3 py-1.5 text-right">
                   <button onClick={() => onRemove(l.id)} className="text-error hover:underline">
@@ -882,7 +908,7 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
             <td colSpan={3} className="px-3 py-1.5 text-right">
               Total
             </td>
-            <td className="px-3 py-1.5 text-right tabular-nums">{money(total)}</td>
+            <td className="px-3 py-1.5 text-right tabular-nums">{money(total, currency, exchangeRate)}</td>
             {!readOnly && <td />}
           </tr>
         </tfoot>

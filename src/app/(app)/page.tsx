@@ -85,6 +85,8 @@ export default async function DashboardPage() {
           title: p.title,
           revisions: revs,
           cost: revs.reduce((s, r) => s + r.cost, 0),
+          currency: p.currency,
+          exchangeRate: p.exchange_rate,
         };
       });
 

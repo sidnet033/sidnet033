@@ -4,32 +4,20 @@ import { Icon } from "@/components/icon";
 import type { ProjectStage } from "@/types/database";
 
 const MAIN_FLOW: { id: ProjectStage; label: string }[] = [
-  { id: "new", label: "New" },
-  { id: "wip", label: "WIP" },
-  { id: "quoted", label: "Quoted" },
-  { id: "finalization", label: "Finalization" },
+  { id: "new", label: "1. New" },
+  { id: "wip", label: "2. WIP" },
+  { id: "quoted", label: "3. Quoted" },
+  { id: "finalization", label: "4. Finalization" },
 ];
 
-const OUTCOMES: { id: ProjectStage; label: string }[] = [
-  { id: "won", label: "Won" },
-  { id: "lost", label: "Lost" },
-];
-
-const SIDE_STAGES: { id: ProjectStage; label: string }[] = [
-  { id: "hold", label: "Hold" },
-  { id: "budgetary", label: "Budgetary" },
+const OUTCOMES: { id: ProjectStage; label: string; activeClass: string }[] = [
+  { id: "won", label: "Won", activeClass: "text-tertiary" },
+  { id: "lost", label: "Lost", activeClass: "text-error" },
+  { id: "hold", label: "Hold", activeClass: "text-amber-600" },
+  { id: "budgetary", label: "Budgetary", activeClass: "text-secondary" },
 ];
 
 const MAIN_ORDER: ProjectStage[] = ["new", "wip", "quoted", "finalization", "won"];
-
-function stageColor(stage: ProjectStage, active: boolean) {
-  if (!active) return "border-surface-container-high bg-surface-container-lowest text-secondary hover:border-surface-container-high";
-  if (stage === "won") return "border-tertiary bg-tertiary text-white";
-  if (stage === "lost") return "border-error bg-error text-white";
-  if (stage === "hold") return "border-amber-500 bg-amber-500 text-white";
-  if (stage === "budgetary") return "border-secondary bg-secondary text-white";
-  return "border-primary bg-primary text-white";
-}
 
 export function StageStepper({
   value,
@@ -44,51 +32,45 @@ export function StageStepper({
   const mainIndex = MAIN_ORDER.indexOf(isSideStage ? "new" : value === "lost" ? "won" : value);
 
   return (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-space-md lg:flex-row lg:items-center lg:justify-between">
       <div className="flex flex-wrap items-center gap-1">
-        {MAIN_FLOW.map((s, i) => (
-          <div key={s.id} className="flex items-center gap-1">
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => onChange(s.id)}
-              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-70 ${stageColor(
-                s.id,
-                !isSideStage && i <= mainIndex
-              )}`}
-            >
-              {s.label}
-            </button>
-            <Icon name="arrow_forward" size={14} className="text-on-surface-variant" />
-          </div>
-        ))}
+        {MAIN_FLOW.map((s, i) => {
+          const active = !isSideStage && value !== "won" && value !== "lost" && i <= mainIndex;
+          const isCurrent = value === s.id;
+          return (
+            <div key={s.id} className="flex items-center gap-1">
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => onChange(s.id)}
+                className={`flex items-center gap-1 rounded-full px-3 py-1.5 font-label-md text-label-md font-semibold uppercase tracking-wide transition-colors disabled:cursor-not-allowed ${
+                  isCurrent
+                    ? "bg-primary text-on-primary"
+                    : active
+                      ? "bg-primary/10 text-primary"
+                      : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high"
+                }`}
+              >
+                {isCurrent ? <Icon name="check_circle" size={14} /> : <span className="h-1.5 w-1.5 rounded-full bg-current" />}
+                {s.label}
+              </button>
+              {i < MAIN_FLOW.length - 1 && <Icon name="chevron_right" size={16} className="text-on-surface-variant" />}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center gap-space-sm">
+        <span className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-on-surface-variant">Outcomes:</span>
         {OUTCOMES.map((s) => (
           <button
             key={s.id}
             type="button"
             disabled={disabled}
             onClick={() => onChange(s.id)}
-            className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-70 ${stageColor(
-              s.id,
-              value === s.id
-            )}`}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
-      <div className="flex items-center gap-1.5">
-        <span className="text-[11px] text-on-surface-variant">Or move to:</span>
-        {SIDE_STAGES.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            disabled={disabled}
-            onClick={() => onChange(s.id)}
-            className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-70 ${stageColor(
-              s.id,
-              value === s.id
-            )}`}
+            className={`font-label-md text-label-md font-bold uppercase tracking-wide transition-colors disabled:cursor-not-allowed ${
+              value === s.id ? s.activeClass : "text-on-surface-variant hover:text-on-surface"
+            }`}
           >
             {s.label}
           </button>

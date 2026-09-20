@@ -1,24 +1,26 @@
 import { useState } from "react";
+import { formatMoney } from "@/lib/money";
 import type { CostBreakdown } from "@/lib/switchboard-cost";
 import type { Switchboard } from "@/types/database";
-
-function money(n: number) {
-  return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
-}
 
 export function CostBreakdownCard({
   breakdown,
   switchboard,
   readOnly = true,
   onLaborChange,
+  currency,
+  exchangeRate,
 }: {
   breakdown: CostBreakdown;
   switchboard: Pick<Switchboard, "labor_wiring_pct" | "labor_assembly_pct" | "labor_testing_pct">;
   readOnly?: boolean;
   onLaborChange?: (field: "labor_wiring_pct" | "labor_assembly_pct" | "labor_testing_pct", value: number) => void;
+  currency: string;
+  exchangeRate: number;
 }) {
   const rmShare = breakdown.mfgTotal > 0 ? (breakdown.rmTotal / breakdown.mfgTotal) * 100 : 0;
   const valueAddShare = 100 - rmShare;
+  const money = (n: number) => formatMoney(n, currency, exchangeRate);
 
   return (
     <div className="space-y-space-sm">
@@ -47,6 +49,7 @@ export function CostBreakdownCard({
                 amount={breakdown.wiringAmt}
                 readOnly={readOnly}
                 onChange={(v) => onLaborChange("labor_wiring_pct", v)}
+                money={money}
               />
               <PctRow
                 label="Assembly"
@@ -54,6 +57,7 @@ export function CostBreakdownCard({
                 amount={breakdown.assemblyAmt}
                 readOnly={readOnly}
                 onChange={(v) => onLaborChange("labor_assembly_pct", v)}
+                money={money}
               />
               <PctRow
                 label="Testing"
@@ -61,6 +65,7 @@ export function CostBreakdownCard({
                 amount={breakdown.testingAmt}
                 readOnly={readOnly}
                 onChange={(v) => onLaborChange("labor_testing_pct", v)}
+                money={money}
               />
             </>
           ) : (
@@ -108,12 +113,14 @@ function PctRow({
   amount,
   readOnly,
   onChange,
+  money,
 }: {
   label: string;
   pct: number;
   amount: number;
   readOnly: boolean;
   onChange: (v: number) => void;
+  money: (n: number) => string;
 }) {
   const [local, setLocal] = useState(String(pct));
 
