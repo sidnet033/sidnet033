@@ -6,8 +6,30 @@
 export type Profile = {
   id: string;
   full_name: string | null;
+  email: string | null;
   role: "admin" | "sales";
+  role_id: string | null;
   created_at: string;
+};
+
+// Custom roles are a management layer over the create/edit/delete matrix
+// below. They don't yet drive real access control anywhere in the app --
+// that still runs on Profile.role via is_admin(). See migration 0009.
+export type Role = {
+  id: string;
+  name: string;
+  description: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+export type RolePermission = {
+  id: string;
+  role_id: string;
+  resource: string;
+  can_create: boolean;
+  can_edit: boolean;
+  can_delete: boolean;
 };
 
 export type ItemStatus = "active" | "inactive" | "discontinued";

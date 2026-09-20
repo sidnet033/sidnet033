@@ -2,9 +2,10 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth";
-import { AdminUserTable } from "@/components/admin-user-table";
+import { UserManagementSection } from "@/components/user-management-section";
+import { RoleManagementSection } from "@/components/role-management-section";
 import { Icon } from "@/components/icon";
-import type { Profile } from "@/types/database";
+import type { Profile, Role, RolePermission } from "@/types/database";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,11 @@ export default async function AdminSpacePage() {
   if (current?.profile?.role !== "admin") redirect("/");
 
   const supabase = await createClient();
-  const { data: profiles } = await supabase.from("profiles").select("*").order("created_at");
+  const [{ data: profiles }, { data: roles }, { data: rolePermissions }] = await Promise.all([
+    supabase.from("profiles").select("*").order("created_at"),
+    supabase.from("roles").select("*").order("created_at"),
+    supabase.from("role_permissions").select("*"),
+  ]);
 
   return (
     <div className="max-w-4xl space-y-4 px-8 py-6">
@@ -23,7 +28,17 @@ export default async function AdminSpacePage() {
           Manage who on your team can edit the item master and feeder master.
         </p>
       </div>
-      <AdminUserTable initialProfiles={(profiles ?? []) as Profile[]} currentUserId={current.userId} />
+      <UserManagementSection
+        initialProfiles={(profiles ?? []) as Profile[]}
+        roles={(roles ?? []) as Role[]}
+        currentUserId={current.userId}
+      />
+
+      <RoleManagementSection
+        initialRoles={(roles ?? []) as Role[]}
+        initialPermissions={(rolePermissions ?? []) as RolePermission[]}
+        currentUserId={current.userId}
+      />
 
       <Link
         href="/admin/import-log"
