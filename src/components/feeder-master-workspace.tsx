@@ -6,8 +6,9 @@ import { Icon } from "@/components/icon";
 import { itemCode } from "@/lib/item-display";
 import type { Feeder, FeederItemWithDetails, ItemMaster } from "@/types/database";
 
-const FEEDER_TYPES = ["Incomer", "Outgoing", "APFC Bank", "Bus Coupler", "Riser", "Metering", "Spare"];
-const POLE_CONFIGS = ["1P", "2P", "3P", "4P"];
+const FEEDER_TYPES = ["Incomer", "Outgoing", "Bus Coupler", "Sub-Incomer", "APFC Capacitor Bank"];
+const POLE_CONFIGS = ["3-Pole (3P)", "4-Pole (4P)", "3P + N", "2-Pole (2P)"];
+const BREAKING_CAPACITIES = ["65 kA (1s)", "50 kA (1s)", "36 kA (1s)", "25 kA (1s)", "100 kA (1s)"];
 
 function money(n: number) {
   return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
@@ -62,6 +63,7 @@ export function FeederMasterWorkspace({
   const [feeders, setFeeders] = useState(initialFeeders);
   const [linesByFeeder, setLinesByFeeder] = useState(initialLinesByFeeder);
   const [typeFilter, setTypeFilter] = useState("ALL");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<FeederFormState | null>(null);
@@ -70,6 +72,7 @@ export function FeederMasterWorkspace({
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const [itemSearch, setItemSearch] = useState("");
+  const [selectedItem, setSelectedItem] = useState<ItemMaster | null>(null);
   const [categoryChip, setCategoryChip] = useState<string | null>(null);
   const [addQty, setAddQty] = useState("1");
 
@@ -90,15 +93,17 @@ export function FeederMasterWorkspace({
           return itemCode(i).toLowerCase().includes(q) || i.description.toLowerCase().includes(q);
         })
         .slice(0, 10)
-    : categoryChip
-      ? allItems.filter((i) => i.category === categoryChip).slice(0, 10)
-      : [];
+    : [];
 
   function selectFeeder(f: Feeder) {
     setSelectedId(f.id);
     const snap = formOf(f);
     setForm(snap);
     setSavedForm(snap);
+  }
+
+  function toggleExpand(id: string) {
+    setExpandedId((prev) => (prev === id ? null : id));
   }
 
   async function handleCreate() {
@@ -218,13 +223,13 @@ export function FeederMasterWorkspace({
     setSavedForm(form);
   }
 
-  async function addLine(item: ItemMaster) {
-    if (!selectedId) return;
+  async function addSelectedItem() {
+    if (!selectedId || !selectedItem) return;
     const qty = Number(addQty) || 1;
     const sortOrder = (linesByFeeder[selectedId] ?? []).length;
     const { data, error } = await supabase
       .from("feeder_items")
-      .insert({ feeder_id: selectedId, item_id: item.id, qty, sort_order: sortOrder })
+      .insert({ feeder_id: selectedId, item_id: selectedItem.id, qty, sort_order: sortOrder })
       .select("*")
       .single();
     if (error) {
@@ -233,9 +238,10 @@ export function FeederMasterWorkspace({
     }
     setLinesByFeeder((prev) => ({
       ...prev,
-      [selectedId]: [...(prev[selectedId] ?? []), { ...(data as FeederItemWithDetails), item }],
+      [selectedId]: [...(prev[selectedId] ?? []), { ...(data as FeederItemWithDetails), item: selectedItem }],
     }));
     setItemSearch("");
+    setSelectedItem(null);
     setAddQty("1");
   }
 
@@ -269,382 +275,528 @@ export function FeederMasterWorkspace({
   }
 
   return (
-    <div className="w-full space-y-space-lg p-margin-lg">
-      <div className="flex flex-wrap items-center justify-between gap-space-md">
-        <div>
-          <p className="font-label-md text-label-md uppercase tracking-wider text-secondary">
-            Master Libraries <Icon name="chevron_right" size={12} className="inline" /> Feeder Master{" "}
-            <Icon name="chevron_right" size={12} className="inline" /> Template Configurator
-          </p>
-          <h1 className="font-display text-headline-lg text-on-surface">Feeder Master</h1>
-        </div>
-        {isAdmin && (
-          <div className="flex items-center gap-space-sm">
-            <button
-              disabled
-              title="Import coming soon"
-              className="flex items-center gap-1 rounded border border-surface-container-high bg-surface-container-lowest px-space-md py-space-sm font-label-md text-label-md text-on-surface-variant opacity-60"
-            >
-              <Icon name="upload_file" size={16} /> Import Feeder XLS
-            </button>
-            <button
-              disabled
-              title="Export coming soon"
-              className="flex items-center gap-1 rounded border border-surface-container-high bg-surface-container-lowest px-space-md py-space-sm font-label-md text-label-md text-on-surface-variant opacity-60"
-            >
-              <Icon name="file_save" size={16} /> Export Feeder Master
-            </button>
-            <button
-              onClick={handleCreate}
-              className="flex items-center gap-1 rounded bg-primary px-space-lg py-space-sm font-label-md text-label-md text-on-primary shadow-sm transition-all hover:bg-primary-container"
-            >
-              <Icon name="add_circle" size={16} /> Create Feeder
-            </button>
+    <div className="w-full gap-space-lg px-gutter-lg py-gutter">
+      <div className="flex flex-col gap-space-lg pb-space-2xl">
+        {/* Top context & actions bar */}
+        <div className="flex flex-col justify-between gap-space-md md:flex-row md:items-center">
+          <div className="flex flex-col">
+            <div className="mb-space-2xs flex items-center gap-space-xs font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">
+              <span>Master Libraries</span>
+              <Icon name="chevron_right" size={13} />
+              <span className="font-medium text-primary">Feeder Master</span>
+              <Icon name="chevron_right" size={13} />
+              <span>Template Configurator</span>
+            </div>
+            <h1 className="font-headline-lg text-headline-lg leading-none tracking-tight text-on-surface">Feeder Master</h1>
           </div>
-        )}
-      </div>
-
-      {/* Standard Feeder Library */}
-      <div className="space-y-space-sm">
-        <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-2 font-headline-md text-headline-md text-on-surface">
-            <Icon name="library_books" size={18} className="text-primary" /> Standard Feeder Library
-          </h2>
-          <select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            className="h-9 rounded border border-surface-container-high bg-surface-container-lowest px-space-sm text-body-sm text-on-surface"
-          >
-            <option value="ALL">All Types ({typeOptions.length})</option>
-            {typeOptions.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="divide-y divide-surface-container rounded-xl bg-surface-container-lowest shadow-sm">
-          {filteredFeeders.map((f) => {
-            const lines = linesByFeeder[f.id] ?? [];
-            const cost = feederCost(lines);
-            return (
-              <div key={f.id} className="flex flex-wrap items-center justify-between gap-space-md p-space-md">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {f.tag && <span className="font-mono text-xs font-semibold text-on-surface">{f.tag}</span>}
-                    {f.category && (
-                      <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
-                        {f.category}
-                      </span>
-                    )}
-                    {(f.pole_config || f.breaking_capacity) && (
-                      <span className="rounded bg-surface-container-low px-1.5 py-0.5 text-[10px] font-medium text-on-surface-variant">
-                        {[f.pole_config, f.breaking_capacity].filter(Boolean).join(" · ")}
-                      </span>
-                    )}
-                  </div>
-                  <p className="font-headline-sm text-headline-sm text-on-surface">{f.name}</p>
-                  {f.description && <p className="font-body-sm text-body-sm text-secondary">{f.description}</p>}
-                </div>
-                <div className="text-right">
-                  <p className="font-body-sm text-body-sm text-secondary">{lines.length} Item{lines.length === 1 ? "" : "s"}</p>
-                  <p className="font-headline-sm text-headline-sm text-primary">{money(cost)}</p>
-                </div>
-                {isAdmin && (
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => selectFeeder(f)}
-                      className="rounded border border-surface-container-high px-space-sm py-1.5 font-label-md text-label-md text-on-surface hover:bg-surface-container-low"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleClone(f)}
-                      disabled={busyId === f.id}
-                      className="rounded border border-surface-container-high px-space-sm py-1.5 font-label-md text-label-md text-on-surface hover:bg-surface-container-low disabled:opacity-50"
-                    >
-                      Clone
-                    </button>
-                    <button
-                      disabled
-                      title="Open a switchboard's BOM Builder to add this feeder"
-                      className="flex items-center gap-1 rounded bg-surface-container-low px-space-sm py-1.5 font-label-md text-label-md text-on-surface-variant opacity-60"
-                    >
-                      <Icon name="add_box" size={14} /> Use in BOM
-                    </button>
-                    <button
-                      onClick={() => handleDelete(f)}
-                      disabled={busyId === f.id}
-                      title="Delete feeder"
-                      className="rounded p-1.5 text-error hover:bg-error-container disabled:opacity-50"
-                    >
-                      <Icon name="delete" size={16} />
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {filteredFeeders.length === 0 && (
-            <p className="p-space-lg text-center text-sm text-secondary">
-              No feeders yet. {isAdmin ? "Use \"Create Feeder\" above." : "Ask an admin to build the feeder master."}
-            </p>
+          {isAdmin && (
+            <div className="flex shrink-0 items-center gap-space-sm self-start md:self-auto">
+              <button
+                disabled
+                title="Import coming soon"
+                className="flex items-center gap-space-xs rounded bg-surface-container-lowest px-space-md py-space-sm font-body-md text-body-md text-on-surface opacity-60 shadow-sm"
+              >
+                <Icon name="input" size={18} /> Import Feeder XLS
+              </button>
+              <button
+                disabled
+                title="Export coming soon"
+                className="flex items-center gap-space-xs rounded bg-surface-container-lowest px-space-md py-space-sm font-body-md text-body-md text-on-surface opacity-60 shadow-sm"
+              >
+                <Icon name="file_download" size={18} /> Export Feeder Master
+              </button>
+              <button
+                onClick={handleCreate}
+                className="flex items-center gap-space-xs rounded bg-primary px-space-md py-space-sm font-body-md text-body-md text-on-primary shadow-sm transition-colors hover:bg-primary-container"
+              >
+                <Icon name="add_circle" size={18} />
+                <span className="font-medium">+ Create Feeder</span>
+              </button>
+            </div>
           )}
         </div>
-      </div>
 
-      {/* Feeder Attributes */}
-      {isAdmin && selectedFeeder && form && (
-        <div className="space-y-space-md rounded-xl bg-surface-container-lowest p-space-lg shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-space-sm">
-            <div>
-              <h2 className="flex items-center gap-2 font-headline-md text-headline-md text-on-surface">
-                <Icon name="tune" size={18} className="text-primary" /> Feeder Attributes
-              </h2>
-              <p className="font-body-sm text-body-sm text-secondary">Define electrical parameters and switchgear specifications</p>
-            </div>
+        {/* Standard Feeder Library */}
+        <section className="flex flex-col gap-space-md">
+          <div className="flex flex-col justify-between gap-space-sm md:flex-row md:items-center">
             <div className="flex items-center gap-space-sm">
-              <button
-                onClick={resetForm}
-                disabled={!dirty}
-                className="rounded border border-surface-container-high px-space-md py-space-sm font-label-md text-label-md text-on-surface hover:bg-surface-container-low disabled:opacity-50"
-              >
-                Reset Form
-              </button>
-              <button
-                onClick={saveFeeder}
-                disabled={saving || !dirty}
-                className="flex items-center gap-1 rounded bg-primary px-space-lg py-space-sm font-label-md text-label-md text-on-primary shadow-sm transition-all hover:bg-primary-container disabled:opacity-50"
-              >
-                <Icon name="save" size={16} />
-                {saving ? "Saving..." : "Save Feeder to Master"}
-              </button>
+              <div className="flex h-6 w-6 items-center justify-center rounded bg-primary/10 text-primary">
+                <Icon name="folder_copy" size={16} />
+              </div>
+              <h2 className="font-headline-sm text-headline-sm text-on-surface">Standard Feeder Library</h2>
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-space-md sm:grid-cols-3">
-            <Field label="Feeder Code">
-              <input
-                value={form.tag}
-                onChange={(e) => updateField("tag", e.target.value)}
-                placeholder="FDR-INC-3200-4P"
-                className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 font-mono text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
-              />
-            </Field>
-            <Field label="Feeder Name" className="sm:col-span-2">
-              <input
-                value={form.name}
-                onChange={(e) => updateField("name", e.target.value)}
-                className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
-              />
-            </Field>
-
-            <Field label="Feeder Type">
+            <div className="flex items-center gap-space-2xs rounded bg-surface-container-lowest px-space-sm py-space-2xs shadow-sm">
+              <span className="font-label-sm text-label-sm text-on-surface-variant">Filter Type:</span>
               <select
-                value={form.category}
-                onChange={(e) => updateField("category", e.target.value)}
-                className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                className="cursor-pointer bg-transparent font-label-sm text-label-sm text-on-surface focus:outline-none"
               >
-                <option value="">Select type...</option>
-                {FEEDER_TYPES.map((t) => (
+                <option value="ALL">All Types ({typeOptions.length})</option>
+                {typeOptions.map((t) => (
                   <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-                {form.category && !FEEDER_TYPES.includes(form.category) && <option value={form.category}>{form.category}</option>}
-              </select>
-            </Field>
-            <Field label="Feeder Description" className="sm:col-span-2">
-              <textarea
-                value={form.description}
-                onChange={(e) => updateField("description", e.target.value)}
-                rows={2}
-                className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
-              />
-            </Field>
-
-            <Field label="Rated Current">
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  min="0"
-                  value={form.rated_current}
-                  onChange={(e) => updateField("rated_current", e.target.value)}
-                  className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
-                />
-                <span className="rounded bg-surface-container-low px-2 py-1.5 font-label-md text-label-md text-on-surface-variant">A</span>
-              </div>
-            </Field>
-            <Field label="Pole Config">
-              <select
-                value={form.pole_config}
-                onChange={(e) => updateField("pole_config", e.target.value)}
-                className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
-              >
-                <option value="">—</option>
-                {POLE_CONFIGS.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
+                    {t} ({feeders.filter((f) => f.category === t).length})
                   </option>
                 ))}
               </select>
-            </Field>
-            <Field label="Breaking Capacity">
-              <input
-                value={form.breaking_capacity}
-                onChange={(e) => updateField("breaking_capacity", e.target.value)}
-                placeholder="e.g. 65 kA (1s)"
-                className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
-              />
-            </Field>
+            </div>
           </div>
 
-          {/* Add Item */}
-          <div className="space-y-space-sm border-t border-surface-container pt-space-md">
-            <div className="flex flex-wrap items-center justify-between gap-space-sm">
-              <h3 className="flex items-center gap-2 font-headline-sm text-headline-sm text-on-surface">
-                <Icon name="add_box" size={16} className="text-primary" /> Add Item
-              </h3>
-              <a href="/item-master" className="font-label-md text-label-md text-primary hover:underline">
-                Browse Item Master Catalog
-              </a>
-            </div>
-            <div className="relative flex items-center gap-space-sm">
-              <div className="relative flex-1">
-                <Icon name="search" size={16} className="absolute left-space-sm top-1/2 -translate-y-1/2 text-on-surface-variant" />
-                <input
-                  value={itemSearch}
-                  onChange={(e) => setItemSearch(e.target.value)}
-                  placeholder="Search Item Master by SKU, description, vendor catalog #, or brand..."
-                  className="h-9 w-full rounded border border-surface-container-high bg-surface-container-lowest pl-8 pr-space-sm text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={addQty}
-                onChange={(e) => setAddQty(e.target.value)}
-                className="h-9 w-16 rounded border border-surface-container-high px-space-sm text-right text-body-sm"
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="font-label-sm text-label-sm text-on-surface-variant">Quick Filters:</span>
-              <button
-                onClick={() => setCategoryChip(null)}
-                className={`rounded-full px-space-sm py-1 text-xs font-medium ${categoryChip === null ? "bg-primary text-on-primary" : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high"}`}
-              >
-                All Items
-              </button>
-              {itemCategories.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => setCategoryChip(c)}
-                  className={`rounded-full px-space-sm py-1 text-xs font-medium ${categoryChip === c ? "bg-primary text-on-primary" : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high"}`}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-            {itemMatches.length > 0 && (
-              <div className="max-h-56 overflow-y-auto rounded border border-surface-container-high">
-                {itemMatches.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => addLine(item)}
-                    className="flex w-full items-center justify-between gap-space-sm border-b border-surface-container px-space-sm py-1.5 text-left last:border-b-0 hover:bg-surface-container-low"
+          <div className="grid grid-cols-1 gap-space-sm">
+            {filteredFeeders.map((f) => {
+              const lines = linesByFeeder[f.id] ?? [];
+              const cost = feederCost(lines);
+              const expanded = expandedId === f.id;
+              return (
+                <div key={f.id} className="overflow-hidden rounded bg-surface-container-lowest shadow-sm transition-colors">
+                  <div
+                    onClick={() => toggleExpand(f.id)}
+                    className="flex cursor-pointer flex-col justify-between gap-space-md p-space-md transition-colors hover:bg-surface-container-low/40 md:flex-row md:items-center"
                   >
-                    <span className="min-w-0">
-                      <span className="font-mono text-xs font-semibold text-primary">{itemCode(item)}</span>{" "}
-                      <span className="text-body-sm text-on-surface">{item.description}</span>
-                    </span>
-                    <span className="shrink-0 font-body-sm text-body-sm text-secondary">{money(netRate(item))}</span>
-                  </button>
-                ))}
+                    <div className="flex items-start gap-space-md md:items-center">
+                      <Icon name={expanded ? "expand_more" : "chevron_right"} size={18} className="mt-1 shrink-0 text-on-surface-variant md:mt-0" />
+                      <div className="flex flex-col">
+                        <div className="flex flex-wrap items-center gap-space-sm">
+                          <span className="font-telemetry-md text-telemetry-md font-bold text-on-surface">{f.tag || "—"}</span>
+                          {f.category && (
+                            <span className="rounded bg-surface-container-high px-space-xs py-space-2xs font-label-sm text-label-sm font-semibold text-primary">
+                              {f.category.toUpperCase()}
+                            </span>
+                          )}
+                          {(f.pole_config || f.breaking_capacity) && (
+                            <span className="rounded bg-surface-container px-space-xs py-space-2xs font-label-sm text-label-sm text-on-surface-variant">
+                              {[f.pole_config, f.breaking_capacity].filter(Boolean).join(" • ")}
+                            </span>
+                          )}
+                        </div>
+                        <span className="mt-space-2xs font-body-md text-body-md text-on-surface">{f.name}</span>
+                        {f.description && <span className="font-label-sm text-label-sm text-on-surface-variant">{f.description}</span>}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center justify-between gap-space-lg md:justify-end">
+                      <div className="flex flex-col md:items-end">
+                        <span className="font-label-sm text-label-sm text-on-surface-variant">
+                          {lines.length} Item{lines.length === 1 ? "" : "s"}
+                        </span>
+                        <span className="font-telemetry-md text-telemetry-md font-bold text-primary">{money(cost)}</span>
+                      </div>
+                      {isAdmin && (
+                        <div className="flex items-center gap-space-xs" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => selectFeeder(f)}
+                            className="rounded bg-surface-container-low px-space-sm py-space-xs font-label-md text-label-md text-on-surface shadow-sm transition-colors hover:bg-surface-container"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleClone(f)}
+                            disabled={busyId === f.id}
+                            title="Clone as new template"
+                            className="rounded bg-surface-container-low px-space-sm py-space-xs font-label-md text-label-md text-on-surface shadow-sm transition-colors hover:bg-surface-container disabled:opacity-50"
+                          >
+                            Clone
+                          </button>
+                          <button
+                            disabled
+                            title="Open a switchboard's BOM Builder to add this feeder"
+                            className="flex items-center gap-1 rounded bg-primary px-space-sm py-space-xs font-label-md text-label-md font-medium text-on-primary opacity-60 shadow-sm"
+                          >
+                            <Icon name="add_box" size={14} /> Use in BOM
+                          </button>
+                          <button
+                            onClick={() => handleDelete(f)}
+                            disabled={busyId === f.id}
+                            title="Delete feeder"
+                            className="rounded p-1.5 text-error hover:bg-error-container disabled:opacity-50"
+                          >
+                            <Icon name="delete" size={15} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {expanded && (
+                    <div className="border-t border-surface-container-high">
+                      {lines.length === 0 ? (
+                        <p className="p-space-md text-center font-body-sm text-body-sm text-secondary">No items in this feeder yet.</p>
+                      ) : (
+                        <table className="w-full text-left">
+                          <thead>
+                            <tr className="bg-surface-container-low font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">
+                              <th className="py-space-xs pl-space-lg pr-space-xs">SKU</th>
+                              <th className="px-space-sm py-space-xs">Make</th>
+                              <th className="px-space-sm py-space-xs">Category</th>
+                              <th className="px-space-sm py-space-xs">Description</th>
+                              <th className="px-space-sm py-space-xs text-center">Qty</th>
+                              <th className="px-space-sm py-space-xs text-right">Net Rate</th>
+                              <th className="py-space-xs pr-space-lg pl-space-xs text-right">Amount</th>
+                            </tr>
+                          </thead>
+                          <tbody className="font-body-sm text-body-sm text-on-surface">
+                            {lines.map((line) => (
+                              <tr key={line.id} className="border-t border-surface-container">
+                                <td className="py-space-xs pl-space-lg pr-space-xs font-telemetry-md font-bold text-primary">{itemCode(line.item)}</td>
+                                <td className="px-space-sm py-space-xs text-on-surface-variant">{line.item.make || "—"}</td>
+                                <td className="px-space-sm py-space-xs text-on-surface-variant">{line.item.category || "—"}</td>
+                                <td className="px-space-sm py-space-xs">{line.item.description}</td>
+                                <td className="px-space-sm py-space-xs text-center tabular-nums">{line.qty}</td>
+                                <td className="px-space-sm py-space-xs text-right tabular-nums">{money(netRate(line.item))}</td>
+                                <td className="py-space-xs pr-space-lg pl-space-xs text-right font-semibold tabular-nums">
+                                  {money(line.qty * netRate(line.item))}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {filteredFeeders.length === 0 && (
+              <div className="rounded bg-surface-container-lowest p-space-lg text-center text-sm text-secondary shadow-sm">
+                No feeders yet. {isAdmin ? 'Use "+ Create Feeder" above.' : "Ask an admin to build the feeder master."}
               </div>
             )}
           </div>
+        </section>
 
-          {/* Line items */}
-          <div className="overflow-hidden rounded border border-surface-container-high">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-surface-container-low font-label-md text-label-md uppercase tracking-wider text-on-surface-variant">
-                <tr>
-                  <th className="w-8 px-2 py-2">#</th>
-                  <th className="px-2 py-2">SKU</th>
-                  <th className="px-2 py-2">Vendor Cat</th>
-                  <th className="px-2 py-2">Description</th>
-                  <th className="px-2 py-2 text-right">Qty</th>
-                  <th className="px-2 py-2 text-right">List Price</th>
-                  <th className="px-2 py-2 text-right">Disc %</th>
-                  <th className="px-2 py-2 text-right">Net Rate</th>
-                  <th className="px-2 py-2">UOM</th>
-                  <th className="px-2 py-2 text-right">Amount</th>
-                  <th className="w-16 px-2 py-2" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-surface-container">
-                {selectedLines.map((line, i) => (
-                  <tr key={line.id} className="hover:bg-surface-container-low">
-                    <td className="px-2 py-1.5 text-on-surface-variant">{i + 1}</td>
-                    <td className="px-2 py-1.5 font-mono font-semibold text-primary">{itemCode(line.item)}</td>
-                    <td className="px-2 py-1.5 text-on-surface-variant">{line.item.supplier || "—"}</td>
-                    <td className="px-2 py-1.5 text-on-surface">{line.item.description}</td>
-                    <td className="px-2 py-1.5 text-right">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={line.qty}
-                        onChange={(e) => updateLineQty(line.id, Number(e.target.value) || 0)}
-                        className="w-14 rounded border border-surface-container-high px-1 py-0.5 text-right"
-                      />
-                    </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums text-secondary">
-                      {line.item.list_price != null ? money(line.item.list_price) : "—"}
-                    </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums text-tertiary">
-                      {line.item.discount_pct != null ? `${line.item.discount_pct}%` : "—"}
-                    </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums text-on-surface-variant">{money(netRate(line.item))}</td>
-                    <td className="px-2 py-1.5 text-on-surface-variant">{line.item.uom}</td>
-                    <td className="px-2 py-1.5 text-right font-semibold tabular-nums text-on-surface">{money(line.qty * netRate(line.item))}</td>
-                    <td className="px-2 py-1.5">
-                      <div className="flex items-center justify-end gap-0.5">
-                        <button onClick={() => moveLine(line.id, -1)} disabled={i === 0} className="rounded p-0.5 text-on-surface-variant hover:bg-surface-container-high disabled:opacity-30">
-                          <Icon name="arrow_upward" size={13} />
-                        </button>
-                        <button onClick={() => moveLine(line.id, 1)} disabled={i === selectedLines.length - 1} className="rounded p-0.5 text-on-surface-variant hover:bg-surface-container-high disabled:opacity-30">
-                          <Icon name="arrow_downward" size={13} />
-                        </button>
-                        <button onClick={() => removeLine(line.id)} className="rounded p-0.5 text-error hover:bg-error-container">
-                          <Icon name="close" size={13} />
-                        </button>
+        {/* Feeder Attributes */}
+        {isAdmin && selectedFeeder && form && (
+          <section className="flex flex-col gap-space-md rounded bg-surface-container-lowest p-space-lg shadow-sm">
+            <div className="flex flex-col justify-between gap-space-sm border-b border-surface-container-high pb-space-sm md:flex-row md:items-center">
+              <div className="flex items-center gap-space-sm">
+                <div className="flex h-7 w-7 items-center justify-center rounded bg-primary/10 text-primary">
+                  <Icon name="tune" size={18} />
+                </div>
+                <div className="flex flex-col">
+                  <h2 className="font-headline-sm text-headline-sm leading-tight text-on-surface">Feeder Attributes</h2>
+                  <span className="font-label-sm text-label-sm text-on-surface-variant">Define electrical parameters and switchgear specifications</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-space-sm">
+                <button
+                  onClick={resetForm}
+                  disabled={!dirty}
+                  type="button"
+                  className="rounded border border-outline-variant bg-surface-container-lowest px-space-md py-space-xs font-body-sm text-body-sm font-medium text-on-surface-variant shadow-sm transition-colors hover:bg-surface-container hover:text-on-surface disabled:opacity-50"
+                >
+                  Reset Form
+                </button>
+                <button
+                  onClick={saveFeeder}
+                  disabled={saving || !dirty}
+                  type="button"
+                  className="flex items-center gap-space-xs rounded bg-primary px-space-md py-space-xs font-body-sm text-body-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-container disabled:opacity-50"
+                >
+                  <Icon name="save" size={16} />
+                  {saving ? "Saving..." : "Save Feeder to Master"}
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 items-start gap-space-lg pt-space-xs md:grid-cols-3">
+              <div className="flex flex-col gap-space-md">
+                <FormField label="Feeder Code">
+                  <input
+                    value={form.tag}
+                    onChange={(e) => updateField("tag", e.target.value)}
+                    placeholder="e.g. FDR-OUT-MCCB-630A"
+                    className="h-9 rounded border border-outline-variant bg-surface-container-lowest px-space-sm font-telemetry-md text-telemetry-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </FormField>
+                <FormField label="Feeder Type">
+                  <div className="relative flex items-center">
+                    <select
+                      value={form.category}
+                      onChange={(e) => updateField("category", e.target.value)}
+                      className="h-9 w-full appearance-none rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-8 font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="">Select type...</option>
+                      {FEEDER_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                      {form.category && !FEEDER_TYPES.includes(form.category) && <option value={form.category}>{form.category}</option>}
+                    </select>
+                    <Icon name="expand_more" size={18} className="pointer-events-none absolute right-space-sm text-on-surface-variant" />
+                  </div>
+                </FormField>
+              </div>
+
+              <div className="flex flex-col gap-space-md">
+                <FormField label="Feeder Name">
+                  <input
+                    value={form.name}
+                    onChange={(e) => updateField("name", e.target.value)}
+                    className="h-9 rounded border border-outline-variant bg-surface-container-lowest px-space-sm font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </FormField>
+                <FormField label="Feeder Description">
+                  <textarea
+                    value={form.description}
+                    onChange={(e) => updateField("description", e.target.value)}
+                    rows={3}
+                    placeholder="Engineering specification details..."
+                    className="w-full resize-none rounded border border-outline-variant bg-surface-container-lowest p-space-sm font-body-sm text-body-sm text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </FormField>
+              </div>
+
+              <div className="flex flex-col gap-space-md">
+                <FormField label="Rated Current">
+                  <div className="relative flex items-center">
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.rated_current}
+                      onChange={(e) => updateField("rated_current", e.target.value)}
+                      className="h-9 w-full rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-10 text-right font-telemetry-md text-telemetry-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                    <span className="pointer-events-none absolute right-0 top-0 bottom-0 flex items-center rounded-r border-l border-outline-variant bg-surface-container-low px-space-sm font-telemetry-md text-telemetry-md font-bold text-on-surface-variant">
+                      A
+                    </span>
+                  </div>
+                </FormField>
+                <div className="grid grid-cols-2 gap-space-sm">
+                  <FormField label="Pole Config">
+                    <div className="relative flex items-center">
+                      <select
+                        value={form.pole_config}
+                        onChange={(e) => updateField("pole_config", e.target.value)}
+                        className="h-9 w-full appearance-none rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-7 font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        <option value="">—</option>
+                        {POLE_CONFIGS.map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                        {form.pole_config && !POLE_CONFIGS.includes(form.pole_config) && <option value={form.pole_config}>{form.pole_config}</option>}
+                      </select>
+                      <Icon name="expand_more" size={16} className="pointer-events-none absolute right-space-xs text-on-surface-variant" />
+                    </div>
+                  </FormField>
+                  <FormField label="Breaking Capacity">
+                    <div className="relative flex items-center">
+                      <select
+                        value={form.breaking_capacity}
+                        onChange={(e) => updateField("breaking_capacity", e.target.value)}
+                        className="h-9 w-full appearance-none rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-7 font-telemetry-md text-telemetry-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        <option value="">—</option>
+                        {BREAKING_CAPACITIES.map((b) => (
+                          <option key={b} value={b}>
+                            {b}
+                          </option>
+                        ))}
+                        {form.breaking_capacity && !BREAKING_CAPACITIES.includes(form.breaking_capacity) && (
+                          <option value={form.breaking_capacity}>{form.breaking_capacity}</option>
+                        )}
+                      </select>
+                      <Icon name="expand_more" size={16} className="pointer-events-none absolute right-space-xs text-on-surface-variant" />
+                    </div>
+                  </FormField>
+                </div>
+              </div>
+            </div>
+
+            {/* Add Item + BOM table, one card per mockup */}
+            <section className="-mx-space-lg -mb-space-lg mt-space-sm flex flex-col gap-space-sm overflow-hidden rounded-b bg-surface-container-lowest">
+              <div className="flex flex-col gap-space-sm px-space-lg pt-space-md">
+                <div className="flex flex-col justify-between gap-space-sm md:flex-row md:items-center">
+                  <div className="flex items-center gap-space-sm">
+                    <div className="flex h-7 w-7 items-center justify-center rounded bg-primary/10 text-primary">
+                      <Icon name="add_box" size={16} />
+                    </div>
+                    <h3 className="font-headline-sm text-headline-sm leading-tight text-on-surface">Add Item</h3>
+                  </div>
+                  <a
+                    href="/item-master"
+                    className="flex items-center gap-space-xs self-start rounded bg-surface-container-low px-space-sm py-space-xs font-body-sm text-body-sm font-medium text-on-surface shadow-sm transition-colors hover:bg-surface-container md:self-auto"
+                  >
+                    <Icon name="open_in_new" size={16} /> Browse Item Master Catalog
+                  </a>
+                </div>
+                <div className="flex flex-col items-stretch gap-space-sm md:flex-row md:items-center">
+                  <div className="relative flex flex-1 items-center">
+                    <Icon name="search" size={18} className="pointer-events-none absolute left-space-sm text-on-surface-variant" />
+                    <input
+                      value={itemSearch}
+                      onChange={(e) => {
+                        setItemSearch(e.target.value);
+                        setSelectedItem(null);
+                      }}
+                      placeholder="Search Item Master by SKU, description, vendor catalog #, or brand..."
+                      className="h-9 w-full rounded border border-outline-variant bg-surface-container-low/40 pl-9 pr-space-md font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                    {itemMatches.length > 0 && !selectedItem && (
+                      <div className="absolute top-full z-10 mt-1 max-h-56 w-full overflow-y-auto rounded border border-outline-variant bg-surface-container-lowest shadow-md">
+                        {itemMatches.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedItem(item);
+                              setItemSearch(`${itemCode(item)} — ${item.description}`);
+                            }}
+                            className="flex w-full items-center justify-between gap-space-sm border-b border-surface-container px-space-sm py-1.5 text-left last:border-b-0 hover:bg-surface-container-low"
+                          >
+                            <span className="min-w-0">
+                              <span className="font-mono text-xs font-semibold text-primary">{itemCode(item)}</span>{" "}
+                              <span className="text-body-sm text-on-surface">{item.description}</span>
+                            </span>
+                            <span className="shrink-0 font-body-sm text-body-sm text-secondary">{money(netRate(item))}</span>
+                          </button>
+                        ))}
                       </div>
-                    </td>
-                  </tr>
-                ))}
-                {selectedLines.length === 0 && (
-                  <tr>
-                    <td colSpan={11} className="px-2 py-6 text-center text-secondary">
-                      No items yet. Search above to add one.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-space-xs">
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={addQty}
+                      onChange={(e) => setAddQty(e.target.value)}
+                      className="h-9 w-16 rounded border border-outline-variant px-space-sm text-right text-body-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={addSelectedItem}
+                      disabled={!selectedItem}
+                      className="flex h-9 items-center gap-space-xs rounded bg-primary px-space-md font-body-sm text-body-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-container disabled:opacity-50"
+                    >
+                      <Icon name="add" size={16} /> Add to Feeder
+                    </button>
+                  </div>
+                </div>
+                <div className="flex items-center gap-space-xs overflow-x-auto pt-space-2xs font-label-sm text-label-sm">
+                  <span className="shrink-0 font-medium text-on-surface-variant">Quick Filters:</span>
+                  <button
+                    type="button"
+                    onClick={() => setCategoryChip(null)}
+                    className={`shrink-0 rounded-full px-space-sm py-space-2xs shadow-sm transition-colors ${categoryChip === null ? "bg-primary font-semibold text-on-primary" : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container hover:text-on-surface"}`}
+                  >
+                    All Items
+                  </button>
+                  {itemCategories.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setCategoryChip(c)}
+                      className={`shrink-0 rounded-full px-space-sm py-space-2xs transition-colors ${categoryChip === c ? "bg-primary font-semibold text-on-primary shadow-sm" : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container hover:text-on-surface"}`}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Configured feeder BOM table */}
+              <div className="w-full overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="bg-surface-container-low font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">
+                      <th className="w-10 py-space-sm pl-space-lg pr-space-xs text-center">#</th>
+                      <th className="px-space-sm py-space-sm">SKU</th>
+                      <th className="px-space-sm py-space-sm">Vendor Cat</th>
+                      <th className="px-space-sm py-space-sm">Make</th>
+                      <th className="px-space-sm py-space-sm">Category</th>
+                      <th className="min-w-[240px] px-space-sm py-space-sm">Description</th>
+                      <th className="w-20 px-space-sm py-space-sm text-center">Qty</th>
+                      <th className="px-space-sm py-space-sm text-right">List Price</th>
+                      <th className="w-20 px-space-sm py-space-sm text-right">Disc %</th>
+                      <th className="px-space-sm py-space-sm text-right">Net Rate</th>
+                      <th className="w-16 px-space-sm py-space-sm text-center">UOM</th>
+                      <th className="px-space-sm py-space-sm text-right">Amount ($)</th>
+                      <th className="w-28 py-space-sm pl-space-xs pr-space-lg text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="font-body-sm text-body-sm text-on-surface">
+                    {selectedLines.map((line, i) => (
+                      <tr key={line.id} className={`group transition-colors hover:bg-surface-container-low/60 ${i % 2 === 1 ? "bg-surface-container-low/20" : ""}`}>
+                        <td className="py-space-sm pl-space-lg pr-space-xs text-center font-telemetry-md text-on-surface-variant">{i + 1}</td>
+                        <td className="px-space-sm py-space-sm font-telemetry-md text-telemetry-md font-bold text-primary">{itemCode(line.item)}</td>
+                        <td className="px-space-sm py-space-sm font-label-md text-label-md text-on-surface-variant">{line.item.supplier || "—"}</td>
+                        <td className="px-space-sm py-space-sm text-on-surface-variant">{line.item.make || "—"}</td>
+                        <td className="px-space-sm py-space-sm text-on-surface-variant">{line.item.category || "—"}</td>
+                        <td className="px-space-sm py-space-sm font-medium text-on-surface">{line.item.description}</td>
+                        <td className="px-space-sm py-space-sm text-center">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={line.qty}
+                            onChange={(e) => updateLineQty(line.id, Number(e.target.value) || 0)}
+                            className="h-7 w-14 rounded bg-surface-container-low text-center font-telemetry-md text-telemetry-md focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
+                        </td>
+                        <td className="px-space-sm py-space-sm text-right font-telemetry-md text-on-surface-variant">
+                          {line.item.list_price != null ? money(line.item.list_price) : "—"}
+                        </td>
+                        <td className="px-space-sm py-space-sm text-right font-telemetry-md text-tertiary">
+                          {line.item.discount_pct != null ? `${line.item.discount_pct}%` : "—"}
+                        </td>
+                        <td className="px-space-sm py-space-sm text-right font-telemetry-md text-on-surface">{money(netRate(line.item))}</td>
+                        <td className="px-space-sm py-space-sm text-center font-label-md text-label-md uppercase text-on-surface-variant">{line.item.uom}</td>
+                        <td className="px-space-sm py-space-sm text-right font-telemetry-md text-telemetry-md font-bold text-on-surface">
+                          {money(line.qty * netRate(line.item))}
+                        </td>
+                        <td className="py-space-sm pl-space-xs pr-space-lg text-right">
+                          <div className="flex items-center justify-end gap-1 opacity-80 group-hover:opacity-100">
+                            <button
+                              onClick={() => moveLine(line.id, -1)}
+                              disabled={i === 0}
+                              title="Move Up"
+                              className="flex h-6 w-6 items-center justify-center rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface disabled:opacity-30"
+                            >
+                              <Icon name="arrow_upward" size={15} />
+                            </button>
+                            <button
+                              onClick={() => moveLine(line.id, 1)}
+                              disabled={i === selectedLines.length - 1}
+                              title="Move Down"
+                              className="flex h-6 w-6 items-center justify-center rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface disabled:opacity-30"
+                            >
+                              <Icon name="arrow_downward" size={15} />
+                            </button>
+                            <button
+                              onClick={() => removeLine(line.id)}
+                              title="Remove"
+                              className="flex h-6 w-6 items-center justify-center rounded text-error hover:bg-error-container"
+                            >
+                              <Icon name="delete" size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {selectedLines.length === 0 && (
+                      <tr>
+                        <td colSpan={13} className="px-space-lg py-space-lg text-center text-secondary">
+                          No items yet. Search above to add one.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+        )}
+      </div>
     </div>
   );
 }
 
-function Field({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
+function FormField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className={className}>
-      <label className="mb-1 block font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">{label}</label>
+    <div className="flex flex-col gap-space-xs">
+      <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-on-surface-variant">{label}</label>
       {children}
     </div>
   );
