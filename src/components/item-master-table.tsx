@@ -592,28 +592,35 @@ export function ItemMasterTable({
     refresh();
   }
 
+  // Optimistic: updates the row in place instead of re-fetching the whole
+  // (potentially several-thousand-row) catalog, so the change is visible
+  // immediately instead of after a multi-second full refetch.
   async function toggleArchive(item: ItemMaster) {
     const nextStatus: ItemStatus = item.status === "discontinued" ? "active" : "discontinued";
-    const { error } = await supabase
-      .from("item_master")
-      .update({ status: nextStatus, updated_at: new Date().toISOString() })
-      .eq("id", item.id);
+    const updatedAt = new Date().toISOString();
+    setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: nextStatus, updated_at: updatedAt } : i)));
+    const { error } = await supabase.from("item_master").update({ status: nextStatus, updated_at: updatedAt }).eq("id", item.id);
     if (error) {
       alert(error.message);
-      return;
+      setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: item.status, updated_at: item.updated_at } : i)));
     }
-    refresh();
   }
 
-  async function handleDeleteSelected() {
-    if (!confirm(`Delete ${selectedIds.size} item(s)? This can't be undone.`)) return;
-    const { error } = await supabase.from("item_master").delete().in("id", Array.from(selectedIds));
+  async function handleArchiveSelected() {
+    if (!confirm(`Archive ${selectedIds.size} item(s)? You can unarchive any of them later from the row's action button.`)) return;
+    const ids = Array.from(selectedIds);
+    const updatedAt = new Date().toISOString();
+    setItems((prev) => prev.map((i) => (selectedIds.has(i.id) ? { ...i, status: "discontinued", updated_at: updatedAt } : i)));
+    const { error } = await supabase
+      .from("item_master")
+      .update({ status: "discontinued", updated_at: updatedAt })
+      .in("id", ids);
     if (error) {
       alert(error.message);
+      refresh();
       return;
     }
     setSelectedIds(new Set());
-    refresh();
   }
 
   async function applyBulkDiscount() {
@@ -984,10 +991,10 @@ export function ItemMasterTable({
               <Icon name="file_download" size={14} /> Export selected
             </button>
             <button
-              onClick={handleDeleteSelected}
-              className="flex items-center gap-1.5 rounded bg-error/90 px-2.5 py-1 text-xs font-medium text-on-error hover:bg-error"
+              onClick={handleArchiveSelected}
+              className="flex items-center gap-1.5 rounded bg-surface-container-low px-2.5 py-1 text-xs font-medium text-on-surface hover:bg-surface-container-high"
             >
-              <Icon name="delete" size={14} /> Delete selected
+              <Icon name="archive" size={14} /> Archive selected
             </button>
             {lastUpdatedAt && (
               <div className="flex items-center gap-1.5 border-l border-inverse-on-surface/20 pl-3 font-mono text-[11px] text-inverse-on-surface/80">
