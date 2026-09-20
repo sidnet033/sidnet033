@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth";
 import { ItemMasterTable } from "@/components/item-master-table";
-import type { ItemMaster } from "@/types/database";
+import { fetchAllItemMaster } from "@/lib/item-display";
 
 export const dynamic = "force-dynamic";
 
@@ -15,15 +15,12 @@ export default async function ItemMasterPage({
   const isAdmin = current?.profile?.role === "admin";
   const { q } = await searchParams;
 
-  const { data: items } = await supabase
-    .from("item_master")
-    .select("*")
-    .order("sku", { ascending: true });
+  const items = await fetchAllItemMaster(supabase);
 
   return (
     <div className="max-w-[1600px] space-y-4 px-8 py-6">
       <ItemMasterTable
-        initialItems={(items ?? []) as ItemMaster[]}
+        initialItems={items}
         isAdmin={isAdmin}
         initialSearch={q ?? ""}
         currentUserName={current?.profile?.full_name ?? current?.email ?? "you"}

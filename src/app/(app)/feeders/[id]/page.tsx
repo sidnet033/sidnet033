@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth";
 import { FeederBuilder } from "@/components/feeder-builder";
-import type { Feeder, FeederItemWithDetails, ItemMaster } from "@/types/database";
+import { fetchAllItemMaster } from "@/lib/item-display";
+import type { Feeder, FeederItemWithDetails } from "@/types/database";
 
 export const dynamic = "force-dynamic";
 
@@ -12,10 +13,10 @@ export default async function FeederDetailPage({ params }: { params: Promise<{ i
   const current = await getCurrentUser();
   const isAdmin = current?.profile?.role === "admin";
 
-  const [{ data: feeder }, { data: lines }, { data: allItems }] = await Promise.all([
+  const [{ data: feeder }, { data: lines }, allItems] = await Promise.all([
     supabase.from("feeders").select("*").eq("id", id).single(),
     supabase.from("feeder_items").select("*, item:item_master(*)").eq("feeder_id", id).order("created_at"),
-    supabase.from("item_master").select("*").order("sku"),
+    fetchAllItemMaster(supabase),
   ]);
 
   if (!feeder) notFound();
@@ -25,7 +26,7 @@ export default async function FeederDetailPage({ params }: { params: Promise<{ i
       <FeederBuilder
         feeder={feeder as Feeder}
         initialLines={(lines ?? []) as unknown as FeederItemWithDetails[]}
-        allItems={(allItems ?? []) as ItemMaster[]}
+        allItems={allItems}
         canEdit={isAdmin || !(feeder as Feeder).is_library}
       />
     </div>

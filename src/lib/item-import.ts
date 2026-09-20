@@ -62,18 +62,28 @@ export async function importItemRows(
   }
   onProgress?.(rows.length - validRows.length, rows.length);
 
-  const { data: existing, error: fetchError } = await supabase
-    .from("item_master")
-    .select("id, sku, vendor_cat");
-  if (fetchError) {
-    for (const row of validRows) summary.skipped.push({ row: row.rowNumber, reason: fetchError.message });
-    onProgress?.(rows.length, rows.length);
-    return summary;
+  // Paginated: a plain .select() truncates at the project's PostgREST
+  // max-rows setting (Supabase defaults to 1000) -- with a catalog bigger
+  // than that, an unpaginated fetch here would silently "not find" the
+  // tail of the catalog and re-insert it as duplicates on every import.
+  const existing: { id: string; sku: string | null; vendor_cat: string | null }[] = [];
+  for (let from = 0; ; from += CHUNK_SIZE) {
+    const { data, error: fetchError } = await supabase
+      .from("item_master")
+      .select("id, sku, vendor_cat")
+      .range(from, from + CHUNK_SIZE - 1);
+    if (fetchError) {
+      for (const row of validRows) summary.skipped.push({ row: row.rowNumber, reason: fetchError.message });
+      onProgress?.(rows.length, rows.length);
+      return summary;
+    }
+    existing.push(...((data ?? []) as { id: string; sku: string | null; vendor_cat: string | null }[]));
+    if (!data || data.length < CHUNK_SIZE) break;
   }
 
   const skuToId = new Map<string, string>();
   const vendorCatToId = new Map<string, string>();
-  for (const item of (existing ?? []) as { id: string; sku: string | null; vendor_cat: string | null }[]) {
+  for (const item of existing) {
     if (item.sku) skuToId.set(item.sku, item.id);
     if (item.vendor_cat) vendorCatToId.set(item.vendor_cat, item.id);
   }

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase/client";
+import { fetchAllItemMaster } from "@/lib/item-display";
 import type { ItemMaster, ItemStatus } from "@/types/database";
 import { XlsUpload } from "@/components/xls-upload";
 import { SheetSyncButton } from "@/components/sheet-sync-button";
@@ -489,8 +490,7 @@ export function ItemMasterTable({
   }
 
   async function refresh() {
-    const { data } = await supabase.from("item_master").select("*").order("sku");
-    setItems((data ?? []) as ItemMaster[]);
+    setItems(await fetchAllItemMaster(supabase));
   }
 
   async function handleAdd(e: React.FormEvent) {
