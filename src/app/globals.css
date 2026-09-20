@@ -78,6 +78,87 @@
 
   --color-outline: #707881;
   --color-outline-variant: #bfc7d2;
+
+  /* Typography + spacing scale for the Admin Space, taken verbatim from
+     the Stitch mockup so its exact utility class names (font-headline-sm
+     text-headline-sm, gap-space-md, px-margin-lg, ...) reproduce it
+     pixel-for-pixel. Additive only -- doesn't touch the default Tailwind
+     scale other pages already rely on (text-sm, rounded-xl, gap-3, ...). */
+  --font-headline-lg: var(--font-display-raw);
+  --font-headline-lg-mobile: var(--font-display-raw);
+  --font-headline-md: var(--font-display-raw);
+  --font-headline-sm: var(--font-display-raw);
+  --font-telemetry-lg: var(--font-display-raw);
+  --font-telemetry-md: var(--font-display-raw);
+  --font-body-lg: var(--font-geist-sans);
+  --font-body-md: var(--font-geist-sans);
+  --font-body-sm: var(--font-geist-sans);
+  --font-label-md: var(--font-geist-sans);
+  --font-label-sm: var(--font-geist-sans);
+
+  --text-display: 32px;
+  --text-display--line-height: 40px;
+  --text-display--letter-spacing: -0.02em;
+  --text-display--font-weight: 700;
+
+  --text-headline-lg: 24px;
+  --text-headline-lg--line-height: 32px;
+  --text-headline-lg--letter-spacing: -0.01em;
+  --text-headline-lg--font-weight: 600;
+
+  --text-headline-lg-mobile: 20px;
+  --text-headline-lg-mobile--line-height: 28px;
+  --text-headline-lg-mobile--letter-spacing: -0.01em;
+  --text-headline-lg-mobile--font-weight: 600;
+
+  --text-headline-md: 18px;
+  --text-headline-md--line-height: 24px;
+  --text-headline-md--font-weight: 600;
+
+  --text-headline-sm: 15px;
+  --text-headline-sm--line-height: 20px;
+  --text-headline-sm--font-weight: 600;
+
+  --text-body-lg: 15px;
+  --text-body-lg--line-height: 22px;
+
+  --text-body-md: 13px;
+  --text-body-md--line-height: 18px;
+
+  --text-body-sm: 12px;
+  --text-body-sm--line-height: 16px;
+
+  --text-label-md: 11px;
+  --text-label-md--line-height: 14px;
+  --text-label-md--letter-spacing: 0.04em;
+  --text-label-md--font-weight: 500;
+
+  --text-label-sm: 10px;
+  --text-label-sm--line-height: 12px;
+  --text-label-sm--letter-spacing: 0.06em;
+  --text-label-sm--font-weight: 600;
+
+  --text-telemetry-lg: 18px;
+  --text-telemetry-lg--line-height: 22px;
+  --text-telemetry-lg--letter-spacing: 0.02em;
+  --text-telemetry-lg--font-weight: 700;
+
+  --text-telemetry-md: 13px;
+  --text-telemetry-md--line-height: 16px;
+  --text-telemetry-md--letter-spacing: 0.01em;
+  --text-telemetry-md--font-weight: 600;
+
+  --spacing-space-2xs: 0.125rem;
+  --spacing-space-xs: 0.25rem;
+  --spacing-space-sm: 0.5rem;
+  --spacing-space-md: 0.75rem;
+  --spacing-space-lg: 1rem;
+  --spacing-space-xl: 1.5rem;
+  --spacing-space-2xl: 2rem;
+  --spacing-gutter: 0.75rem;
+  --spacing-gutter-lg: 1rem;
+  --spacing-margin: 1rem;
+  --spacing-margin-lg: 1.5rem;
 }
 
 body {
