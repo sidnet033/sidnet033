@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { Icon } from "@/components/icon";
 import type { CostBreakdown } from "@/lib/switchboard-cost";
 import type { Customer, Project, Revision, Switchboard } from "@/types/database";
 
@@ -57,44 +58,56 @@ export function CostingMatrix({
   const finalPrice = totalTender + totalLogistics;
 
   const rowLabel = (label: string, bold = false) => (
-    <td className={`sticky left-0 z-10 bg-white px-3 py-1.5 ${bold ? "font-semibold text-slate-800" : "text-slate-600"}`}>{label}</td>
+    <td className={`sticky left-0 z-10 bg-surface-container-lowest px-3 py-1.5 ${bold ? "font-semibold text-on-surface" : "text-on-surface-variant"}`}>{label}</td>
   );
 
   return (
-    <div className="max-w-6xl space-y-5 px-8 py-6">
-      <div>
-        <h1 className="font-display text-xl font-semibold text-slate-900">
-          {project.title} — Project Costing
-          {customer ? ` · ${customer.name}` : ""}
-        </h1>
-        <p className="text-sm text-slate-500">{columns.length} switchboard(s)</p>
+    <div className="space-y-space-lg p-margin-lg">
+      <div className="flex flex-wrap items-start justify-between gap-space-md">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="font-display text-headline-lg text-on-surface">Project Costing</h1>
+            <span className="rounded bg-primary/10 px-2 py-0.5 font-mono text-xs font-bold text-primary">{project.code}</span>
+          </div>
+          <p className="mt-1 font-body-sm text-body-sm text-secondary">
+            {columns.length} Switchboard{columns.length === 1 ? "" : "s"} · Currency: {project.currency}
+            {customer ? ` · Client: ${customer.name}` : ""}
+          </p>
+        </div>
+        <button
+          disabled
+          title="Export coming soon"
+          className="flex items-center gap-1 rounded bg-surface-container-low px-space-md py-space-sm font-label-md text-label-md text-on-surface-variant opacity-60"
+        >
+          <Icon name="file_save" size={16} /> Export Costing (XLSX/PDF)
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-1 gap-space-md sm:grid-cols-4">
         <KpiCard label="Total Project MFG Cost" value={money(totalMfg)} />
         <KpiCard label="Average Profit Margin" value={`${avgProfitPct.toFixed(2)}%`} />
         <KpiCard label="Logistics" value={money(totalLogistics)} sub="Freight, Installation, Commissioning" />
         <KpiCard label="Final price" value={money(finalPrice)} highlight />
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200/90 bg-white shadow-xs">
+      <div className="overflow-x-auto rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-xs">
         <table className="w-full text-xs">
-          <thead className="bg-slate-50 text-left uppercase tracking-wide text-slate-500">
+          <thead className="bg-surface-container-low text-left uppercase tracking-wide text-secondary">
             <tr>
-              <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2">Cost head</th>
+              <th className="sticky left-0 z-10 bg-surface-container-low px-3 py-2">Cost head</th>
               {columns.map((c) => (
                 <th key={c.switchboard.id} className="px-3 py-2 text-right">
                   {c.switchboard.tag}
-                  {c.switchboard.qty > 1 && <span className="ml-1 font-normal normal-case text-slate-400">× {c.switchboard.qty}</span>}
-                  {c.specSummary && <div className="mt-0.5 font-normal normal-case text-slate-400">{c.specSummary}</div>}
+                  {c.switchboard.qty > 1 && <span className="ml-1 font-normal normal-case text-on-surface-variant">× {c.switchboard.qty}</span>}
+                  {c.specSummary && <div className="mt-0.5 font-normal normal-case text-on-surface-variant">{c.specSummary}</div>}
                 </th>
               ))}
               <th className="px-3 py-2 text-right">Total</th>
             </tr>
           </thead>
           <tbody>
-            <tr className="border-t border-slate-100 bg-slate-50/50">
-              <td colSpan={columns.length + 2} className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            <tr className="border-t border-surface-container bg-surface-container-low/50">
+              <td colSpan={columns.length + 2} className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-on-surface-variant">
                 Direct Manufacturing Cost Breakdown
               </td>
             </tr>
@@ -111,12 +124,12 @@ export function CostingMatrix({
               rowLabel={rowLabel}
             />
 
-            <tr className="border-t border-slate-200 bg-slate-50/50">
-              <td colSpan={columns.length + 2} className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            <tr className="border-t border-surface-container-high bg-surface-container-low/50">
+              <td colSpan={columns.length + 2} className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-on-surface-variant">
                 Pricing
               </td>
             </tr>
-            <tr className="border-t border-slate-100">
+            <tr className="border-t border-surface-container">
               {rowLabel("Profit %")}
               {columns.map((c) => (
                 <td key={c.switchboard.id} className="px-3 py-1.5 text-right">
@@ -126,29 +139,29 @@ export function CostingMatrix({
                     disabled={archived}
                     value={c.switchboard.profit_pct}
                     onChange={(e) => updateProfitPct(c.switchboard.id, Number(e.target.value) || 0)}
-                    className="w-16 rounded border border-slate-200 px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
+                    className="w-16 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
                   />
                 </td>
               ))}
-              <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{avgProfitPct.toFixed(2)}% avg</td>
+              <td className="px-3 py-1.5 text-right tabular-nums text-secondary">{avgProfitPct.toFixed(2)}% avg</td>
             </tr>
             <CostRow
               label="Absolute Profit"
               values={columns.map((c) => c.breakdown.mfgTotal * c.switchboard.qty * (c.switchboard.profit_pct / 100))}
               rowLabel={rowLabel}
             />
-            <tr className="border-t border-slate-200 bg-brand-50/40 font-semibold">
+            <tr className="border-t border-surface-container-high bg-primary/10/40 font-semibold">
               {rowLabel("Tender Price", true)}
               {columns.map((c) => (
-                <td key={c.switchboard.id} className="px-3 py-1.5 text-right tabular-nums text-brand-700">
+                <td key={c.switchboard.id} className="px-3 py-1.5 text-right tabular-nums text-primary">
                   {money(c.breakdown.mfgTotal * c.switchboard.qty * (1 + c.switchboard.profit_pct / 100))}
                 </td>
               ))}
-              <td className="px-3 py-1.5 text-right tabular-nums text-brand-700">{money(totalTender)}</td>
+              <td className="px-3 py-1.5 text-right tabular-nums text-primary">{money(totalTender)}</td>
             </tr>
 
-            <tr className="border-t border-slate-200 bg-slate-50/50">
-              <td colSpan={columns.length + 2} className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            <tr className="border-t border-surface-container-high bg-surface-container-low/50">
+              <td colSpan={columns.length + 2} className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-on-surface-variant">
                 Logistics &amp; Site Services
               </td>
             </tr>
@@ -197,16 +210,16 @@ export function CostingMatrix({
                 saveLogistics("commissioning_description", v || null);
               }}
             />
-            <tr className="border-t border-slate-200 bg-slate-50 font-semibold">
+            <tr className="border-t border-surface-container-high bg-surface-container-low font-semibold">
               {rowLabel("Total Logistics", true)}
               <td colSpan={columns.length} />
               <td className="px-3 py-1.5 text-right tabular-nums">{money(totalLogistics)}</td>
             </tr>
 
-            <tr className="border-t-2 border-slate-300 bg-brand-50 font-semibold">
+            <tr className="border-t-2 border-surface-container-high bg-primary/10 font-semibold">
               {rowLabel("Final Price", true)}
               <td colSpan={columns.length} />
-              <td className="px-3 py-2 text-right tabular-nums text-brand-700">{money(finalPrice)}</td>
+              <td className="px-3 py-2 text-right tabular-nums text-primary">{money(finalPrice)}</td>
             </tr>
           </tbody>
         </table>
@@ -228,7 +241,7 @@ function CostRow({
 }) {
   const total = values.reduce((s, v) => s + v, 0);
   return (
-    <tr className={`border-t border-slate-100 ${bold ? "font-semibold text-slate-800" : ""}`}>
+    <tr className={`border-t border-surface-container ${bold ? "font-semibold text-on-surface" : ""}`}>
       {rowLabel(label, bold)}
       {values.map((v, i) => (
         <td key={i} className="px-3 py-1.5 text-right tabular-nums">
@@ -258,15 +271,15 @@ function LogisticsRow({
   onDescChange: (v: string) => void;
 }) {
   return (
-    <tr className="border-t border-slate-100">
-      <td className="sticky left-0 z-10 bg-white px-3 py-1.5 text-slate-600">{label}</td>
+    <tr className="border-t border-surface-container">
+      <td className="sticky left-0 z-10 bg-surface-container-lowest px-3 py-1.5 text-on-surface-variant">{label}</td>
       <td colSpan={span} className="px-3 py-1.5">
         <input
           disabled={readOnly}
           value={description}
           onChange={(e) => onDescChange(e.target.value)}
           placeholder="Description..."
-          className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-slate-500 focus:border-slate-200 disabled:bg-transparent"
+          className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-secondary focus:border-surface-container-high disabled:bg-transparent"
         />
       </td>
       <td className="px-3 py-1.5 text-right">
@@ -275,7 +288,7 @@ function LogisticsRow({
           disabled={readOnly}
           value={amount}
           onChange={(e) => onAmountChange(Number(e.target.value) || 0)}
-          className="w-28 rounded border border-slate-200 px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
+          className="w-28 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
         />
       </td>
     </tr>
@@ -284,10 +297,13 @@ function LogisticsRow({
 
 function KpiCard({ label, value, sub, highlight = false }: { label: string; value: string; sub?: string; highlight?: boolean }) {
   return (
-    <div className={`rounded-xl border p-4 shadow-xs ${highlight ? "border-brand-200 bg-brand-50" : "border-slate-200/90 bg-white"}`}>
-      <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`mt-1 font-display text-xl font-semibold ${highlight ? "text-brand-700" : "text-slate-900"}`}>{value}</p>
-      {sub && <p className="mt-0.5 text-[11px] text-slate-400">{sub}</p>}
+    <div className={`rounded-xl p-space-md shadow-sm ${highlight ? "bg-primary text-on-primary" : "bg-surface-container-lowest"}`}>
+      <div className="flex items-center justify-between">
+        <p className={`font-label-md text-label-md uppercase tracking-wider ${highlight ? "text-on-primary/70" : "text-secondary"}`}>{label}</p>
+        {highlight && <span className="rounded bg-white/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide">Offer</span>}
+      </div>
+      <p className={`mt-1 font-display text-headline-lg ${highlight ? "text-on-primary" : "text-on-surface"}`}>{value}</p>
+      {sub && <p className={`mt-0.5 font-body-sm text-body-sm ${highlight ? "text-on-primary/70" : "text-on-surface-variant"}`}>{sub}</p>}
     </div>
   );
 }

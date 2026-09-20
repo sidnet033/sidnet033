@@ -21,18 +21,24 @@ export function CostBreakdownCard({
   const valueAddShare = 100 - rmShare;
 
   return (
-    <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-xs">
-      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Cost Breakdown</h3>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="space-y-1.5">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Raw Materials (RM)</p>
+    <div className="space-y-space-sm">
+      <h3 className="font-headline-md text-headline-md text-on-surface">Cost Breakdown</h3>
+      <div className="grid grid-cols-1 gap-space-md lg:grid-cols-3">
+        <div className="space-y-1.5 rounded-xl bg-surface-container-lowest p-space-md shadow-sm">
+          <p className="flex items-center gap-1.5 font-label-md text-label-md text-on-surface-variant">
+            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-on-primary">1</span>
+            Raw Materials (RM)
+          </p>
           <Row label="Electrical" value={money(breakdown.electrical)} />
           <Row label="Enclosure" value={money(breakdown.enclosure)} />
           <Row label="Busbars" value={money(breakdown.busbars)} />
-          <Row label="Total RM" value={money(breakdown.rmTotal)} bold />
+          <Row label="Total RM Cost" value={money(breakdown.rmTotal)} bold />
         </div>
-        <div className="space-y-1.5">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Labor (% of RM)</p>
+        <div className="space-y-1.5 rounded-xl bg-surface-container-lowest p-space-md shadow-sm">
+          <p className="flex items-center gap-1.5 font-label-md text-label-md text-on-surface-variant">
+            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-tertiary text-[10px] font-bold text-on-tertiary">2</span>
+            Labor (% of RM)
+          </p>
           {onLaborChange ? (
             <>
               <PctRow
@@ -66,12 +72,18 @@ export function CostBreakdownCard({
           )}
           <Row label="Total Adders" value={money(breakdown.laborTotal)} bold />
         </div>
-        <div className="flex flex-col justify-between rounded-lg bg-slate-50 p-3">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Total MFG Cost</p>
-            <p className="mt-1 font-display text-xl font-semibold text-slate-900">{money(breakdown.mfgTotal)}</p>
+        <div className="flex flex-col justify-between rounded-xl bg-surface-container-lowest p-space-md shadow-sm">
+          <div className="flex items-center justify-between">
+            <p className="flex items-center gap-1.5 font-label-md text-label-md text-on-surface-variant">
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-on-primary">3</span>
+              Total MFG Cost
+            </p>
+            <span className="rounded-full bg-tertiary-container/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-tertiary">
+              Grand Total
+            </span>
           </div>
-          <div className="mt-3 text-[11px] text-slate-500">
+          <p className="mt-1 font-display text-headline-lg text-primary">{money(breakdown.mfgTotal)}</p>
+          <div className="mt-3 font-body-sm text-body-sm text-secondary">
             <p>RM Share: {rmShare.toFixed(1)}%</p>
             <p>Value Add: {valueAddShare.toFixed(1)}%</p>
           </div>
@@ -83,7 +95,7 @@ export function CostBreakdownCard({
 
 function Row({ label, value, bold = false }: { label: string; value: string; bold?: boolean }) {
   return (
-    <div className={`flex items-center justify-between text-xs ${bold ? "border-t border-slate-100 pt-1.5 font-semibold text-slate-800" : "text-slate-600"}`}>
+    <div className={`flex items-center justify-between text-xs ${bold ? "border-t border-surface-container pt-1.5 font-semibold text-on-surface" : "text-on-surface-variant"}`}>
       <span>{label}</span>
       <span className="tabular-nums">{value}</span>
     </div>
@@ -106,7 +118,7 @@ function PctRow({
   const [local, setLocal] = useState(String(pct));
 
   return (
-    <div className="flex items-center justify-between text-xs text-slate-600">
+    <div className="flex items-center justify-between text-xs text-on-surface-variant">
       <span className="flex items-center gap-1">
         {label}
         <input
@@ -116,7 +128,7 @@ function PctRow({
           value={local}
           onChange={(e) => setLocal(e.target.value)}
           onBlur={() => onChange(Number(local) || 0)}
-          className="w-14 rounded border border-slate-200 px-1 py-0.5 text-right text-xs disabled:border-transparent disabled:bg-transparent"
+          className="w-14 rounded border border-surface-container-high px-1 py-0.5 text-right text-xs disabled:border-transparent disabled:bg-transparent"
         />
         %
       </span>

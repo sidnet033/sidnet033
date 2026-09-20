@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getSwitchboardCostBreakdown, type CostBreakdown } from "@/lib/switchboard-cost";
-import type { Customer, Project, Revision, Switchboard } from "@/types/database";
+import type { Customer, Profile, Project, Revision, Switchboard } from "@/types/database";
 
 export type SiblingRevision = { id: string; revision_number: number; status: string };
 
@@ -21,8 +21,10 @@ export type RevisionContext = {
   createdByName: string | null;
   consultantName: string | null;
   salesExecName: string | null;
+  ownerName: string | null;
   siblingRevisions: SiblingRevision[];
   switchboards: SwitchboardListItem[];
+  allUsers: { id: string; full_name: string | null; email: string | null }[];
 };
 
 // Fetched once by the unified /revisions/[id] workspace page: the
@@ -38,7 +40,7 @@ export async function getRevisionContext(revisionId: string): Promise<RevisionCo
   const { data: project } = await supabase.from("projects").select("*").eq("id", revision.project_id).single();
   if (!project) notFound();
 
-  const [{ data: customer }, { data: siblingRevisions }, { data: switchboardRows }] = await Promise.all([
+  const [{ data: customer }, { data: siblingRevisions }, { data: switchboardRows }, { data: allUserRows }] = await Promise.all([
     project.customer_id
       ? supabase.from("customers").select("*").eq("id", project.customer_id).single()
       : Promise.resolve({ data: null }),
@@ -48,25 +50,12 @@ export async function getRevisionContext(revisionId: string): Promise<RevisionCo
       .eq("revision_group_id", revision.revision_group_id)
       .order("revision_number"),
     supabase.from("switchboards").select("*").eq("revision_id", revisionId).order("sort_order"),
+    supabase.from("profiles").select("id, full_name, email").order("full_name"),
   ]);
 
   const boards = (switchboardRows ?? []) as Switchboard[];
-
-  const profileIds = Array.from(
-    new Set(
-      [
-        ...boards.map((b) => b.locked_by),
-        ...boards.map((b) => b.updated_by),
-        project.created_by,
-      ].filter((v): v is string => !!v)
-    )
-  );
-  const { data: profileRows } = profileIds.length
-    ? await supabase.from("profiles").select("id, full_name").in("id", profileIds)
-    : { data: [] };
-  const profileNames = new Map(
-    ((profileRows ?? []) as { id: string; full_name: string | null }[]).map((p) => [p.id, p.full_name])
-  );
+  const allUsers = (allUserRows ?? []) as Profile[];
+  const profileNames = new Map(allUsers.map((p) => [p.id, p.full_name]));
 
   const typeIds = Array.from(new Set(boards.map((b) => b.switchboard_type_id).filter((v): v is string => !!v)));
   const { data: typeRows } = typeIds.length
@@ -103,7 +92,9 @@ export async function getRevisionContext(revisionId: string): Promise<RevisionCo
     createdByName: project.created_by ? profileNames.get(project.created_by) ?? null : null,
     consultantName: (consultant as { name: string } | null)?.name ?? null,
     salesExecName: (salesExec as { name: string } | null)?.name ?? null,
+    ownerName: project.owner_id ? profileNames.get(project.owner_id) ?? null : null,
     siblingRevisions: (siblingRevisions ?? []) as SiblingRevision[],
     switchboards,
+    allUsers,
   };
 }

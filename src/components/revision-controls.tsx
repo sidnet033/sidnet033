@@ -73,7 +73,7 @@ export function RevisionControls({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-600">
+      <span className="rounded border border-surface-container-high bg-surface-container-low px-1.5 py-0.5 font-mono text-[11px] font-medium text-on-surface-variant">
         Rev {revisionNumber}
       </span>
 
@@ -81,7 +81,7 @@ export function RevisionControls({
         <select
           value={revisionId}
           onChange={(e) => router.push(`/revisions/${e.target.value}`)}
-          className="rounded-md border border-slate-300 px-2 py-1 text-xs"
+          className="rounded-md border border-surface-container-high px-2 py-1 text-xs"
         >
           {siblingRevisions.map((s) => (
             <option key={s.id} value={s.id}>
@@ -94,21 +94,21 @@ export function RevisionControls({
       <button
         onClick={handleCreateRevision}
         disabled={busy}
-        className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+        className="rounded-md border border-surface-container-high bg-surface-container-lowest px-2.5 py-1 text-xs font-medium text-on-surface hover:bg-surface-container-low disabled:opacity-50"
       >
         + New revision
       </button>
 
       {archived ? (
         <>
-          <span className="flex items-center gap-1 rounded border border-rose-200/60 bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-600">
+          <span className="flex items-center gap-1 rounded border border-error/30 bg-error-container px-1.5 py-0.5 text-[11px] font-medium text-error">
             <Icon name="archive" size={13} /> Archived — read only
           </span>
           {canUnarchive && (
             <button
               onClick={handleUnarchive}
               disabled={busy}
-              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              className="rounded-md border border-surface-container-high bg-surface-container-lowest px-2.5 py-1 text-xs font-medium text-on-surface hover:bg-surface-container-low disabled:opacity-50"
             >
               Un-archive
             </button>
@@ -118,7 +118,7 @@ export function RevisionControls({
         <button
           onClick={handleArchive}
           disabled={busy}
-          className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          className="rounded-md border border-surface-container-high bg-surface-container-lowest px-2.5 py-1 text-xs font-medium text-on-surface hover:bg-surface-container-low disabled:opacity-50"
         >
           Archive
         </button>

@@ -23,12 +23,12 @@ const SIDE_STAGES: { id: ProjectStage; label: string }[] = [
 const MAIN_ORDER: ProjectStage[] = ["new", "wip", "quoted", "finalization", "won"];
 
 function stageColor(stage: ProjectStage, active: boolean) {
-  if (!active) return "border-slate-200 bg-white text-slate-500 hover:border-slate-300";
-  if (stage === "won") return "border-emerald-500 bg-emerald-500 text-white";
-  if (stage === "lost") return "border-rose-500 bg-rose-500 text-white";
+  if (!active) return "border-surface-container-high bg-surface-container-lowest text-secondary hover:border-surface-container-high";
+  if (stage === "won") return "border-tertiary bg-tertiary text-white";
+  if (stage === "lost") return "border-error bg-error text-white";
   if (stage === "hold") return "border-amber-500 bg-amber-500 text-white";
-  if (stage === "budgetary") return "border-slate-500 bg-slate-500 text-white";
-  return "border-brand-500 bg-brand-500 text-white";
+  if (stage === "budgetary") return "border-secondary bg-secondary text-white";
+  return "border-primary bg-primary text-white";
 }
 
 export function StageStepper({
@@ -59,7 +59,7 @@ export function StageStepper({
             >
               {s.label}
             </button>
-            <Icon name="arrow_forward" size={14} className="text-slate-300" />
+            <Icon name="arrow_forward" size={14} className="text-on-surface-variant" />
           </div>
         ))}
         {OUTCOMES.map((s) => (
@@ -78,7 +78,7 @@ export function StageStepper({
         ))}
       </div>
       <div className="flex items-center gap-1.5">
-        <span className="text-[11px] text-slate-400">Or move to:</span>
+        <span className="text-[11px] text-on-surface-variant">Or move to:</span>
         {SIDE_STAGES.map((s) => (
           <button
             key={s.id}

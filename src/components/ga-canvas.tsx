@@ -281,12 +281,26 @@ export function GaCanvas({
   }
 
   if (loading || !sb) {
-    return <div className="p-8 text-sm text-slate-400">Loading...</div>;
+    return <div className="p-8 text-sm text-on-surface-variant">Loading...</div>;
   }
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="flex h-full flex-col">
+        <div className="flex flex-wrap items-center justify-between gap-space-md border-b border-surface-container-high bg-surface-container-lowest px-margin-lg py-space-md">
+          <h1 className="font-display text-headline-lg text-on-surface">
+            GA Builder — {sb.tag}
+            {sb.title ? `: ${sb.title}` : ""}
+          </h1>
+          <button
+            disabled
+            title="Export coming soon"
+            className="flex items-center gap-1 rounded bg-surface-container-low px-space-md py-space-sm font-label-md text-label-md text-on-surface-variant opacity-60"
+          >
+            <Icon name="ios_share" size={16} /> Export GA (DXF/DWG/PDF)
+          </button>
+        </div>
+
         {readOnly && (
           <div className="flex items-center gap-2 border-b border-amber-200/80 bg-amber-50/60 px-4 py-2 text-xs text-amber-800">
             <Icon name="visibility" size={15} />
@@ -296,8 +310,8 @@ export function GaCanvas({
           </div>
         )}
 
-        <div className="flex flex-wrap items-end gap-4 border-b border-slate-200/90 bg-slate-50/60 px-4 py-2.5 text-xs">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Switchboard Master Parameters</p>
+        <div className="flex flex-wrap items-end gap-4 border-b border-surface-container-high bg-surface-container-low/60 px-4 py-2.5 text-xs">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-secondary">Switchboard Master Parameters</p>
           <Field label="Plinth Height">
             <select
               disabled={readOnly}
@@ -306,7 +320,7 @@ export function GaCanvas({
                 setPlinthHeight(Number(e.target.value));
                 saveMasterParam("plinth_height_mm", Number(e.target.value));
               }}
-              className="rounded border border-slate-300 px-1.5 py-1"
+              className="rounded border border-surface-container-high px-1.5 py-1"
             >
               {PLINTH_OPTIONS.map((v) => (
                 <option key={v} value={v}>
@@ -323,7 +337,7 @@ export function GaCanvas({
                 setPanelHeight(Number(e.target.value));
                 saveMasterParam("panel_height_mm", Number(e.target.value));
               }}
-              className="rounded border border-slate-300 px-1.5 py-1"
+              className="rounded border border-surface-container-high px-1.5 py-1"
             >
               {PANEL_HEIGHT_OPTIONS.map((v) => (
                 <option key={v} value={v}>
@@ -340,7 +354,7 @@ export function GaCanvas({
                 setFormOfSeparation(e.target.value);
                 saveMasterParam("form_of_separation", e.target.value || null);
               }}
-              className="rounded border border-slate-300 px-1.5 py-1"
+              className="rounded border border-surface-container-high px-1.5 py-1"
             >
               <option value="">—</option>
               {FORM_OPTIONS.map((v) => (
@@ -357,7 +371,7 @@ export function GaCanvas({
               value={amps}
               onChange={(e) => setAmps(e.target.value ? Number(e.target.value) : "")}
               onBlur={() => saveMasterParam("amps", amps === "" ? null : Number(amps))}
-              className="w-20 rounded border border-slate-300 px-1.5 py-1"
+              className="w-20 rounded border border-surface-container-high px-1.5 py-1"
             />
           </Field>
           <Field label="kA">
@@ -367,19 +381,19 @@ export function GaCanvas({
               value={ka}
               onChange={(e) => setKa(e.target.value ? Number(e.target.value) : "")}
               onBlur={() => saveMasterParam("ka", ka === "" ? null : Number(ka))}
-              className="w-16 rounded border border-slate-300 px-1.5 py-1"
+              className="w-16 rounded border border-surface-container-high px-1.5 py-1"
             />
           </Field>
           <button
             onClick={() => alert("Export (DXF / DWG / PDF) is coming in a later phase.")}
-            className="ml-auto flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 font-medium text-slate-700 hover:bg-slate-50"
+            className="ml-auto flex items-center gap-1 rounded-md border border-surface-container-high bg-surface-container-lowest px-2.5 py-1.5 font-medium text-on-surface hover:bg-surface-container-low"
           >
             <Icon name="download" size={14} /> Export GA
           </button>
         </div>
 
         <div className="flex flex-1 gap-4 overflow-hidden p-4">
-          <aside className="w-72 shrink-0 overflow-y-auto rounded-xl border border-slate-200/90 bg-white p-3 shadow-xs">
+          <aside className="w-72 shrink-0 overflow-y-auto rounded-xl border border-surface-container-high bg-surface-container-lowest p-3 shadow-xs">
             {unallocated && unallocated.placed.length > 0 && (
               <div className="mb-4">
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-600">
@@ -393,7 +407,7 @@ export function GaCanvas({
               </div>
             )}
 
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Feeder Master</p>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-secondary">Feeder Master</p>
             {!readOnly && (
               <AdHocFeederPanel
                 switchboardId={sb.id}
@@ -405,9 +419,9 @@ export function GaCanvas({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search feeders..."
-              className="mb-3 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+              className="mb-3 w-full rounded-md border border-surface-container-high px-2 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
-            <p className="mb-2 text-xs text-slate-400">
+            <p className="mb-2 text-xs text-on-surface-variant">
               {readOnly ? "Read only — lock this switchboard to edit." : "Drag a feeder onto a bay →"}
             </p>
             <div className="space-y-2">
@@ -419,7 +433,7 @@ export function GaCanvas({
                   onPromote={!readOnly && !f.is_library ? () => promoteToLibrary(f) : undefined}
                 />
               ))}
-              {filteredLibrary.length === 0 && <p className="text-sm text-slate-400">No feeders. Build your feeder master first.</p>}
+              {filteredLibrary.length === 0 && <p className="text-sm text-on-surface-variant">No feeders. Build your feeder master first.</p>}
             </div>
           </aside>
 
@@ -430,7 +444,7 @@ export function GaCanvas({
                   <button
                     key={t.bay_type}
                     onClick={() => addBay(t)}
-                    className="rounded-md border border-dashed border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-600 hover:border-brand-500/60 hover:text-brand-600"
+                    className="rounded-md border border-dashed border-surface-container-high px-2.5 py-1 text-xs font-medium text-on-surface-variant hover:border-primary/40 hover:text-primary"
                   >
                     {t.label}
                   </button>
@@ -438,7 +452,7 @@ export function GaCanvas({
               </div>
             )}
 
-            <div className="flex-1 overflow-x-auto rounded-xl border border-slate-200/90 bg-slate-50/40 p-3">
+            <div className="flex-1 overflow-x-auto rounded-xl border border-surface-container-high bg-surface-container-low/40 p-3">
               {bays.length > 0 && (
                 <div
                   className="mb-2 flex items-center justify-center rounded-t-lg border border-b-0 border-amber-300/60 bg-amber-50 py-2 text-[11px] font-medium text-amber-800"
@@ -464,14 +478,14 @@ export function GaCanvas({
                   />
                 ))}
                 {bays.length === 0 && (
-                  <p className="w-full py-10 text-center text-sm text-slate-400">
+                  <p className="w-full py-10 text-center text-sm text-on-surface-variant">
                     No bays yet — add one from the Modular Bay Templates above.
                   </p>
                 )}
               </div>
               {bays.length > 0 && (
                 <div
-                  className="mt-2 flex items-center justify-center gap-4 rounded-b-lg border border-t-0 border-slate-300 bg-slate-200/70 py-2 text-[11px] font-medium text-slate-600"
+                  className="mt-2 flex items-center justify-center gap-4 rounded-b-lg border border-t-0 border-surface-container-high bg-surface-container-high py-2 text-[11px] font-medium text-on-surface-variant"
                   style={{ minWidth: bays.length * 220 }}
                 >
                   <Icon name="anchor" size={13} /> Base Plinth ({plinthHeight}mm) <Icon name="anchor" size={13} />
@@ -479,9 +493,9 @@ export function GaCanvas({
               )}
             </div>
 
-            <div className="mt-3 flex items-center justify-between rounded-xl border border-slate-200/90 bg-white px-4 py-2.5 text-sm shadow-xs">
-              <span className="text-slate-500">
-                Enclosure Cost: <span className="font-semibold text-slate-900">₹{enclosureCost.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
+            <div className="mt-3 flex items-center justify-between rounded-xl border border-surface-container-high bg-surface-container-lowest px-4 py-2.5 text-sm shadow-xs">
+              <span className="text-secondary">
+                Enclosure Cost: <span className="font-semibold text-on-surface">₹{enclosureCost.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
               </span>
             </div>
           </div>
@@ -490,9 +504,9 @@ export function GaCanvas({
 
       <DragOverlay>
         {draggingFeeder && (
-          <div className="w-56 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-lg">
-            <p className="font-medium text-slate-900">{draggingFeeder.name}</p>
-            <p className="text-xs text-slate-400">₹{draggingFeeder.cost.toLocaleString("en-IN")}</p>
+          <div className="w-56 rounded-md border border-surface-container-high bg-surface-container-lowest px-3 py-2 text-sm shadow-lg">
+            <p className="font-medium text-on-surface">{draggingFeeder.name}</p>
+            <p className="text-xs text-on-surface-variant">₹{draggingFeeder.cost.toLocaleString("en-IN")}</p>
           </div>
         )}
       </DragOverlay>
@@ -502,7 +516,7 @@ export function GaCanvas({
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="flex items-center gap-1.5 text-slate-500">
+    <label className="flex items-center gap-1.5 text-secondary">
       {label}
       {children}
     </label>
@@ -526,8 +540,8 @@ function UnallocatedCard({ placed, disabled }: { placed: PlacedWithFeeder; disab
         disabled ? "opacity-60" : `cursor-grab active:cursor-grabbing ${isDragging ? "opacity-40" : "hover:border-amber-400"}`
       }`}
     >
-      <p className="truncate font-medium text-slate-800">{placed.feeder.name}</p>
-      <p className="text-xs text-slate-400">₹{placed.feeder.cost.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</p>
+      <p className="truncate font-medium text-on-surface">{placed.feeder.name}</p>
+      <p className="text-xs text-on-surface-variant">₹{placed.feeder.cost.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</p>
     </div>
   );
 }
@@ -554,19 +568,19 @@ function LibraryFeederCard({
       style={style}
       {...listeners}
       {...attributes}
-      className={`rounded-lg border border-slate-200 px-3 py-2 text-sm ${
-        disabled ? "opacity-60" : `cursor-grab active:cursor-grabbing ${isDragging ? "opacity-40" : "hover:border-brand-500/60"}`
+      className={`rounded-lg border border-surface-container-high px-3 py-2 text-sm ${
+        disabled ? "opacity-60" : `cursor-grab active:cursor-grabbing ${isDragging ? "opacity-40" : "hover:border-primary/40"}`
       }`}
     >
       <div className="flex items-center gap-1.5">
-        <p className="flex-1 truncate font-medium text-slate-800">{feeder.name}</p>
+        <p className="flex-1 truncate font-medium text-on-surface">{feeder.name}</p>
         {!feeder.is_library && (
-          <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[10px] text-slate-500">
+          <span className="shrink-0 rounded border border-surface-container-high bg-surface-container-low px-1 py-0.5 text-[10px] text-secondary">
             Board
           </span>
         )}
       </div>
-      <div className="flex items-center justify-between text-xs text-slate-400">
+      <div className="flex items-center justify-between text-xs text-on-surface-variant">
         <span>{feeder.category || "—"}</span>
         <span>₹{feeder.cost.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
       </div>
@@ -575,7 +589,7 @@ function LibraryFeederCard({
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={onPromote}
-          className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-brand-600 hover:underline"
+          className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
         >
           <Icon name="upload" size={12} /> Save to Feeder Library
         </button>
@@ -616,23 +630,23 @@ function BayColumn({
   const tiers = Array.from(new Set(vertical.placed.map((p) => p.tier_number))).sort((a, b) => a - b);
 
   return (
-    <div className="flex w-56 shrink-0 flex-col rounded-xl border border-slate-200/90 bg-white shadow-xs">
-      <div className="border-b border-slate-100 p-2">
+    <div className="flex w-56 shrink-0 flex-col rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-xs">
+      <div className="border-b border-surface-container p-2">
         <div className="flex items-center justify-between">
           <input
             value={localName}
             disabled={readOnly}
             onChange={(e) => setLocalName(e.target.value)}
             onBlur={() => onRename(localName)}
-            className="w-full rounded border-none bg-transparent px-1 py-0.5 text-sm font-semibold text-slate-900 focus:bg-slate-50 disabled:text-slate-500"
+            className="w-full rounded border-none bg-transparent px-1 py-0.5 text-sm font-semibold text-on-surface focus:bg-surface-container-low disabled:text-secondary"
           />
           {vertical.bay_type && (
-            <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[10px] capitalize text-slate-500">
+            <span className="shrink-0 rounded border border-surface-container-high bg-surface-container-low px-1 py-0.5 text-[10px] capitalize text-secondary">
               {vertical.bay_type.replace("_", " ")}
             </span>
           )}
         </div>
-        <div className="mt-1 flex items-center gap-1.5 px-1 text-xs text-slate-400">
+        <div className="mt-1 flex items-center gap-1.5 px-1 text-xs text-on-surface-variant">
           <input
             type="number"
             value={localWidth}
@@ -640,7 +654,7 @@ function BayColumn({
             onChange={(e) => setLocalWidth(e.target.value)}
             onBlur={() => onDimChange("width_mm", localWidth)}
             placeholder="W"
-            className="w-14 rounded border border-slate-200 px-1 py-0.5 disabled:bg-slate-50"
+            className="w-14 rounded border border-surface-container-high px-1 py-0.5 disabled:bg-surface-container-low"
           />
           ×
           <input
@@ -650,13 +664,13 @@ function BayColumn({
             onChange={(e) => setLocalDepth(e.target.value)}
             onBlur={() => onDimChange("depth_mm", localDepth)}
             placeholder="D"
-            className="w-14 rounded border border-slate-200 px-1 py-0.5 disabled:bg-slate-50"
+            className="w-14 rounded border border-surface-container-high px-1 py-0.5 disabled:bg-surface-container-low"
           />
           <span>mm{widthPct !== null && ` · ${widthPct}%`}</span>
         </div>
         {!readOnly && (
           <div className="mt-1 px-1">
-            <button onClick={onDelete} className="text-xs text-rose-600 hover:underline">
+            <button onClick={onDelete} className="text-xs text-error hover:underline">
               Delete
             </button>
           </div>
@@ -665,44 +679,44 @@ function BayColumn({
 
       <div ref={setNodeRef} className={`flex-1 space-y-3 p-2 ${isOver ? "bg-blue-50" : ""}`} style={{ minHeight: 220 }}>
         {tiers.map((tier) => (
-          <div key={tier} className="rounded-lg border border-dashed border-slate-200 p-1.5">
-            <p className="mb-1 px-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Tier {tier}</p>
+          <div key={tier} className="rounded-lg border border-dashed border-surface-container-high p-1.5">
+            <p className="mb-1 px-0.5 text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant">Tier {tier}</p>
             <div className="space-y-1.5">
               {vertical.placed
                 .filter((p) => p.tier_number === tier)
                 .map((p) => (
-                  <div key={p.id} className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs">
+                  <div key={p.id} className="rounded-lg border border-surface-container-high bg-surface-container-low p-2 text-xs">
                     <div className="flex items-start justify-between gap-1">
-                      <p className="font-medium text-slate-800">{p.feeder.name}</p>
+                      <p className="font-medium text-on-surface">{p.feeder.name}</p>
                       {!readOnly && (
-                        <button onClick={() => onRemove(p.id)} className="text-rose-500 hover:underline">
+                        <button onClick={() => onRemove(p.id)} className="text-error hover:underline">
                           ✕
                         </button>
                       )}
                     </div>
-                    {p.feeder.rating_summary && <p className="text-[10px] text-slate-400">{p.feeder.rating_summary}</p>}
+                    {p.feeder.rating_summary && <p className="text-[10px] text-on-surface-variant">{p.feeder.rating_summary}</p>}
                     <div className="mt-1 flex items-center justify-between gap-1">
                       <div className="flex items-center gap-1">
-                        <label className="text-slate-500">Qty</label>
+                        <label className="text-secondary">Qty</label>
                         <input
                           type="number"
                           min="1"
                           value={p.qty}
                           disabled={readOnly}
                           onChange={(e) => onQtyChange(p.id, Number(e.target.value) || 1)}
-                          className="w-10 rounded border border-slate-200 px-1 py-0.5 disabled:bg-slate-100"
+                          className="w-10 rounded border border-surface-container-high px-1 py-0.5 disabled:bg-surface-container-low"
                         />
-                        <label className="text-slate-500">Tier</label>
+                        <label className="text-secondary">Tier</label>
                         <input
                           type="number"
                           min="1"
                           value={p.tier_number}
                           disabled={readOnly}
                           onChange={(e) => onTierChange(p.id, Number(e.target.value) || 1)}
-                          className="w-10 rounded border border-slate-200 px-1 py-0.5 disabled:bg-slate-100"
+                          className="w-10 rounded border border-surface-container-high px-1 py-0.5 disabled:bg-surface-container-low"
                         />
                       </div>
-                      <span className="tabular-nums text-slate-500">
+                      <span className="tabular-nums text-secondary">
                         ₹{(p.qty * p.feeder.cost).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
                       </span>
                     </div>
@@ -711,10 +725,10 @@ function BayColumn({
             </div>
           </div>
         ))}
-        {vertical.placed.length === 0 && <p className="pt-6 text-center text-xs text-slate-300">Drop feeders here</p>}
+        {vertical.placed.length === 0 && <p className="pt-6 text-center text-xs text-on-surface-variant">Drop feeders here</p>}
       </div>
 
-      <div className="border-t border-slate-100 p-2 text-right text-xs font-medium text-slate-600">
+      <div className="border-t border-surface-container p-2 text-right text-xs font-medium text-on-surface-variant">
         ₹{subtotal.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
       </div>
     </div>

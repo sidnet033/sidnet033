@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Icon } from "@/components/icon";
 import { RevisionControls } from "@/components/revision-controls";
 import { ProjectDetailTab } from "@/components/project-detail-tab";
 import { BomBuilder } from "@/components/bom-builder";
@@ -13,11 +14,11 @@ import type { ItemMaster } from "@/types/database";
 
 export type Tab = "detail" | "bom" | "ga" | "costing";
 
-const TABS: { id: Tab; label: string; needsSwitchboard: boolean }[] = [
-  { id: "detail", label: "Project Detail", needsSwitchboard: false },
-  { id: "bom", label: "BOM Builder", needsSwitchboard: true },
-  { id: "ga", label: "GA Builder", needsSwitchboard: true },
-  { id: "costing", label: "Costing Summary", needsSwitchboard: false },
+const TABS: { id: Tab; label: string; icon: string; needsSwitchboard: boolean }[] = [
+  { id: "detail", label: "Project Details", icon: "info", needsSwitchboard: false },
+  { id: "costing", label: "Costing Summary", icon: "table_chart", needsSwitchboard: false },
+  { id: "bom", label: "BOM Builder", icon: "description", needsSwitchboard: true },
+  { id: "ga", label: "GA Builder", icon: "tune", needsSwitchboard: true },
 ];
 
 export function RevisionWorkspace({
@@ -41,7 +42,7 @@ export function RevisionWorkspace({
   const [selectedSwitchboardId, setSelectedSwitchboardId] = useState<string | null>(initialSwitchboard);
   const [archived, setArchived] = useState(ctx.revision.archived);
 
-  const { revision, project, customer, createdByName, consultantName, salesExecName, siblingRevisions, switchboards } = ctx;
+  const { revision, project, customer, createdByName, consultantName, salesExecName, ownerName, siblingRevisions, switchboards, allUsers } = ctx;
 
   function openSwitchboard(switchboardId: string, tab: Tab = "bom") {
     setSelectedSwitchboardId(switchboardId);
@@ -57,22 +58,31 @@ export function RevisionWorkspace({
   }
 
   const selectedSwitchboard = switchboards.find((s) => s.switchboard.id === selectedSwitchboardId) ?? null;
+  const onSwitchboardTab = TABS.find((t) => t.id === activeTab)?.needsSwitchboard ?? false;
 
   return (
     <div className="flex h-[calc(100vh-56px)] flex-col overflow-hidden">
-      <div className="space-y-3 border-b border-slate-200/90 bg-white px-4 py-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
-            <Link href="/" className="hover:underline">
+      <div className="space-y-space-md border-b border-surface-container-high bg-surface-container-lowest px-space-lg py-space-md">
+        <div className="flex flex-wrap items-center justify-between gap-space-md">
+          <div className="flex flex-wrap items-center gap-space-xs font-body-sm text-body-sm text-secondary">
+            <Link href="/" className="hover:text-primary hover:underline">
               Projects
             </Link>
-            <span>/</span>
-            <span className="text-slate-700">
+            <Icon name="chevron_right" size={14} />
+            <span className="text-on-surface">
               {project.code}
-              {customer ? ` · ${customer.name}` : ""}
+              {customer ? ` (${customer.name})` : ""}
             </span>
-            <span>/</span>
-            <span className="font-medium text-slate-900">{project.title}</span>
+            <Icon name="chevron_right" size={14} />
+            <span className="rounded bg-surface-container-low px-1.5 py-0.5 font-mono text-[11px] font-semibold text-on-surface">
+              REV {revision.revision_number}
+            </span>
+            {selectedSwitchboard && onSwitchboardTab && (
+              <>
+                <Icon name="chevron_right" size={14} />
+                <span className="font-medium text-on-surface">{selectedSwitchboard.switchboard.tag}</span>
+              </>
+            )}
           </div>
           <RevisionControls
             revisionId={revision.id}
@@ -86,26 +96,28 @@ export function RevisionWorkspace({
           />
         </div>
 
-        <nav className="flex gap-1">
+        <nav className="flex items-center gap-space-xs overflow-x-auto rounded-xl bg-surface-container-low px-space-xs">
           {TABS.map((t) => {
             const disabled = t.needsSwitchboard && !selectedSwitchboardId;
+            const active = activeTab === t.id;
             return (
               <button
                 key={t.id}
                 onClick={() => !disabled && setActiveTab(t.id)}
                 disabled={disabled}
-                title={disabled ? "Select a switchboard from Project Detail first" : undefined}
-                className={`rounded-t-md px-3 py-1.5 text-sm font-medium ${
+                title={disabled ? "Select a switchboard from Project Details first" : undefined}
+                className={`flex items-center gap-space-xs py-space-sm px-space-lg font-headline-sm text-headline-sm transition-all ${
                   disabled
-                    ? "cursor-not-allowed text-slate-300"
-                    : activeTab === t.id
-                      ? "border-b-2 border-brand-500 text-brand-600"
-                      : "text-slate-500 hover:text-slate-700"
+                    ? "cursor-not-allowed text-on-surface-variant/50"
+                    : active
+                      ? "border-b-2 border-primary text-primary"
+                      : "text-secondary hover:text-on-surface"
                 }`}
               >
+                <Icon name={t.icon} size={17} />
                 {t.label}
                 {t.needsSwitchboard && selectedSwitchboard && (
-                  <span className="ml-1.5 font-mono text-[10px] text-slate-400">{selectedSwitchboard.switchboard.tag}</span>
+                  <span className="font-mono text-[10px] text-on-surface-variant">{selectedSwitchboard.switchboard.tag}</span>
                 )}
               </button>
             );
@@ -122,6 +134,8 @@ export function RevisionWorkspace({
             createdByName={createdByName}
             consultantName={consultantName}
             salesExecName={salesExecName}
+            ownerName={ownerName}
+            allUsers={allUsers}
             switchboards={switchboards}
             currentUserId={currentUserId}
             isAdmin={isAdmin}

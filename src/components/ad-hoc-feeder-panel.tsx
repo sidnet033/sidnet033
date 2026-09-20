@@ -125,7 +125,7 @@ export function AdHocFeederPanel({
     return (
       <button
         onClick={() => setOpen(true)}
-        className="mb-3 w-full rounded-md border border-dashed border-slate-300 py-1.5 text-xs font-medium text-slate-500 hover:border-brand-500/60 hover:text-brand-600"
+        className="mb-3 w-full rounded-md border border-dashed border-surface-container-high py-1.5 text-xs font-medium text-secondary hover:border-primary/40 hover:text-primary"
       >
         + New feeder for this switchboard
       </button>
@@ -133,18 +133,18 @@ export function AdHocFeederPanel({
   }
 
   return (
-    <div className="mb-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+    <div className="mb-3 space-y-2 rounded-lg border border-surface-container-high bg-surface-container-low p-3">
       <input
         value={name}
         onChange={(e) => setName(e.target.value)}
         placeholder="Feeder name"
-        className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+        className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
       />
       <input
         value={category}
         onChange={(e) => setCategory(e.target.value)}
         placeholder="Category (optional)"
-        className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+        className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
       />
 
       <div className="relative">
@@ -155,10 +155,10 @@ export function AdHocFeederPanel({
             setSelectedItemId("");
           }}
           placeholder="Search item master..."
-          className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+          className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
         />
         {matches.length > 0 && !selectedItemId && (
-          <div className="absolute z-10 mt-1 w-full rounded-md border border-slate-200 bg-white shadow-sm">
+          <div className="absolute z-10 mt-1 w-full rounded-md border border-surface-container-high bg-surface-container-lowest shadow-sm">
             {matches.map((m) => (
               <button
                 type="button"
@@ -167,9 +167,9 @@ export function AdHocFeederPanel({
                   setSelectedItemId(m.id);
                   setItemSearch(`${itemCode(m)} — ${m.description}`);
                 }}
-                className="block w-full px-2 py-1 text-left text-xs hover:bg-slate-50"
+                className="block w-full px-2 py-1 text-left text-xs hover:bg-surface-container-low"
               >
-                <span className="font-mono text-slate-500">{itemCode(m)}</span> {m.description}
+                <span className="font-mono text-secondary">{itemCode(m)}</span> {m.description}
               </button>
             ))}
           </div>
@@ -182,13 +182,13 @@ export function AdHocFeederPanel({
           step="0.01"
           value={qty}
           onChange={(e) => setQty(e.target.value)}
-          className="w-16 rounded border border-slate-300 px-2 py-1 text-xs"
+          className="w-16 rounded border border-surface-container-high px-2 py-1 text-xs"
         />
         <button
           type="button"
           onClick={addLine}
           disabled={!selectedItemId}
-          className="rounded bg-slate-700 px-2 py-1 text-xs font-medium text-white disabled:opacity-40"
+          className="rounded bg-secondary px-2 py-1 text-xs font-medium text-white disabled:opacity-40"
         >
           Add line
         </button>
@@ -197,11 +197,11 @@ export function AdHocFeederPanel({
       {lines.length > 0 && (
         <ul className="space-y-1 text-xs">
           {lines.map((l) => (
-            <li key={l.item.id} className="flex items-center justify-between rounded bg-white px-2 py-1">
+            <li key={l.item.id} className="flex items-center justify-between rounded bg-surface-container-lowest px-2 py-1">
               <span className="truncate">
                 {l.qty} × {itemCode(l.item)}
               </span>
-              <button onClick={() => removeLine(l.item.id)} className="text-rose-500 hover:underline">
+              <button onClick={() => removeLine(l.item.id)} className="text-error hover:underline">
                 ✕
               </button>
             </li>
@@ -209,17 +209,17 @@ export function AdHocFeederPanel({
         </ul>
       )}
 
-      {error && <p className="text-xs text-rose-600">{error}</p>}
+      {error && <p className="text-xs text-error">{error}</p>}
 
       <div className="flex items-center gap-2">
         <button
           onClick={handleCreate}
           disabled={saving}
-          className="rounded-md bg-brand-500 px-3 py-1 text-xs font-medium text-white hover:bg-brand-600 disabled:opacity-50"
+          className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-white hover:bg-primary-container disabled:opacity-50"
         >
           {saving ? "Creating..." : "Create feeder"}
         </button>
-        <button onClick={reset} className="text-xs text-slate-500 hover:underline">
+        <button onClick={reset} className="text-xs text-secondary hover:underline">
           Cancel
         </button>
       </div>

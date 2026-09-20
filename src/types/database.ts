@@ -119,6 +119,9 @@ export type Project = {
   consultant_id: string | null;
   sales_exec_id: string | null;
   stage: ProjectStage;
+  owner_id: string | null;
+  currency: string;
+  exchange_rate: number;
 };
 
 export type Consultant = { id: string; name: string; created_by: string | null; created_at: string };
