@@ -72,11 +72,15 @@ function SetPasswordForm() {
     setSaving(true);
     const supabase = createClient();
     const { error } = await supabase.auth.updateUser({ password });
-    setSaving(false);
     if (error) {
+      setSaving(false);
       setError(error.message);
       return;
     }
+    // no-ops for a plain password reset (status is already "active");
+    // flips an invited user's row to "active" for the Users table label
+    await supabase.rpc("accept_invite");
+    setSaving(false);
     router.push("/");
     router.refresh();
   }

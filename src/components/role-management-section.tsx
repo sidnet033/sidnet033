@@ -14,12 +14,19 @@ const RESOURCES: { id: string; label: string }[] = [
   { id: "import_log", label: "Import Audit Log" },
 ];
 
-type MatrixCell = { can_create: boolean; can_edit: boolean; can_delete: boolean };
+type MatrixCell = { can_view: boolean; can_create: boolean; can_edit: boolean; can_archive: boolean };
 type Matrix = Record<string, MatrixCell>;
+
+const PERMISSION_COLUMNS: { key: keyof MatrixCell; label: string }[] = [
+  { key: "can_view", label: "View" },
+  { key: "can_create", label: "Create" },
+  { key: "can_edit", label: "Edit" },
+  { key: "can_archive", label: "Archive" },
+];
 
 function emptyMatrix(): Matrix {
   const m: Matrix = {};
-  for (const r of RESOURCES) m[r.id] = { can_create: false, can_edit: false, can_delete: false };
+  for (const r of RESOURCES) m[r.id] = { can_view: false, can_create: false, can_edit: false, can_archive: false };
   return m;
 }
 
@@ -27,7 +34,7 @@ function matrixFromPermissions(perms: RolePermission[]): Matrix {
   const m = emptyMatrix();
   for (const p of perms) {
     if (m[p.resource]) {
-      m[p.resource] = { can_create: p.can_create, can_edit: p.can_edit, can_delete: p.can_delete };
+      m[p.resource] = { can_view: p.can_view, can_create: p.can_create, can_edit: p.can_edit, can_archive: p.can_archive };
     }
   }
   return m;
@@ -85,6 +92,15 @@ export function RoleManagementSection({
     }));
   }
 
+  function toggleColumn(key: keyof MatrixCell) {
+    setMatrix((prev) => {
+      const allChecked = RESOURCES.every((r) => prev[r.id][key]);
+      const next: Matrix = { ...prev };
+      for (const r of RESOURCES) next[r.id] = { ...next[r.id], [key]: !allChecked };
+      return next;
+    });
+  }
+
   function cancelMatrix() {
     setMatrix(savedMatrix);
   }
@@ -94,9 +110,10 @@ export function RoleManagementSection({
     const rows = RESOURCES.map((r) => ({
       role_id: roleId,
       resource: r.id,
+      can_view: matrix[r.id].can_view,
       can_create: matrix[r.id].can_create,
       can_edit: matrix[r.id].can_edit,
-      can_delete: matrix[r.id].can_delete,
+      can_archive: matrix[r.id].can_archive,
     }));
     const { data, error } = await supabase
       .from("role_permissions")
@@ -133,7 +150,7 @@ export function RoleManagementSection({
   }
 
   async function handleDelete(role: Role) {
-    if (!confirm(`Delete the role "${role.name}"? Users assigned to it will keep their Admin/Sales access but lose this custom role.`)) return;
+    if (!confirm(`Delete the role "${role.name}"? Users assigned to it will keep their Admin/User access but lose this custom role.`)) return;
     setDeletingId(role.id);
     const { error } = await supabase.from("roles").delete().eq("id", role.id);
     setDeletingId(null);
@@ -157,7 +174,7 @@ export function RoleManagementSection({
           <h2 className="font-display text-lg font-semibold text-on-surface">Roles &amp; access matrix</h2>
           <p className="text-xs text-secondary">
             These roles and permissions are a management layer only — they aren&apos;t enforced anywhere in the app
-            yet. Actual access still runs on the Admin/Sales role in the Users section above.
+            yet. Actual access still runs on the Admin/User role in the Users section above.
           </p>
         </div>
         <button
@@ -229,21 +246,32 @@ export function RoleManagementSection({
                     <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
                       <tr>
                         <th className="py-2">Access</th>
-                        <th className="w-20 py-2 text-center">Create</th>
-                        <th className="w-20 py-2 text-center">Edit</th>
-                        <th className="w-20 py-2 text-center">Delete</th>
+                        {PERMISSION_COLUMNS.map((col) => (
+                          <th key={col.key} className="w-20 py-2 text-center">
+                            <div className="flex flex-col items-center gap-1">
+                              <span>{col.label}</span>
+                              <input
+                                type="checkbox"
+                                title={`Toggle ${col.label} for every row`}
+                                checked={RESOURCES.every((r) => matrix[r.id][col.key])}
+                                onChange={() => toggleColumn(col.key)}
+                                className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                              />
+                            </div>
+                          </th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
                       {RESOURCES.map((r) => (
                         <tr key={r.id} className="border-t border-slate-100">
                           <td className="py-2 text-slate-700">{r.label}</td>
-                          {(["can_create", "can_edit", "can_delete"] as const).map((key) => (
-                            <td key={key} className="py-2 text-center">
+                          {PERMISSION_COLUMNS.map((col) => (
+                            <td key={col.key} className="py-2 text-center">
                               <input
                                 type="checkbox"
-                                checked={matrix[r.id][key]}
-                                onChange={() => toggleCell(r.id, key)}
+                                checked={matrix[r.id][col.key]}
+                                onChange={() => toggleCell(r.id, col.key)}
                                 className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                               />
                             </td>

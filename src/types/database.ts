@@ -9,6 +9,8 @@ export type Profile = {
   email: string | null;
   role: "admin" | "sales";
   role_id: string | null;
+  status: "invited" | "active";
+  disabled: boolean;
   created_at: string;
 };
 
@@ -27,9 +29,10 @@ export type RolePermission = {
   id: string;
   role_id: string;
   resource: string;
+  can_view: boolean;
   can_create: boolean;
   can_edit: boolean;
-  can_delete: boolean;
+  can_archive: boolean;
 };
 
 export type ItemStatus = "active" | "inactive" | "discontinued";
