@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { Icon } from "@/components/icon";
 import type { Customer } from "@/types/database";
 
 export function NewProjectModal({ customers }: { customers: Customer[] }) {
@@ -11,13 +12,29 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
   const [customerId, setCustomerId] = useState("");
   const [newCustomerName, setNewCustomerName] = useState("");
   const [title, setTitle] = useState("");
+  const [revisionName, setRevisionName] = useState("");
+  const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const creatingNewCustomer = customerId === "__new__";
 
+  function reset() {
+    setCustomerId("");
+    setNewCustomerName("");
+    setTitle("");
+    setRevisionName("");
+    setNotes("");
+    setError(null);
+    setOpen(false);
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
+    if (!title.trim()) {
+      setError("Give the project a title.");
+      return;
+    }
     setSaving(true);
     setError(null);
 
@@ -51,7 +68,7 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
 
     const { data: project, error: projectError } = await supabase
       .from("projects")
-      .insert({ customer_id: finalCustomerId, title: title.trim(), created_by: user?.id })
+      .insert({ customer_id: finalCustomerId, title: title.trim(), notes: notes.trim() || null, created_by: user?.id })
       .select("id")
       .single();
     if (projectError || !project) {
@@ -62,7 +79,7 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
 
     const { data: revision, error: revisionError } = await supabase
       .from("revisions")
-      .insert({ project_id: project.id, name: title.trim(), customer_name: customerName, created_by: user?.id })
+      .insert({ project_id: project.id, name: revisionName.trim() || title.trim(), customer_name: customerName, created_by: user?.id })
       .select("id")
       .single();
     if (revisionError || !revision) {
@@ -84,67 +101,123 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
     router.push(`/revisions/${revision.id}`);
   }
 
-  if (!open) {
-    return (
+  return (
+    <>
       <button
         onClick={() => setOpen(true)}
-        className="rounded-md bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600"
+        className="flex h-9 items-center gap-space-xs rounded-lg bg-primary px-space-md font-body-md text-body-md font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-container"
       >
-        + New project
+        <Icon name="add_circle" size={18} />
+        <span>+ New Project</span>
       </button>
-    );
-  }
 
-  return (
-    <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200/90 bg-white p-4 shadow-xs">
-      <div>
-        <label className="mb-1 block text-xs font-medium text-slate-600">Customer</label>
-        <select
-          value={customerId}
-          onChange={(e) => setCustomerId(e.target.value)}
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
-        >
-          <option value="">No customer yet</option>
-          {customers.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-          <option value="__new__">+ Add new customer...</option>
-        </select>
-      </div>
-      {creatingNewCustomer && (
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600">New customer name</label>
-          <input
-            value={newCustomerName}
-            onChange={(e) => setNewCustomerName(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
-            placeholder="Customer name"
-          />
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse-surface/40 p-space-md backdrop-blur-sm">
+          <div className="flex w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-surface-container-lowest shadow-xl">
+            <div className="flex items-center justify-between bg-surface-container-low p-space-lg">
+              <div className="flex items-center gap-space-sm">
+                <div className="flex items-center justify-center rounded-lg bg-primary p-space-xs text-on-primary">
+                  <Icon name="post_add" size={20} />
+                </div>
+                <h3 className="font-headline-md text-headline-md text-on-surface">Create / Revise Project</h3>
+              </div>
+              <button onClick={reset} className="rounded-lg p-space-xs text-secondary transition-colors hover:bg-surface-container hover:text-on-surface">
+                <Icon name="close" size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreate} className="flex flex-col gap-space-md p-space-lg">
+              <div className="flex flex-col gap-space-2xs">
+                <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-secondary">Customer</label>
+                <select
+                  value={customerId}
+                  onChange={(e) => setCustomerId(e.target.value)}
+                  className="h-9 w-full rounded bg-surface px-space-sm font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="">No customer yet</option>
+                  {customers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                  <option value="__new__">+ Add New Customer Account...</option>
+                </select>
+                {creatingNewCustomer && (
+                  <input
+                    autoFocus
+                    value={newCustomerName}
+                    onChange={(e) => setNewCustomerName(e.target.value)}
+                    placeholder="New customer name"
+                    className="mt-space-2xs h-9 w-full rounded bg-surface px-space-sm font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 gap-space-sm sm:grid-cols-3">
+                <div className="flex flex-col gap-space-2xs">
+                  <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-secondary">Project Code</label>
+                  <input
+                    readOnly
+                    value="Auto-generated"
+                    className="h-9 w-full rounded bg-surface-container-high px-space-sm font-telemetry-md text-telemetry-md text-on-surface-variant focus:outline-none"
+                  />
+                </div>
+                <div className="flex flex-col gap-space-2xs sm:col-span-2">
+                  <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-secondary">Project Title</label>
+                  <input
+                    required
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="e.g., Mount Sinai Tower B Main Switchboard Retrofit"
+                    className="h-9 w-full rounded bg-surface px-space-sm font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-space-2xs">
+                <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-secondary">Revision Name</label>
+                <input
+                  value={revisionName}
+                  onChange={(e) => setRevisionName(e.target.value)}
+                  placeholder={title || "Rev 01 (Base Tender Scope)"}
+                  className="h-9 w-full rounded bg-surface px-space-sm font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              <div className="flex flex-col gap-space-xs rounded-lg bg-surface-container-low p-space-sm">
+                <span className="font-label-sm text-label-sm font-bold uppercase tracking-wider text-primary">About the Project</span>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={3}
+                  placeholder="Enter project notes, specification requirements, etc"
+                  className="w-full rounded bg-surface p-2 font-body-sm text-body-sm text-on-surface shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              {error && <p className="font-body-sm text-body-sm text-error">{error}</p>}
+
+              <div className="mt-space-2xs flex items-center justify-end gap-space-sm pt-space-xs">
+                <button
+                  type="button"
+                  onClick={reset}
+                  className="rounded-lg bg-surface-container px-space-md py-space-xs font-body-md text-body-md font-medium text-on-surface transition-colors hover:bg-surface-container-high"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex items-center gap-space-2xs rounded-lg bg-primary px-space-md py-space-xs font-body-md text-body-md font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-container disabled:opacity-50"
+                >
+                  <Icon name="add_circle" size={16} />
+                  {saving ? "Creating..." : "Create"}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
-      <div>
-        <label className="mb-1 block text-xs font-medium text-slate-600">Project title</label>
-        <input
-          required
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
-          placeholder="e.g. New Wing Expansion"
-        />
-      </div>
-      <button
-        type="submit"
-        disabled={saving}
-        className="rounded-md bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50"
-      >
-        {saving ? "Creating..." : "Create"}
-      </button>
-      <button type="button" onClick={() => setOpen(false)} className="rounded-md px-3 py-2 text-sm text-slate-500 hover:text-slate-700">
-        Cancel
-      </button>
-      {error && <p className="w-full text-sm text-red-600">{error}</p>}
-    </form>
+    </>
   );
 }

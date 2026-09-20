@@ -10,7 +10,7 @@ const NAV_LINKS = [
   { href: "/", label: "Dashboard", icon: "dashboard", activeMatch: (p: string) => p === "/" },
   { href: "/", label: "Costing", icon: "payments", activeMatch: (p: string) => p.startsWith("/revisions") },
   { href: "/item-master", label: "Item Master", icon: "inventory_2", activeMatch: (p: string) => p.startsWith("/item-master") },
-  { href: "/feeders", label: "Feeder Master", icon: "schema", activeMatch: (p: string) => p.startsWith("/feeders") },
+  { href: "/feeders", label: "Feeder Master", icon: "alt_route", activeMatch: (p: string) => p.startsWith("/feeders") },
 ];
 
 function initials(name: string) {
@@ -31,7 +31,6 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("sidebar-collapsed") === "1";
@@ -47,7 +46,7 @@ export function AppShell({
 
   const displayName = fullName || email || "User";
   const links = isAdmin
-    ? [...NAV_LINKS, { href: "/admin", label: "Admin Space", icon: "admin_panel_settings", activeMatch: (p: string) => p.startsWith("/admin") }]
+    ? [...NAV_LINKS, { href: "/admin", label: "Admin Space", icon: "verified_user", activeMatch: (p: string) => p.startsWith("/admin") }]
     : NAV_LINKS;
 
   async function signOut() {
@@ -57,84 +56,86 @@ export function AppShell({
     router.refresh();
   }
 
-  function handleSearch(e: React.FormEvent) {
-    e.preventDefault();
-    if (!search.trim()) return;
-    router.push(`/item-master?q=${encodeURIComponent(search.trim())}`);
-  }
+  const sidebarWidth = collapsed ? "w-16" : "w-72";
+  const contentOffset = collapsed ? "pl-16" : "pl-72";
+  const headerOffset = collapsed ? "left-16" : "left-72";
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-slate-200/90 bg-white px-5">
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2 font-semibold text-slate-900">
-            <Icon name="bolt" size={20} className="text-slate-700" />
-            <span className="font-display text-sm font-semibold tracking-tight">AmpQuote LV</span>
+    <div className="min-h-screen bg-surface">
+      <aside className={`fixed left-0 top-0 z-50 flex h-full ${sidebarWidth} select-none flex-col justify-between bg-surface-container-lowest shadow-[0_1px_8px_rgba(0,0,0,0.04)] transition-all`}>
+        <div className="flex flex-col">
+          <div className="flex h-16 items-center gap-space-sm bg-surface-container-lowest px-space-md">
+            {!collapsed && (
+              <div className="flex flex-col">
+                <span className="font-headline-sm text-headline-sm tracking-tight text-primary">AmpQuote</span>
+                <span className="font-label-sm text-label-sm uppercase tracking-wider text-secondary">LV Estimator CAD</span>
+              </div>
+            )}
+            {collapsed && <span className="font-headline-sm text-headline-sm text-primary">AQ</span>}
           </div>
-          <form onSubmit={handleSearch} className="relative hidden items-center sm:flex">
-            <Icon name="search" size={17} className="absolute left-2.5 text-slate-400" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search item master..."
-              className="w-72 rounded-md border border-slate-200 bg-slate-50 py-1 pl-8 pr-3 text-xs text-slate-800 placeholder-slate-400 transition-all focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-300"
-              type="text"
-            />
-          </form>
+          <div className="flex flex-col gap-space-xs p-space-md">
+            {!collapsed && <span className="px-space-xs font-label-sm text-label-sm uppercase tracking-wider text-secondary">Navigation</span>}
+            <nav className="flex flex-col gap-space-2xs">
+              {links.map((link) => {
+                const active = link.activeMatch(pathname);
+                return (
+                  <Link
+                    key={link.label}
+                    href={link.href}
+                    title={collapsed ? link.label : undefined}
+                    className={`flex items-center gap-space-sm rounded-lg px-space-sm py-space-xs transition-colors ${
+                      collapsed ? "justify-center" : ""
+                    } ${active ? "bg-primary-container font-medium text-on-primary-container" : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"}`}
+                  >
+                    <Icon name={link.icon} size={18} />
+                    {!collapsed && <span className="font-body-md text-body-md">{link.label}</span>}
+                  </Link>
+                );
+              })}
+            </nav>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-space-xs bg-surface-container-lowest p-space-md">
           <button
-            onClick={signOut}
-            className="rounded-md px-2 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+            onClick={toggleCollapsed}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className={`flex items-center gap-space-sm rounded-lg px-space-sm py-space-xs text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface ${collapsed ? "justify-center" : ""}`}
           >
-            Sign out
+            <Icon name={collapsed ? "chevron_right" : "chevron_left"} size={18} />
+            {!collapsed && <span className="font-body-md text-body-md">Collapse</span>}
           </button>
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 font-display text-xs font-medium text-white ring-1 ring-slate-200">
-            {initials(displayName)}
-          </div>
+        </div>
+      </aside>
+
+      <header className={`fixed right-0 top-0 z-40 flex h-16 items-center justify-end gap-space-sm bg-surface-container-lowest/90 px-space-lg shadow-[0_1px_8px_rgba(0,0,0,0.04)] backdrop-blur-xl transition-all ${headerOffset}`}>
+        <button
+          onClick={signOut}
+          className="flex h-8 items-center gap-space-xs rounded-lg bg-surface-container-low px-space-sm font-body-md text-body-md font-medium text-on-surface transition-colors hover:bg-surface-container-high"
+        >
+          <Icon name="logout" size={16} />
+          Sign out
+        </button>
+        <div className="mx-space-xs h-6 w-px bg-surface-container-high" />
+        <button
+          disabled
+          title="Notifications coming soon"
+          className="rounded-lg p-space-xs text-secondary transition-colors hover:bg-surface-container-low hover:text-on-surface disabled:cursor-not-allowed"
+        >
+          <Icon name="notifications" size={20} />
+        </button>
+        <button
+          disabled
+          title="Dark mode coming soon"
+          className="rounded-lg p-space-xs text-secondary transition-colors hover:bg-surface-container-low hover:text-on-surface disabled:cursor-not-allowed"
+        >
+          <Icon name="light_mode" size={20} />
+        </button>
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary font-telemetry-md text-[12px] font-bold text-on-primary" title={displayName}>
+          {initials(displayName)}
         </div>
       </header>
 
-      <div className="mx-auto flex w-full max-w-[1720px] flex-1">
-        <aside
-          className={`flex shrink-0 flex-col overflow-y-auto border-r border-slate-200/90 bg-white/60 transition-all ${
-            collapsed ? "w-16 p-3" : "w-72 p-6 xl:w-80"
-          }`}
-        >
-          <nav className="space-y-1">
-            <div className={`mb-2 flex items-center px-2 ${collapsed ? "justify-center" : "justify-between"}`}>
-              {!collapsed && (
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Navigation</span>
-              )}
-              <button
-                onClick={toggleCollapsed}
-                title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-              >
-                <Icon name={collapsed ? "chevron_right" : "chevron_left"} size={16} />
-              </button>
-            </div>
-            {links.map((link) => {
-              const active = link.activeMatch(pathname);
-              return (
-                <Link
-                  key={link.label}
-                  href={link.href}
-                  title={collapsed ? link.label : undefined}
-                  className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors ${
-                    collapsed ? "justify-center" : ""
-                  } ${active ? "bg-blue-50 text-blue-700" : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"}`}
-                >
-                  <Icon name={link.icon} size={18} className={active ? "text-blue-600" : "text-slate-500"} />
-                  {!collapsed && <span className={active ? "font-semibold" : ""}>{link.label}</span>}
-                </Link>
-              );
-            })}
-          </nav>
-        </aside>
-
-        <main className="min-w-0 flex-1 bg-white">{children}</main>
-      </div>
+      <main className={`min-h-screen ${contentOffset} pt-16 transition-all`}>{children}</main>
     </div>
   );
 }
