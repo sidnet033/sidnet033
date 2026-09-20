@@ -129,7 +129,7 @@ const COLUMN_ALIGN: Record<ColumnKey, "left" | "right" | "center"> = {
 const CELL_CLASS: Record<ColumnKey, string> = {
   sku: "px-2 font-display font-semibold text-primary",
   vendor_cat: "px-2 font-display text-secondary",
-  description: "max-w-[320px] truncate px-2 text-on-surface",
+  description: "max-w-[420px] whitespace-normal break-words px-2 py-1.5 align-top text-on-surface",
   category: "px-2",
   make: "px-2",
   uom: "px-2 text-center font-display text-secondary",
@@ -149,8 +149,9 @@ type SavedView = {
   statusFilter?: string;
   makeFilter?: string;
   categoryFilter?: string;
-  skuPrefixFilter?: string;
-  supplierFilter?: string;
+  ampsFilter?: string;
+  polesFilter?: string;
+  kaFilter?: string;
   rowsPerPage?: number;
   columnOrder?: string[];
   visibleColumns?: string[];
@@ -180,11 +181,6 @@ function patchSavedView(patch: Partial<SavedView>) {
 
 function isColumnKey(v: string): v is ColumnKey {
   return (ALL_COLUMNS as string[]).includes(v);
-}
-
-function skuPrefix(sku: string): string {
-  const match = sku.match(/^[A-Za-z]+/);
-  return (match ? match[0] : sku.slice(0, 3)).toUpperCase();
 }
 
 function makeColor(make: string) {
@@ -287,9 +283,11 @@ export function ItemMasterTable({
   );
   const [makeFilter, setMakeFilter] = useState(() => loadSavedView().makeFilter || "");
   const [categoryFilter, setCategoryFilter] = useState(() => loadSavedView().categoryFilter || "");
-  const [skuPrefixFilter, setSkuPrefixFilter] = useState(() => loadSavedView().skuPrefixFilter || "");
-  const [supplierFilter, setSupplierFilter] = useState(() => loadSavedView().supplierFilter || "");
+  const [ampsFilter, setAmpsFilter] = useState(() => loadSavedView().ampsFilter || "");
+  const [polesFilter, setPolesFilter] = useState(() => loadSavedView().polesFilter || "");
+  const [kaFilter, setKaFilter] = useState(() => loadSavedView().kaFilter || "");
   const [rowsPerPage, setRowsPerPage] = useState(() => loadSavedView().rowsPerPage || 25);
+  const [duplicatesOnly, setDuplicatesOnly] = useState(false);
   const [savedViewFlash, setSavedViewFlash] = useState(false);
 
   const [columnOrder, setColumnOrder] = useState<ColumnKey[]>(() => {
@@ -343,14 +341,45 @@ export function ItemMasterTable({
     () => Array.from(new Set(items.map((i) => i.category).filter((v): v is string => !!v))).sort(),
     [items]
   );
-  const distinctSkuPrefixes = useMemo(
-    () => Array.from(new Set(items.filter((i) => i.sku).map((i) => skuPrefix(i.sku!)))).sort(),
+  const distinctAmps = useMemo(
+    () => Array.from(new Set(items.map((i) => i.amps).filter((v): v is number => v != null))).sort((a, b) => a - b),
     [items]
   );
-  const distinctSuppliers = useMemo(
-    () => Array.from(new Set(items.map((i) => i.supplier).filter((v): v is string => !!v))).sort(),
+  const distinctPoles = useMemo(
+    () => Array.from(new Set(items.map((i) => i.poles).filter((v): v is number => v != null))).sort((a, b) => a - b),
     [items]
   );
+  const distinctKa = useMemo(
+    () => Array.from(new Set(items.map((i) => i.ka).filter((v): v is number => v != null))).sort((a, b) => a - b),
+    [items]
+  );
+
+  // Items sharing a SKU, Vendor Cat, or Description (case/whitespace
+  // insensitive) with another item — candidates for cleanup.
+  const duplicateIds = useMemo(() => {
+    const bySku = new Map<string, string[]>();
+    const byVendorCat = new Map<string, string[]>();
+    const byDescription = new Map<string, string[]>();
+    for (const item of items) {
+      if (item.sku) {
+        const k = item.sku.trim().toLowerCase();
+        bySku.set(k, [...(bySku.get(k) ?? []), item.id]);
+      }
+      if (item.vendor_cat) {
+        const k = item.vendor_cat.trim().toLowerCase();
+        byVendorCat.set(k, [...(byVendorCat.get(k) ?? []), item.id]);
+      }
+      const dk = item.description.trim().toLowerCase();
+      if (dk) byDescription.set(dk, [...(byDescription.get(dk) ?? []), item.id]);
+    }
+    const dupIds = new Set<string>();
+    for (const map of [bySku, byVendorCat, byDescription]) {
+      for (const ids of map.values()) {
+        if (ids.length > 1) ids.forEach((id) => dupIds.add(id));
+      }
+    }
+    return dupIds;
+  }, [items]);
 
   function matchesBase(item: ItemMaster) {
     const q = search.toLowerCase();
@@ -365,8 +394,10 @@ export function ItemMasterTable({
       matchesSearch &&
       (!makeFilter || item.make === makeFilter) &&
       (!categoryFilter || item.category === categoryFilter) &&
-      (!skuPrefixFilter || (item.sku && skuPrefix(item.sku) === skuPrefixFilter)) &&
-      (!supplierFilter || item.supplier === supplierFilter)
+      (!ampsFilter || String(item.amps ?? "") === ampsFilter) &&
+      (!polesFilter || String(item.poles ?? "") === polesFilter) &&
+      (!kaFilter || String(item.ka ?? "") === kaFilter) &&
+      (!duplicatesOnly || duplicateIds.has(item.id))
     );
   }
 
@@ -396,7 +427,7 @@ export function ItemMasterTable({
   const pageStart = (currentPage - 1) * rowsPerPage;
   const paged = sorted.slice(pageStart, pageStart + rowsPerPage);
 
-  const filterKey = `${search}|${statusFilter}|${makeFilter}|${categoryFilter}|${skuPrefixFilter}|${supplierFilter}|${rowsPerPage}`;
+  const filterKey = `${search}|${statusFilter}|${makeFilter}|${categoryFilter}|${ampsFilter}|${polesFilter}|${kaFilter}|${duplicatesOnly}|${rowsPerPage}`;
   const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
   if (filterKey !== prevFilterKey) {
     setPrevFilterKey(filterKey);
@@ -404,15 +435,24 @@ export function ItemMasterTable({
   }
 
   const hasActiveFilters =
-    !!search || statusFilter !== "all" || !!makeFilter || !!categoryFilter || !!skuPrefixFilter || !!supplierFilter;
+    !!search ||
+    statusFilter !== "all" ||
+    !!makeFilter ||
+    !!categoryFilter ||
+    !!ampsFilter ||
+    !!polesFilter ||
+    !!kaFilter ||
+    duplicatesOnly;
 
   function clearFilters() {
     setSearch("");
     setStatusFilter("all");
     setMakeFilter("");
     setCategoryFilter("");
-    setSkuPrefixFilter("");
-    setSupplierFilter("");
+    setAmpsFilter("");
+    setPolesFilter("");
+    setKaFilter("");
+    setDuplicatesOnly(false);
   }
 
   function saveCurrentView() {
@@ -421,8 +461,9 @@ export function ItemMasterTable({
       statusFilter,
       makeFilter,
       categoryFilter,
-      skuPrefixFilter,
-      supplierFilter,
+      ampsFilter,
+      polesFilter,
+      kaFilter,
       rowsPerPage,
       columnOrder,
       visibleColumns: Array.from(visibleColumns),
@@ -551,9 +592,12 @@ export function ItemMasterTable({
     refresh();
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm("Delete this item? Feeders that use it will keep referencing it until you also remove it there.")) return;
-    const { error } = await supabase.from("item_master").delete().eq("id", id);
+  async function toggleArchive(item: ItemMaster) {
+    const nextStatus: ItemStatus = item.status === "discontinued" ? "active" : "discontinued";
+    const { error } = await supabase
+      .from("item_master")
+      .update({ status: nextStatus, updated_at: new Date().toISOString() })
+      .eq("id", item.id);
     if (error) {
       alert(error.message);
       return;
@@ -725,8 +769,8 @@ export function ItemMasterTable({
       </div>
 
       <div className="space-y-3 rounded-[8px] bg-surface-container-lowest p-4 shadow-sm">
-        <div className="grid grid-cols-1 items-center gap-3 md:grid-cols-12">
-          <div className="relative md:col-span-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative min-w-[240px] flex-1">
             <Icon name="search" size={16} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-secondary" />
             <input
               ref={searchRef}
@@ -739,34 +783,29 @@ export function ItemMasterTable({
               ⌘K
             </span>
           </div>
+          <FilterSelect className="w-36" value={makeFilter} onChange={setMakeFilter} allLabel="All makes" options={distinctMakes} />
           <FilterSelect
-            className="md:col-span-2"
-            value={makeFilter}
-            onChange={setMakeFilter}
-            allLabel="All makes"
-            options={distinctMakes}
-          />
-          <FilterSelect
-            className="md:col-span-2"
+            className="w-36"
             value={categoryFilter}
             onChange={setCategoryFilter}
             allLabel="All categories"
             options={distinctCategories}
           />
           <FilterSelect
-            className="md:col-span-2"
-            value={skuPrefixFilter}
-            onChange={setSkuPrefixFilter}
-            allLabel="All SKU prefixes"
-            options={distinctSkuPrefixes}
+            className="w-28"
+            value={ampsFilter}
+            onChange={setAmpsFilter}
+            allLabel="All amps"
+            options={distinctAmps.map(String)}
           />
           <FilterSelect
-            className="md:col-span-2"
-            value={supplierFilter}
-            onChange={setSupplierFilter}
-            allLabel="All suppliers"
-            options={distinctSuppliers}
+            className="w-28"
+            value={polesFilter}
+            onChange={setPolesFilter}
+            allLabel="All poles"
+            options={distinctPoles.map(String)}
           />
+          <FilterSelect className="w-28" value={kaFilter} onChange={setKaFilter} allLabel="All kA" options={distinctKa.map(String)} />
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-outline-variant/30 pt-3">
@@ -862,6 +901,21 @@ export function ItemMasterTable({
           </div>
         </div>
       </div>
+
+      {duplicateIds.size > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-[8px] border border-error/30 bg-error-container px-4 py-2.5 text-sm text-on-error-container">
+          <span className="flex items-center gap-2">
+            <Icon name="warning" size={16} />
+            {duplicateIds.size} item(s) look like duplicates (matching SKU, Vendor Cat, or Description). Review and clean these up.
+          </span>
+          <button
+            onClick={() => setDuplicatesOnly((v) => !v)}
+            className="flex items-center gap-1.5 rounded bg-error px-2.5 py-1 text-xs font-medium text-on-error hover:bg-error/90"
+          >
+            {duplicatesOnly ? "Show all items" : "Show duplicates only"}
+          </button>
+        </div>
+      )}
 
       {error && <p className="text-sm text-error">{error}</p>}
 
@@ -1019,14 +1073,11 @@ export function ItemMasterTable({
                             <Icon name="edit" size={15} />
                           </button>
                           <button
-                            onClick={() => alert("No spec sheet uploaded for this item yet.")}
-                            title="View Spec PDF"
-                            className="rounded p-1 text-secondary hover:bg-surface-container hover:text-tertiary"
+                            onClick={() => toggleArchive(item)}
+                            title={item.status === "discontinued" ? "Unarchive" : "Archive"}
+                            className="rounded p-1 text-secondary hover:bg-surface-container hover:text-error"
                           >
-                            <Icon name="picture_as_pdf" size={15} />
-                          </button>
-                          <button onClick={() => handleDelete(item.id)} title="Delete" className="rounded p-1 text-secondary hover:bg-error-container hover:text-error">
-                            <Icon name="delete" size={15} />
+                            <Icon name={item.status === "discontinued" ? "unarchive" : "archive"} size={15} />
                           </button>
                         </div>
                       </td>
