@@ -156,6 +156,35 @@ function toDraft(data: LoadedBomData): BomDraft {
   };
 }
 
+// A Postgres UPDATE/DELETE whose WHERE clause (or an RLS policy) matches
+// zero rows is NOT an error as far as Supabase/PostgREST is concerned --
+// `error` stays null and it looks exactly like success. Without checking
+// the returned row itself, a save can silently no-op: e.g. the id being
+// old, or an RLS predicate quietly excluding it. These two helpers turn
+// that into a thrown (and therefore alert()-visible) error instead of a
+// write that looks like it worked but didn't touch anything.
+async function updateChecked(
+  supabase: ReturnType<typeof createClient>,
+  table: string,
+  id: string,
+  patch: Record<string, unknown>,
+  context: string
+) {
+  const { data, error } = await supabase.from(table).update(patch).eq("id", id).select("id");
+  if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new Error(`Could not save ${context} (id ${id}) — it may have changed or been removed elsewhere. Refresh and try again.`);
+  }
+}
+
+async function deleteChecked(supabase: ReturnType<typeof createClient>, table: string, id: string, context: string) {
+  const { data, error } = await supabase.from(table).delete().eq("id", id).select("id");
+  if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new Error(`Could not remove ${context} (id ${id}) — it may have changed or been removed elsewhere. Refresh and try again.`);
+  }
+}
+
 async function saveLineTable(
   supabase: ReturnType<typeof createClient>,
   table: "switchboard_busbars" | "switchboard_enclosure_lines",
@@ -166,8 +195,7 @@ async function saveLineTable(
   const draftIds = new Set(draft.map((r) => r.id));
   for (const r of saved) {
     if (!draftIds.has(r.id)) {
-      const { error } = await supabase.from(table).delete().eq("id", r.id);
-      if (error) throw error;
+      await deleteChecked(supabase, table, r.id, "line");
     }
   }
   for (const [i, r] of draft.entries()) {
@@ -179,11 +207,7 @@ async function saveLineTable(
     } else {
       const prior = saved.find((x) => x.id === r.id);
       if (!prior || prior.description !== r.description || prior.qty !== r.qty || prior.rate !== r.rate) {
-        const { error } = await supabase
-          .from(table)
-          .update({ description: r.description, qty: r.qty, rate: r.rate, sort_order: i })
-          .eq("id", r.id);
-        if (error) throw error;
+        await updateChecked(supabase, table, r.id, { description: r.description, qty: r.qty, rate: r.rate, sort_order: i }, "line");
       }
     }
   }
@@ -399,9 +423,13 @@ export function BomBuilder({
         mod.feeder.id
       );
     }
-    const { error } = await supabase.from("feeders").update(patch).eq("id", mod.feeder.id);
+    const { data, error } = await supabase.from("feeders").update(patch).eq("id", mod.feeder.id).select("id");
     if (error) {
       alert(error.message);
+      return;
+    }
+    if (!data || data.length === 0) {
+      alert("Could not save the feeder — it may have changed or been removed elsewhere. Refresh and try again.");
       return;
     }
     const flip = (m: DraftModule) => (m.feeder.id === mod.feeder.id ? { ...m, feeder: { ...m.feeder, ...patch }, baselineFeeder: { ...m.baselineFeeder, ...patch } } : m);
@@ -509,8 +537,7 @@ export function BomBuilder({
       if (draft.laborAssembly !== saved.laborAssembly) laborPatch.labor_assembly_pct = draft.laborAssembly;
       if (draft.laborTesting !== saved.laborTesting) laborPatch.labor_testing_pct = draft.laborTesting;
       if (Object.keys(laborPatch).length) {
-        const { error } = await supabase.from("switchboards").update(laborPatch).eq("id", sb.id);
-        if (error) throw error;
+        await updateChecked(supabase, "switchboards", sb.id, laborPatch, "switchboard");
       }
 
       await saveLineTable(supabase, "switchboard_busbars", sb.id, saved.busbars, draft.busbars);
@@ -521,10 +548,9 @@ export function BomBuilder({
 
       for (const m of saved.modules) {
         if (!draftModuleIds.has(m.feeder.id)) {
-          const { error } = await supabase.from("placed_feeders").delete().eq("id", m.placementId);
-          if (error) throw error;
+          await deleteChecked(supabase, "placed_feeders", m.placementId, "feeder placement");
           if (m.feeder.switchboard_id === sb.id && !m.feeder.is_library) {
-            await supabase.from("feeders").delete().eq("id", m.feeder.id);
+            await deleteChecked(supabase, "feeders", m.feeder.id, "custom feeder");
           }
         }
       }
@@ -616,8 +642,7 @@ export function BomBuilder({
           if (priorModule.qty !== m.qty) placementPatch.qty = m.qty;
           if (forked) placementPatch.feeder_id = feederId;
           if (Object.keys(placementPatch).length) {
-            const { error } = await supabase.from("placed_feeders").update(placementPatch).eq("id", m.placementId);
-            if (error) throw error;
+            await updateChecked(supabase, "placed_feeders", m.placementId, placementPatch, "feeder placement");
           }
 
           if (!forked) {
@@ -627,8 +652,7 @@ export function BomBuilder({
             if (priorModule.feeder.rating_summary !== m.feeder.rating_summary) feederPatch.rating_summary = m.feeder.rating_summary;
             if (Object.keys(feederPatch).length) {
               feederPatch.updated_at = new Date().toISOString();
-              const { error } = await supabase.from("feeders").update(feederPatch).eq("id", m.feeder.id);
-              if (error) throw error;
+              await updateChecked(supabase, "feeders", m.feeder.id, feederPatch, "feeder");
             }
           }
         }
@@ -637,8 +661,7 @@ export function BomBuilder({
           const draftLineIds = new Set(m.lines.map((l) => l.id));
           for (const l of m.baselineLines) {
             if (!draftLineIds.has(l.id)) {
-              const { error } = await supabase.from("feeder_items").delete().eq("id", l.id);
-              if (error) throw error;
+              await deleteChecked(supabase, "feeder_items", l.id, "feeder line");
             }
           }
           for (const [i, l] of m.lines.entries()) {
@@ -660,11 +683,13 @@ export function BomBuilder({
                 priorLine.list_price_override !== l.list_price_override ||
                 priorLine.discount_pct_override !== l.discount_pct_override
               ) {
-                const { error } = await supabase
-                  .from("feeder_items")
-                  .update({ qty: l.qty, sort_order: i, list_price_override: l.list_price_override, discount_pct_override: l.discount_pct_override })
-                  .eq("id", l.id);
-                if (error) throw error;
+                await updateChecked(
+                  supabase,
+                  "feeder_items",
+                  l.id,
+                  { qty: l.qty, sort_order: i, list_price_override: l.list_price_override, discount_pct_override: l.discount_pct_override },
+                  "feeder line"
+                );
               }
             }
           }
