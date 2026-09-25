@@ -941,6 +941,7 @@ function FeederModuleCard({
               <tr>
                 <th className="px-2 py-1">#</th>
                 <th className="px-2 py-1">SKU</th>
+                <th className="px-2 py-1">Vendor Cat</th>
                 <th className="px-2 py-1">Make</th>
                 <th className="px-2 py-1">Category</th>
                 <th className="px-2 py-1">Description</th>
@@ -962,6 +963,7 @@ function FeederModuleCard({
                   <tr key={line.id} className="border-t border-surface-container">
                     <td className="px-2 py-1.5 text-on-surface-variant">{i + 1}</td>
                     <td className="px-2 py-1.5 font-mono">{line.item.sku || "—"}</td>
+                    <td className="px-2 py-1.5 font-mono text-secondary">{line.item.vendor_cat || "—"}</td>
                     <td className="px-2 py-1.5 text-on-surface-variant">{line.item.make || "—"}</td>
                     <td className="px-2 py-1.5 text-on-surface-variant">{line.item.category || "—"}</td>
                     <td className="px-2 py-1.5">{line.item.description}</td>
@@ -1029,7 +1031,7 @@ function FeederModuleCard({
               })}
               {mod.lines.length === 0 && (
                 <tr>
-                  <td colSpan={canEditLines ? 12 : 11} className="px-2 py-4 text-center text-on-surface-variant">
+                  <td colSpan={canEditLines ? 13 : 12} className="px-2 py-4 text-center text-on-surface-variant">
                     No items in this feeder yet.
                   </td>
                 </tr>
@@ -1039,7 +1041,7 @@ function FeederModuleCard({
 
           {canEditLines && (
             <div className="relative mt-2 flex items-end gap-2">
-              <div className="relative w-64">
+              <div className="relative min-w-[420px] flex-1">
                 <input
                   value={itemSearch}
                   onChange={(e) => {
@@ -1051,7 +1053,7 @@ function FeederModuleCard({
                   className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
                 />
                 {matches.length > 0 && !selectedItemId && (
-                  <div className="absolute z-10 mt-1 max-h-64 w-64 overflow-y-auto rounded-md border border-surface-container-high bg-surface-container-lowest shadow-sm">
+                  <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-surface-container-high bg-surface-container-lowest shadow-sm">
                     {matches.map((m) => (
                       <button
                         type="button"
@@ -1060,9 +1062,12 @@ function FeederModuleCard({
                           setSelectedItemId(m.id);
                           setItemSearch(`${itemCode(m)} — ${m.description}`);
                         }}
-                        className="block w-full px-2 py-1 text-left text-xs hover:bg-surface-container-low"
+                        className="flex w-full items-center gap-2 px-2 py-1 text-left text-xs hover:bg-surface-container-low"
                       >
-                        <span className="font-mono text-secondary">{itemCode(m)}</span> {m.description}
+                        <span className="w-24 shrink-0 truncate font-mono text-secondary">{itemCode(m)}</span>
+                        <span className="w-24 shrink-0 truncate font-mono text-secondary">{m.vendor_cat || "—"}</span>
+                        <span className="w-28 shrink-0 truncate text-on-surface-variant">{m.make || "—"}</span>
+                        <span className="min-w-0 flex-1 truncate">{m.description}</span>
                       </button>
                     ))}
                   </div>

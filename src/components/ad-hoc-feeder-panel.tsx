@@ -155,9 +155,12 @@ export function AdHocFeederPanel({
                   setSelectedItemId(m.id);
                   setItemSearch(`${itemCode(m)} — ${m.description}`);
                 }}
-                className="block w-full px-2 py-1 text-left text-xs hover:bg-surface-container-low"
+                className="flex w-full items-center gap-2 px-2 py-1 text-left text-xs hover:bg-surface-container-low"
               >
-                <span className="font-mono text-secondary">{itemCode(m)}</span> {m.description}
+                <span className="w-24 shrink-0 truncate font-mono text-secondary">{itemCode(m)}</span>
+                <span className="w-24 shrink-0 truncate font-mono text-secondary">{m.vendor_cat || "—"}</span>
+                <span className="w-28 shrink-0 truncate text-on-surface-variant">{m.make || "—"}</span>
+                <span className="min-w-0 flex-1 truncate">{m.description}</span>
               </button>
             ))}
           </div>
