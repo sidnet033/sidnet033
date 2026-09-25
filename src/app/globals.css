@@ -210,3 +210,29 @@ input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
+
+/* Standard buttons -- the app's one set of button classes. Pair .btn with
+   exactly one variant (.btn-primary/.btn-secondary/.btn-outline/.btn-danger)
+   and optionally .btn-sm for a denser size (table-row actions, toolbars),
+   instead of composing one-off Tailwind strings per button, so every
+   button in the app reads as the same system. */
+@layer components {
+  .btn {
+    @apply inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-4 py-2 font-body-md text-body-md font-medium shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none;
+  }
+  .btn-sm {
+    @apply gap-1 rounded px-2.5 py-1 text-xs;
+  }
+  .btn-primary {
+    @apply bg-primary text-on-primary hover:bg-primary-container;
+  }
+  .btn-secondary {
+    @apply bg-secondary text-on-secondary hover:opacity-90;
+  }
+  .btn-outline {
+    @apply border border-outline-variant bg-surface-container-lowest text-on-surface hover:bg-surface-container-low;
+  }
+  .btn-danger {
+    @apply bg-error text-on-error hover:opacity-90;
+  }
+}

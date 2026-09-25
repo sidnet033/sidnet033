@@ -111,10 +111,7 @@ export function AdHocFeederPanel({
 
   if (!open) {
     return (
-      <button
-        onClick={() => setOpen(true)}
-        className="flex w-full items-center gap-1.5 rounded-md border border-surface-container-high bg-surface-container-lowest px-3 py-2 text-sm font-medium text-on-surface hover:bg-surface-container-low"
-      >
+      <button onClick={() => setOpen(true)} className="btn btn-outline w-72">
         <Icon name="add_circle" size={16} /> Create New Feeder
       </button>
     );
@@ -204,14 +201,10 @@ export function AdHocFeederPanel({
       {error && <p className="text-xs text-error">{error}</p>}
 
       <div className="flex items-center gap-2">
-        <button
-          onClick={handleCreate}
-          disabled={saving}
-          className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-white hover:bg-primary-container disabled:opacity-50"
-        >
+        <button onClick={handleCreate} disabled={saving} className="btn btn-primary btn-sm">
           {saving ? "Creating..." : "Create feeder"}
         </button>
-        <button onClick={reset} className="text-xs text-secondary hover:underline">
+        <button onClick={reset} className="btn btn-outline btn-sm">
           Cancel
         </button>
       </div>

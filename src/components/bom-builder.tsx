@@ -731,18 +731,10 @@ export function BomBuilder({
           </button>
           {!readOnly && (
             <>
-              <button
-                onClick={handleCancel}
-                disabled={!dirty || saving}
-                className="flex items-center gap-1 rounded border border-surface-container-high px-space-lg py-space-sm font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-40"
-              >
+              <button onClick={handleCancel} disabled={!dirty || saving} className="btn btn-outline">
                 Cancel
               </button>
-              <button
-                onClick={handleSave}
-                disabled={!dirty || saving}
-                className="flex items-center gap-1 rounded bg-primary px-space-lg py-space-sm font-label-md text-label-md text-on-primary shadow-sm transition-all hover:bg-primary-container disabled:cursor-not-allowed disabled:opacity-40"
-              >
+              <button onClick={handleSave} disabled={!dirty || saving} className="btn btn-primary">
                 <Icon name="save" size={16} />
                 {saving ? "Saving..." : "Save Changes"}
               </button>
@@ -818,10 +810,7 @@ function AddFromLibrary({ options, onSelect }: { options: LibraryFeederOption[];
 
   return (
     <div className="relative w-72">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex w-full items-center justify-between rounded-md border border-surface-container-high bg-surface-container-lowest px-3 py-2 text-sm font-medium text-on-surface hover:bg-surface-container-low"
-      >
+      <button onClick={() => setOpen(!open)} className="btn btn-outline w-full justify-between">
         <span className="flex items-center gap-1.5">
           <Icon name="library_add" size={16} /> Add Feeder from Library
         </span>
@@ -901,7 +890,7 @@ function CategoryDiscountTool({ categories, onApply }: { categories: string[]; o
           setDiscount("");
         }}
         disabled={!category || discount === ""}
-        className="rounded bg-secondary px-2.5 py-1 text-xs font-medium text-white disabled:opacity-40"
+        className="btn btn-secondary btn-sm"
       >
         Apply
       </button>
@@ -976,9 +965,13 @@ function FeederModuleCard({
     setJustAdded([]);
   }
 
+  const headerClass = mod.feeder.is_library
+    ? "border-amber-100 bg-amber-50"
+    : "border-emerald-100 bg-emerald-50";
+
   return (
     <div className="overflow-hidden rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-xs">
-      <div className="flex flex-wrap items-center gap-3 border-b border-surface-container bg-surface-container-low/60 px-4 py-2.5">
+      <div className={`flex flex-wrap items-center gap-3 border-b px-4 py-2.5 ${headerClass}`}>
         <button onClick={() => setExpanded(!expanded)} className="text-on-surface-variant hover:text-on-surface-variant">
           <Icon name={expanded ? "expand_less" : "expand_more"} size={18} />
         </button>
@@ -1049,8 +1042,8 @@ function FeederModuleCard({
       {expanded && (
         <div className="p-3">
           <table className="w-full text-xs">
-            <thead className="text-left uppercase tracking-wide text-on-surface-variant">
-              <tr>
+            <thead className="text-left uppercase tracking-wide">
+              <tr className="bg-primary text-on-primary">
                 <th className="px-2 py-1">#</th>
                 <th className="px-2 py-1">SKU</th>
                 <th className="px-2 py-1">Vendor Cat</th>
@@ -1152,11 +1145,7 @@ function FeederModuleCard({
           </table>
 
           {canEditLines && (
-            <button
-              type="button"
-              onClick={() => setAddDialogOpen(true)}
-              className="mt-2 flex items-center gap-1 rounded border border-dashed border-surface-container-high px-3 py-1.5 text-xs font-medium text-secondary hover:border-primary/40 hover:text-primary"
-            >
+            <button type="button" onClick={() => setAddDialogOpen(true)} className="btn btn-primary btn-sm mt-2">
               <Icon name="add" size={14} /> Add Item to Feeder
             </button>
           )}
@@ -1277,11 +1266,7 @@ function FeederModuleCard({
             </div>
 
             <div className="flex items-center justify-end gap-2 border-t border-surface-container-high p-space-md">
-              <button
-                type="button"
-                onClick={closeAddDialog}
-                className="rounded bg-primary px-4 py-1.5 text-xs font-medium text-on-primary hover:bg-primary-container"
-              >
+              <button type="button" onClick={closeAddDialog} className="btn btn-primary btn-sm">
                 Done
               </button>
             </div>
