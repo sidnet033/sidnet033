@@ -8,6 +8,7 @@ import { AdHocFeederPanel } from "@/components/ad-hoc-feeder-panel";
 import { findDuplicateLibraryFeeder } from "@/lib/feeder-duplicate";
 import { ensureUnassignedVertical } from "@/lib/switchboard-bom";
 import { effectiveNetRate } from "@/lib/feeder-cost";
+import { computeFeederTag } from "@/lib/feeder-tag";
 import { itemCode } from "@/lib/item-display";
 import { Icon } from "@/components/icon";
 import { formatMoney } from "@/lib/money";
@@ -364,14 +365,28 @@ export function BomBuilder({
       alert(`A feeder with the same items already exists in the Feeder Library: "${duplicate.name}". Not creating a duplicate.`);
       return;
     }
-    const { error } = await supabase.from("feeders").update({ is_library: true }).eq("id", mod.feeder.id);
+    const patch: Partial<Feeder> = { is_library: true };
+    if (!mod.feeder.tag) {
+      patch.tag = computeFeederTag(
+        mod.feeder.category ?? "",
+        mod.feeder.rated_current != null ? String(mod.feeder.rated_current) : "",
+        mod.lines[0]?.item.make ?? null,
+        libraryFeedersAll,
+        mod.feeder.id
+      );
+    }
+    const { error } = await supabase.from("feeders").update(patch).eq("id", mod.feeder.id);
     if (error) {
       alert(error.message);
       return;
     }
-    const flip = (m: DraftModule) => (m.feeder.id === mod.feeder.id ? { ...m, feeder: { ...m.feeder, is_library: true }, baselineFeeder: { ...m.baselineFeeder, is_library: true } } : m);
+    const flip = (m: DraftModule) => (m.feeder.id === mod.feeder.id ? { ...m, feeder: { ...m.feeder, ...patch }, baselineFeeder: { ...m.baselineFeeder, ...patch } } : m);
     setSaved((s) => (s ? { ...s, modules: s.modules.map(flip) } : s));
     setDraft((d) => (d ? { ...d, modules: d.modules.map(flip) } : d));
+    setLibraryFeedersAll((prev) => [
+      ...prev,
+      { id: mod.feeder.id, name: mod.feeder.name, category: mod.feeder.category, tag: patch.tag ?? mod.feeder.tag, rating_summary: mod.feeder.rating_summary },
+    ]);
   }
 
   function updateModuleQty(mod: DraftModule, qty: number) {
@@ -476,62 +491,140 @@ export function BomBuilder({
         }
       }
 
+      let currentUserId: string | undefined;
+
       for (const m of draft.modules) {
         const isNewPlacement = !savedModuleIds.has(m.feeder.id);
+
+        // A library feeder is shared master data — editing its fields or
+        // lines here must never mutate it. If it was customized in this
+        // session, fork it into a new switchboard-scoped custom feeder now
+        // (so it shows as "Custom Feeder" from here on) and leave the
+        // original library feeder untouched.
+        const feederFieldsChanged =
+          m.baselineFeeder.name !== m.feeder.name ||
+          m.baselineFeeder.tag !== m.feeder.tag ||
+          m.baselineFeeder.rating_summary !== m.feeder.rating_summary ||
+          m.baselineFeeder.category !== m.feeder.category ||
+          m.baselineFeeder.description !== m.feeder.description ||
+          m.baselineFeeder.rated_current !== m.feeder.rated_current ||
+          m.baselineFeeder.pole_config !== m.feeder.pole_config ||
+          m.baselineFeeder.breaking_capacity !== m.feeder.breaking_capacity;
+        const draftLineIdSet = new Set(m.lines.map((l) => l.id));
+        const linesChanged =
+          m.baselineLines.some((l) => !draftLineIdSet.has(l.id)) ||
+          m.lines.some((l) => {
+            if (l.id.startsWith("new-")) return true;
+            const prior = m.baselineLines.find((x) => x.id === l.id);
+            return !prior || prior.qty !== l.qty || prior.list_price_override !== l.list_price_override || prior.discount_pct_override !== l.discount_pct_override;
+          });
+
+        let feederId = m.feeder.id;
+        let forked = false;
+        if (m.feeder.is_library && (feederFieldsChanged || linesChanged)) {
+          if (currentUserId === undefined) {
+            const {
+              data: { user },
+            } = await supabase.auth.getUser();
+            currentUserId = user?.id;
+          }
+          const { data: newFeeder, error: forkError } = await supabase
+            .from("feeders")
+            .insert({
+              name: m.feeder.name,
+              description: m.feeder.description,
+              category: m.feeder.category,
+              tag: m.feeder.tag,
+              rating_summary: m.feeder.rating_summary,
+              rated_current: m.feeder.rated_current,
+              pole_config: m.feeder.pole_config,
+              breaking_capacity: m.feeder.breaking_capacity,
+              switchboard_id: sb.id,
+              is_library: false,
+              created_by: currentUserId,
+            })
+            .select("id")
+            .single();
+          if (forkError || !newFeeder) throw forkError ?? new Error("Could not save customized feeder.");
+          feederId = (newFeeder as { id: string }).id;
+          forked = true;
+          if (m.lines.length) {
+            const { error: linesError } = await supabase.from("feeder_items").insert(
+              m.lines.map((l, i) => ({
+                feeder_id: feederId,
+                item_id: l.item_id,
+                qty: l.qty,
+                sort_order: i,
+                list_price_override: l.list_price_override,
+                discount_pct_override: l.discount_pct_override,
+              }))
+            );
+            if (linesError) throw linesError;
+          }
+        }
+
         if (isNewPlacement) {
           const vId = await ensureUnassignedVertical(supabase, sb.id);
           const { error } = await supabase
             .from("placed_feeders")
-            .insert({ vertical_id: vId, feeder_id: m.feeder.id, qty: m.qty, tier_number: 1, sort_order: 0 });
+            .insert({ vertical_id: vId, feeder_id: feederId, qty: m.qty, tier_number: 1, sort_order: 0 });
           if (error) throw error;
         } else {
           const priorModule = saved.modules.find((x) => x.feeder.id === m.feeder.id)!;
-          if (priorModule.qty !== m.qty) {
-            const { error } = await supabase.from("placed_feeders").update({ qty: m.qty }).eq("id", m.placementId);
+          const placementPatch: { qty?: number; feeder_id?: string } = {};
+          if (priorModule.qty !== m.qty) placementPatch.qty = m.qty;
+          if (forked) placementPatch.feeder_id = feederId;
+          if (Object.keys(placementPatch).length) {
+            const { error } = await supabase.from("placed_feeders").update(placementPatch).eq("id", m.placementId);
             if (error) throw error;
           }
-          const feederPatch: Partial<Pick<Feeder, "name" | "tag" | "rating_summary">> & { updated_at?: string } = {};
-          if (priorModule.feeder.name !== m.feeder.name) feederPatch.name = m.feeder.name;
-          if (priorModule.feeder.tag !== m.feeder.tag) feederPatch.tag = m.feeder.tag;
-          if (priorModule.feeder.rating_summary !== m.feeder.rating_summary) feederPatch.rating_summary = m.feeder.rating_summary;
-          if (Object.keys(feederPatch).length) {
-            feederPatch.updated_at = new Date().toISOString();
-            const { error } = await supabase.from("feeders").update(feederPatch).eq("id", m.feeder.id);
-            if (error) throw error;
+
+          if (!forked) {
+            const feederPatch: Partial<Pick<Feeder, "name" | "tag" | "rating_summary">> & { updated_at?: string } = {};
+            if (priorModule.feeder.name !== m.feeder.name) feederPatch.name = m.feeder.name;
+            if (priorModule.feeder.tag !== m.feeder.tag) feederPatch.tag = m.feeder.tag;
+            if (priorModule.feeder.rating_summary !== m.feeder.rating_summary) feederPatch.rating_summary = m.feeder.rating_summary;
+            if (Object.keys(feederPatch).length) {
+              feederPatch.updated_at = new Date().toISOString();
+              const { error } = await supabase.from("feeders").update(feederPatch).eq("id", m.feeder.id);
+              if (error) throw error;
+            }
           }
         }
 
-        const draftLineIds = new Set(m.lines.map((l) => l.id));
-        for (const l of m.baselineLines) {
-          if (!draftLineIds.has(l.id)) {
-            const { error } = await supabase.from("feeder_items").delete().eq("id", l.id);
-            if (error) throw error;
-          }
-        }
-        for (const [i, l] of m.lines.entries()) {
-          if (l.id.startsWith("new-")) {
-            const { error } = await supabase.from("feeder_items").insert({
-              feeder_id: m.feeder.id,
-              item_id: l.item_id,
-              qty: l.qty,
-              sort_order: i,
-              list_price_override: l.list_price_override,
-              discount_pct_override: l.discount_pct_override,
-            });
-            if (error) throw error;
-          } else {
-            const priorLine = m.baselineLines.find((x) => x.id === l.id);
-            if (
-              !priorLine ||
-              priorLine.qty !== l.qty ||
-              priorLine.list_price_override !== l.list_price_override ||
-              priorLine.discount_pct_override !== l.discount_pct_override
-            ) {
-              const { error } = await supabase
-                .from("feeder_items")
-                .update({ qty: l.qty, sort_order: i, list_price_override: l.list_price_override, discount_pct_override: l.discount_pct_override })
-                .eq("id", l.id);
+        if (!forked) {
+          const draftLineIds = new Set(m.lines.map((l) => l.id));
+          for (const l of m.baselineLines) {
+            if (!draftLineIds.has(l.id)) {
+              const { error } = await supabase.from("feeder_items").delete().eq("id", l.id);
               if (error) throw error;
+            }
+          }
+          for (const [i, l] of m.lines.entries()) {
+            if (l.id.startsWith("new-")) {
+              const { error } = await supabase.from("feeder_items").insert({
+                feeder_id: feederId,
+                item_id: l.item_id,
+                qty: l.qty,
+                sort_order: i,
+                list_price_override: l.list_price_override,
+                discount_pct_override: l.discount_pct_override,
+              });
+              if (error) throw error;
+            } else {
+              const priorLine = m.baselineLines.find((x) => x.id === l.id);
+              if (
+                !priorLine ||
+                priorLine.qty !== l.qty ||
+                priorLine.list_price_override !== l.list_price_override ||
+                priorLine.discount_pct_override !== l.discount_pct_override
+              ) {
+                const { error } = await supabase
+                  .from("feeder_items")
+                  .update({ qty: l.qty, sort_order: i, list_price_override: l.list_price_override, discount_pct_override: l.discount_pct_override })
+                  .eq("id", l.id);
+                if (error) throw error;
+              }
             }
           }
         }
@@ -954,10 +1047,11 @@ function FeederModuleCard({
                     setSelectedItemId("");
                   }}
                   placeholder="+ Add item SKU or search..."
+                  autoComplete="off"
                   className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
                 />
                 {matches.length > 0 && !selectedItemId && (
-                  <div className="absolute z-10 mt-1 w-64 rounded-md border border-surface-container-high bg-surface-container-lowest shadow-sm">
+                  <div className="absolute z-10 mt-1 max-h-64 w-64 overflow-y-auto rounded-md border border-surface-container-high bg-surface-container-lowest shadow-sm">
                     {matches.map((m) => (
                       <button
                         type="button"

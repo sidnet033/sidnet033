@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 import { itemCode } from "@/lib/item-display";
 import { effectiveNetRate } from "@/lib/feeder-cost";
+import { computeFeederTag } from "@/lib/feeder-tag";
 import type { Feeder, FeederItemWithDetails, ItemMaster } from "@/types/database";
 
 const FEEDER_TYPES = ["Incomer", "Outgoing", "Bus Coupler", "Sub-Incomer", "APFC Capacitor Bank"];
@@ -28,46 +29,6 @@ function lineNetRate(line: FeederItemWithDetails) {
 
 function feederCost(lines: FeederItemWithDetails[]) {
   return lines.reduce((s, l) => s + l.qty * lineNetRate(l), 0);
-}
-
-// FDR-{IG incomer / OG outgoing / ...}-{rated amps}-{make of the first
-// device added}-{incrementing number, unique among feeders sharing the
-// same type/amps/make prefix}. Regenerated live as those inputs change,
-// so the code field is always a read-only reflection of them.
-function typeCode(category: string): string {
-  switch (category) {
-    case "Incomer":
-      return "IG";
-    case "Outgoing":
-      return "OG";
-    case "Sub-Incomer":
-      return "SI";
-    case "Bus Coupler":
-      return "BC";
-    case "APFC Capacitor Bank":
-      return "PFC";
-    default:
-      return "GEN";
-  }
-}
-
-function makeCode(make: string | null): string {
-  return make ? make.trim().split(/\s+/)[0].toUpperCase() : "";
-}
-
-function computeTag(category: string, ratedCurrent: string, firstMake: string | null, feeders: Feeder[], excludeId: string | null): string {
-  if (!category) return "FDR-—";
-  const tCode = typeCode(category);
-  if (!ratedCurrent) return `FDR-${tCode}-—`;
-  const mCode = makeCode(firstMake);
-  if (!mCode) return `FDR-${tCode}-${ratedCurrent}-—`;
-  const prefix = `FDR-${tCode}-${ratedCurrent}-${mCode}-`;
-  const seqs = feeders
-    .filter((f) => f.id !== excludeId && f.tag?.startsWith(prefix))
-    .map((f) => Number(f.tag!.slice(prefix.length)))
-    .filter((n) => !Number.isNaN(n));
-  const seq = seqs.length ? Math.max(...seqs) + 1 : 1;
-  return `${prefix}${seq}`;
 }
 
 type FeederFormState = {
@@ -121,7 +82,7 @@ export function FeederMasterWorkspace({
   const selectedFeeder = feeders.find((f) => f.id === selectedId) ?? null;
   const selectedLines = selectedId ? linesByFeeder[selectedId] ?? [] : [];
   const dirty = form && savedForm && JSON.stringify(form) !== JSON.stringify(savedForm);
-  const displayedTag = form ? computeTag(form.category, form.rated_current, selectedLines[0]?.item.make ?? null, feeders, selectedId) : "";
+  const displayedTag = form ? computeFeederTag(form.category, form.rated_current, selectedLines[0]?.item.make ?? null, feeders, selectedId) : "";
 
   const typeOptions = Array.from(new Set(feeders.map((f) => f.category).filter((c): c is string => !!c))).sort();
   const filteredFeeders = typeFilter === "ALL" ? feeders : feeders.filter((f) => f.category === typeFilter);

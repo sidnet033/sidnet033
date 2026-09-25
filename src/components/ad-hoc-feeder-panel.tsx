@@ -142,10 +142,11 @@ export function AdHocFeederPanel({
             setSelectedItemId("");
           }}
           placeholder="Search item master..."
+          autoComplete="off"
           className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
         />
         {matches.length > 0 && !selectedItemId && (
-          <div className="absolute z-10 mt-1 w-full rounded-md border border-surface-container-high bg-surface-container-lowest shadow-sm">
+          <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-surface-container-high bg-surface-container-lowest shadow-sm">
             {matches.map((m) => (
               <button
                 type="button"
