@@ -319,7 +319,9 @@ export function BomBuilder({
         name: `${mod.feeder.name} (Copy)`,
         description: mod.feeder.description,
         category: mod.feeder.category,
-        tag: mod.feeder.tag,
+        // Custom feeders don't carry a feeder code -- avoid two feeders
+        // sharing the source's tag.
+        tag: null,
         rating_summary: mod.feeder.rating_summary,
         switchboard_id: sb.id,
         is_library: false,
@@ -570,7 +572,10 @@ export function BomBuilder({
               name: m.feeder.name,
               description: m.feeder.description,
               category: m.feeder.category,
-              tag: m.feeder.tag,
+              // Custom feeders don't carry a feeder code -- that's a
+              // library-only concept, and copying the original library
+              // feeder's tag here would leave two feeders sharing it.
+              tag: null,
               rating_summary: m.feeder.rating_summary,
               rated_current: m.feeder.rated_current,
               pole_config: m.feeder.pole_config,
@@ -982,13 +987,15 @@ function FeederModuleCard({
             onChange={(e) => onRename("name", e.target.value)}
             className="min-w-40 rounded border-none bg-transparent px-1 py-0.5 text-sm font-semibold text-on-surface focus:bg-surface-container-lowest disabled:text-on-surface"
           />
-          <input
-            disabled={readOnly || !canEditLines}
-            value={mod.feeder.tag ?? ""}
-            onChange={(e) => onRename("tag", e.target.value)}
-            placeholder="TAG"
-            className="w-32 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-0.5 font-mono text-[11px] text-secondary disabled:border-transparent disabled:bg-transparent"
-          />
+          {mod.feeder.is_library && (
+            <input
+              disabled={readOnly || !canEditLines}
+              value={mod.feeder.tag ?? ""}
+              onChange={(e) => onRename("tag", e.target.value)}
+              placeholder="TAG"
+              className="w-32 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-0.5 font-mono text-[11px] text-secondary disabled:border-transparent disabled:bg-transparent"
+            />
+          )}
           <span
             className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${
               mod.feeder.is_library
