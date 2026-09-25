@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { itemCode } from "@/lib/item-display";
+import { Icon } from "@/components/icon";
 import type { Feeder, ItemMaster } from "@/types/database";
 
 type NewFeederLine = { item: ItemMaster; qty: number };
@@ -112,9 +113,9 @@ export function AdHocFeederPanel({
     return (
       <button
         onClick={() => setOpen(true)}
-        className="mb-3 w-full rounded-md border border-dashed border-surface-container-high py-1.5 text-xs font-medium text-secondary hover:border-primary/40 hover:text-primary"
+        className="flex w-full items-center gap-1.5 rounded-md border border-surface-container-high bg-surface-container-lowest px-3 py-2 text-sm font-medium text-on-surface hover:bg-surface-container-low"
       >
-        + New feeder for this switchboard
+        <Icon name="add_circle" size={16} /> Create New Feeder
       </button>
     );
   }

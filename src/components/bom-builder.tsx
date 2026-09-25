@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { CostBreakdownCard } from "@/components/cost-breakdown-card";
@@ -234,6 +234,28 @@ export function BomBuilder({
   const readOnly = !sb || revisionArchived || (sb.locked_by !== null && sb.locked_by !== currentUserId);
   const dirty = !!draft && !!saved && JSON.stringify(draft) !== JSON.stringify(saved);
 
+  // Ctrl+S / Cmd+S saves the BOM, same as clicking "Save Changes". handleSave
+  // closes over the latest draft/saved on every render, so it's tracked via a
+  // ref (updated on every render) rather than a useEffect dependency -- that
+  // keeps the listener itself mounted once while always calling the freshest
+  // save function instead of one captured from a stale render.
+  const keyboardSaveRef = useRef({ readOnly, dirty, saving, handleSave: () => {} });
+  useEffect(() => {
+    keyboardSaveRef.current = { readOnly, dirty, saving, handleSave };
+  });
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        const { readOnly, dirty, saving, handleSave } = keyboardSaveRef.current;
+        if (!readOnly && dirty && !saving) handleSave();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const electrical = draft ? draft.modules.reduce((s, m) => s + m.qty * lineTotal(m.lines), 0) : 0;
   const busbarsTotal = draft ? draft.busbars.reduce((s, b) => s + b.qty * b.rate, 0) : 0;
   const enclosureTotal = draft ? draft.enclosureLines.reduce((s, e) => s + e.qty * e.rate, 0) : 0;
@@ -434,6 +456,20 @@ export function BomBuilder({
   function updateLaborPct(field: "labor_wiring_pct" | "labor_assembly_pct" | "labor_testing_pct", value: number) {
     const key = field === "labor_wiring_pct" ? "laborWiring" : field === "labor_assembly_pct" ? "laborAssembly" : "laborTesting";
     setDraft((d) => (d ? { ...d, [key]: value } : d));
+  }
+
+  function applyCategoryDiscount(category: string, discountPct: number) {
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            modules: d.modules.map((m) => ({
+              ...m,
+              lines: m.lines.map((l) => (l.item.category === category ? { ...l, discount_pct_override: discountPct } : l)),
+            })),
+          }
+        : d
+    );
   }
 
   function addBusbar() {
@@ -661,6 +697,9 @@ export function BomBuilder({
 
   const draftFeederIds = new Set(draft.modules.map((m) => m.feeder.id));
   const libraryOptions = libraryFeedersAll.filter((f) => !draftFeederIds.has(f.id));
+  const bomCategories = Array.from(
+    new Set(draft.modules.flatMap((m) => m.lines.map((l) => l.item.category)).filter((c): c is string => !!c))
+  ).sort();
 
   return (
     <div className="space-y-space-lg p-margin-lg">
@@ -727,6 +766,7 @@ export function BomBuilder({
           <div className="flex-1">
             <AdHocFeederPanel switchboardId={sb.id} allItems={allItems} onCreated={handleAdHocCreated} />
           </div>
+          {bomCategories.length > 0 && <CategoryDiscountTool categories={bomCategories} onApply={applyCategoryDiscount} />}
         </div>
       )}
 
@@ -815,6 +855,56 @@ function AddFromLibrary({ options, onSelect }: { options: LibraryFeederOption[];
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function CategoryDiscountTool({ categories, onApply }: { categories: string[]; onApply: (category: string, discountPct: number) => void }) {
+  const [category, setCategory] = useState("");
+  const [discount, setDiscount] = useState("");
+
+  return (
+    <div className="flex items-end gap-2 rounded-md border border-surface-container-high bg-surface-container-lowest px-3 py-2">
+      <div className="flex flex-col gap-0.5">
+        <label className="font-label-sm text-[10px] uppercase tracking-wide text-secondary">Bulk Discount — Category</label>
+        <select
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className="min-w-40 rounded border border-surface-container-high bg-surface-container-lowest px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+        >
+          <option value="">Select category...</option>
+          {categories.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex flex-col gap-0.5">
+        <label className="font-label-sm text-[10px] uppercase tracking-wide text-secondary">Disc %</label>
+        <input
+          type="number"
+          min="0"
+          max="100"
+          step="0.1"
+          value={discount}
+          onChange={(e) => setDiscount(e.target.value)}
+          className="w-16 rounded border border-surface-container-high px-1.5 py-1 text-right text-xs"
+        />
+      </div>
+      <button
+        type="button"
+        onClick={() => {
+          if (!category || discount === "") return;
+          onApply(category, Number(discount) || 0);
+          setCategory("");
+          setDiscount("");
+        }}
+        disabled={!category || discount === ""}
+        className="rounded bg-secondary px-2.5 py-1 text-xs font-medium text-white disabled:opacity-40"
+      >
+        Apply
+      </button>
     </div>
   );
 }
