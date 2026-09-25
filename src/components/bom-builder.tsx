@@ -849,20 +849,42 @@ function FeederModuleCard({
   onPromote?: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [itemSearch, setItemSearch] = useState("");
-  const [selectedItemId, setSelectedItemId] = useState("");
+  const [categoryChip, setCategoryChip] = useState<string | null>(null);
+  const [justAdded, setJustAdded] = useState<{ id: string; label: string }[]>([]);
 
   const subtotal = mod.qty * lineTotal(mod.lines);
 
-  const matches = itemSearch
+  const itemCategories = Array.from(new Set(allItems.map((i) => i.category).filter((c): c is string => !!c))).sort().slice(0, 8);
+
+  const matches = itemSearch.trim()
     ? allItems
-        .filter(
-          (i) =>
-            itemCode(i).toLowerCase().includes(itemSearch.toLowerCase()) ||
-            i.description.toLowerCase().includes(itemSearch.toLowerCase())
-        )
-        .slice(0, 8)
+        .filter((i) => {
+          if (categoryChip && i.category !== categoryChip) return false;
+          const q = itemSearch.toLowerCase();
+          return (
+            itemCode(i).toLowerCase().includes(q) ||
+            (i.vendor_cat ?? "").toLowerCase().includes(q) ||
+            (i.make ?? "").toLowerCase().includes(q) ||
+            i.description.toLowerCase().includes(q)
+          );
+        })
+        .slice(0, 20)
     : [];
+
+  function addItem(item: ItemMaster) {
+    onAddLine(item, 1);
+    setJustAdded((prev) => [{ id: item.id, label: `${itemCode(item)} — ${item.description}` }, ...prev].slice(0, 10));
+    setItemSearch("");
+  }
+
+  function closeAddDialog() {
+    setAddDialogOpen(false);
+    setItemSearch("");
+    setCategoryChip(null);
+    setJustAdded([]);
+  }
 
   return (
     <div className="overflow-hidden rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-xs">
@@ -1040,58 +1062,139 @@ function FeederModuleCard({
           </table>
 
           {canEditLines && (
-            <div className="relative mt-2 flex items-end gap-2">
-              <div className="relative min-w-[420px] flex-1">
-                <input
-                  value={itemSearch}
-                  onChange={(e) => {
-                    setItemSearch(e.target.value);
-                    setSelectedItemId("");
-                  }}
-                  placeholder="+ Add item SKU or search..."
-                  autoComplete="off"
-                  className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
-                />
-                {matches.length > 0 && !selectedItemId && (
-                  <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-surface-container-high bg-surface-container-lowest shadow-sm">
-                    {matches.map((m) => (
-                      <button
-                        type="button"
-                        key={m.id}
-                        onClick={() => {
-                          setSelectedItemId(m.id);
-                          setItemSearch(`${itemCode(m)} — ${m.description}`);
-                        }}
-                        className="flex w-full items-center gap-2 px-2 py-1 text-left text-xs hover:bg-surface-container-low"
-                      >
-                        <span className="w-24 shrink-0 truncate font-mono text-secondary">{itemCode(m)}</span>
-                        <span className="w-24 shrink-0 truncate font-mono text-secondary">{m.vendor_cat || "—"}</span>
-                        <span className="w-28 shrink-0 truncate text-on-surface-variant">{m.make || "—"}</span>
-                        <span className="min-w-0 flex-1 truncate">{m.description}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <button
-                onClick={() => {
-                  const item = allItems.find((i) => i.id === selectedItemId);
-                  if (!item) return;
-                  onAddLine(item, 1);
-                  setSelectedItemId("");
-                  setItemSearch("");
-                }}
-                disabled={!selectedItemId}
-                className="rounded bg-secondary px-2.5 py-1 text-xs font-medium text-white disabled:opacity-40"
-              >
-                Add
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setAddDialogOpen(true)}
+              className="mt-2 flex items-center gap-1 rounded border border-dashed border-surface-container-high px-3 py-1.5 text-xs font-medium text-secondary hover:border-primary/40 hover:text-primary"
+            >
+              <Icon name="add" size={14} /> Add Item to Feeder
+            </button>
           )}
 
           <div className="mt-2 flex items-center justify-end gap-3 border-t border-surface-container pt-2 text-xs text-secondary">
             <span>{mod.lines.length} items</span>
             <span className="font-semibold text-on-surface">Feeder Total: {money(subtotal)}</span>
+          </div>
+        </div>
+      )}
+
+      {addDialogOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-inverse-surface/40 p-space-md backdrop-blur-sm"
+          onClick={closeAddDialog}
+        >
+          <div
+            className="flex max-h-[80vh] w-full max-w-xl flex-col overflow-hidden rounded-xl bg-surface-container-lowest shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-surface-container-high bg-surface-container-low p-space-md">
+              <div className="flex items-center gap-space-sm">
+                <div className="flex h-7 w-7 items-center justify-center rounded bg-primary/10 text-primary">
+                  <Icon name="add_box" size={16} />
+                </div>
+                <div className="flex flex-col">
+                  <h3 className="font-headline-sm text-headline-sm text-on-surface">Add Item to Feeder</h3>
+                  <span className="font-label-sm text-label-sm text-on-surface-variant">{mod.feeder.name}</span>
+                </div>
+              </div>
+              <button onClick={closeAddDialog} className="rounded p-1 text-secondary hover:bg-surface-container hover:text-on-surface">
+                <Icon name="close" size={18} />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-space-sm p-space-md pb-0">
+              <div className="relative flex items-center">
+                <Icon name="search" size={16} className="pointer-events-none absolute left-2 text-secondary" />
+                <input
+                  autoFocus
+                  value={itemSearch}
+                  onChange={(e) => setItemSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && matches.length > 0) {
+                      e.preventDefault();
+                      addItem(matches[0]);
+                    }
+                  }}
+                  placeholder="Search by SKU, vendor cat, make or description... (Enter to add)"
+                  autoComplete="off"
+                  className="h-9 w-full rounded border border-surface-container-high bg-surface pl-8 pr-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+              {itemCategories.length > 0 && (
+                <div className="flex items-center gap-1 overflow-x-auto pb-1 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setCategoryChip(null)}
+                    className={`shrink-0 rounded-full px-2 py-0.5 transition-colors ${
+                      categoryChip === null ? "bg-primary font-semibold text-on-primary" : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container"
+                    }`}
+                  >
+                    All
+                  </button>
+                  {itemCategories.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setCategoryChip(c)}
+                      className={`shrink-0 rounded-full px-2 py-0.5 transition-colors ${
+                        categoryChip === c ? "bg-primary font-semibold text-on-primary" : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container"
+                      }`}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-space-md pt-2">
+              {matches.length === 0 ? (
+                <p className="py-6 text-center text-xs text-on-surface-variant">
+                  {itemSearch ? "No matching items." : "Start typing to search the item master."}
+                </p>
+              ) : (
+                <div className="divide-y divide-surface-container rounded border border-surface-container-high">
+                  {matches.map((m, i) => (
+                    <button
+                      type="button"
+                      key={m.id}
+                      onClick={() => addItem(m)}
+                      className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-surface-container-low ${i === 0 ? "bg-primary/5" : ""}`}
+                    >
+                      <span className="w-24 shrink-0 truncate font-mono text-secondary">{itemCode(m)}</span>
+                      <span className="w-24 shrink-0 truncate font-mono text-secondary">{m.vendor_cat || "—"}</span>
+                      <span className="w-28 shrink-0 truncate text-on-surface-variant">{m.make || "—"}</span>
+                      <span className="min-w-0 flex-1 truncate">{m.description}</span>
+                      <Icon name="add" size={14} className="shrink-0 text-primary" />
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {justAdded.length > 0 && (
+                <div className="mt-3">
+                  <p className="mb-1 font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">Added this session</p>
+                  <ul className="space-y-1">
+                    {justAdded.map((a, i) => (
+                      <li key={`${a.id}-${i}`} className="flex items-center gap-1 rounded bg-tertiary-container/15 px-2 py-1 text-xs text-tertiary">
+                        <Icon name="check_circle" size={13} />
+                        <span className="truncate">{a.label}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-surface-container-high p-space-md">
+              <button
+                type="button"
+                onClick={closeAddDialog}
+                className="rounded bg-primary px-4 py-1.5 text-xs font-medium text-on-primary hover:bg-primary-container"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}
