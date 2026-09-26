@@ -43,7 +43,7 @@ export function StageStepper({
                 type="button"
                 disabled={disabled}
                 onClick={() => onChange(s.id)}
-                className={`flex items-center gap-1 rounded-full px-3 py-1.5 font-label-md text-label-md font-semibold uppercase tracking-wide transition-colors disabled:cursor-not-allowed ${
+                className={`flex items-center gap-1 rounded-full px-3 py-1.5 font-label-md text-label-md font-semibold uppercase tracking-wide transition-colors cursor-pointer disabled:cursor-not-allowed ${
                   isCurrent
                     ? "bg-primary text-on-primary"
                     : active
@@ -68,7 +68,7 @@ export function StageStepper({
             type="button"
             disabled={disabled}
             onClick={() => onChange(s.id)}
-            className={`font-label-md text-label-md font-bold uppercase tracking-wide transition-colors disabled:cursor-not-allowed ${
+            className={`font-label-md text-label-md font-bold uppercase tracking-wide transition-colors cursor-pointer disabled:cursor-not-allowed ${
               value === s.id ? s.activeClass : "text-on-surface-variant hover:text-on-surface"
             }`}
           >

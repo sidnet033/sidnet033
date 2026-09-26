@@ -177,6 +177,7 @@ export type Switchboard = {
   poles: number | null;
   cable_entry: "Top" | "Bottom" | null;
   cable_exit: "Top" | "Bottom" | null;
+  busbar: "Cu" | "Al" | null;
   std: "ArTuK" | "61439" | "60439" | null;
   qty: number;
   sort_order: number;

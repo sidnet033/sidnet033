@@ -19,6 +19,7 @@ const STD_OPTIONS = ["ArTuK", "61439", "60439"] as const;
 const IP_OPTIONS = ["42", "52", "54", "55", "63"];
 const FORM_OPTIONS = ["Form 1", "Form 2a", "Form 2b", "Form 3a", "Form 3b", "Form 4a", "Form 4b (Type 7)"];
 const CABLE_OPTIONS = ["Top", "Bottom"] as const;
+const BUSBAR_OPTIONS = ["Cu", "Al"] as const;
 
 // The switchboard table fields the Save button/Ctrl+S actually cover --
 // everything else on a SwitchboardListItem (breakdown, lockedByName, ...)
@@ -34,6 +35,7 @@ const EDITABLE_SWITCHBOARD_FIELDS = [
   "ka",
   "cable_entry",
   "cable_exit",
+  "busbar",
   "qty",
 ] as const satisfies readonly (keyof Switchboard)[];
 
@@ -422,7 +424,7 @@ export function ProjectDetailTab({
                   <ReadOnlyValue value={createdByName || "—"} />
                 </Field>
 
-                <Field label="Project Name" className="sm:col-span-2">
+                <Field label="Project Name">
                   <input
                     disabled={revisionArchived}
                     value={form.title}
@@ -430,7 +432,7 @@ export function ProjectDetailTab({
                     className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low"
                   />
                 </Field>
-                <Field label="Customer" className="sm:col-span-2">
+                <Field label="Customer">
                   {isAdmin && !revisionArchived ? (
                     <select
                       value={form.customer_id ?? ""}
@@ -508,7 +510,7 @@ export function ProjectDetailTab({
                   </select>
                 </Field>
 
-                <Field label="Consultant" className="sm:col-span-2">
+                <Field label="Consultant">
                   {revisionArchived ? (
                     <ReadOnlyValue value={consultantLabel || "—"} />
                   ) : (
@@ -523,7 +525,7 @@ export function ProjectDetailTab({
                     />
                   )}
                 </Field>
-                <Field label="Sales Exec" className="sm:col-span-2">
+                <Field label="Sales Exec">
                   {revisionArchived ? (
                     <ReadOnlyValue value={salesExecLabel || "—"} />
                   ) : (
@@ -539,7 +541,7 @@ export function ProjectDetailTab({
                   )}
                 </Field>
 
-                <Field label="Currency" className="sm:col-span-2">
+                <Field label="Currency">
                   <select
                     disabled={revisionArchived}
                     value={form.currency}
@@ -553,7 +555,7 @@ export function ProjectDetailTab({
                     ))}
                   </select>
                 </Field>
-                <Field label="Exchange Rate" className="sm:col-span-2">
+                <Field label="Exchange Rate">
                   <input
                     type="text"
                     inputMode="decimal"
@@ -615,6 +617,7 @@ export function ProjectDetailTab({
                   <th className="px-space-md py-space-sm text-right">kA</th>
                   <th className="px-space-md py-space-sm">Cable Entry</th>
                   <th className="px-space-md py-space-sm">Cable Exit</th>
+                  <th className="px-space-md py-space-sm">Busbar</th>
                   <th className="px-space-md py-space-sm text-right">Qty</th>
                   <th className="px-space-md py-space-sm text-right">Unit Cost</th>
                   <th className="px-space-md py-space-sm text-right">Margin</th>
@@ -810,6 +813,21 @@ export function ProjectDetailTab({
                           {CABLE_OPTIONS.map((c) => (
                             <option key={c} value={c}>
                               {c}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-space-md py-space-md">
+                        <select
+                          disabled={rowDisabled}
+                          value={sb.busbar ?? ""}
+                          onChange={(e) => updateSwitchboardField(sb.id, { busbar: (e.target.value || null) as Switchboard["busbar"] })}
+                          className="w-16 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 disabled:border-transparent disabled:bg-transparent"
+                        >
+                          <option value="">—</option>
+                          {BUSBAR_OPTIONS.map((b) => (
+                            <option key={b} value={b}>
+                              {b}
                             </option>
                           ))}
                         </select>
