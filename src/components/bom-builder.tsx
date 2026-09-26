@@ -375,6 +375,11 @@ export function BomBuilder({
         // sharing the source's tag.
         tag: null,
         rating_summary: mod.feeder.rating_summary,
+        rated_current: mod.feeder.rated_current,
+        pole_config: mod.feeder.pole_config,
+        breaking_capacity: mod.feeder.breaking_capacity,
+        device_type: mod.feeder.device_type,
+        rated_kw: mod.feeder.rated_kw,
         switchboard_id: sb.id,
         is_library: false,
         created_by: user?.id,
@@ -505,7 +510,7 @@ export function BomBuilder({
     );
   }
 
-  function renameFeeder(mod: DraftModule, field: "name" | "tag" | "rating_summary" | "device_type", value: string) {
+  function renameFeeder(mod: DraftModule, field: "name" | "tag" | "device_type", value: string) {
     setDraft((d) =>
       d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, feeder: { ...m.feeder, [field]: value || null } } : m)) } : d
     );
@@ -614,7 +619,9 @@ export function BomBuilder({
           m.baselineFeeder.description !== m.feeder.description ||
           m.baselineFeeder.rated_current !== m.feeder.rated_current ||
           m.baselineFeeder.pole_config !== m.feeder.pole_config ||
-          m.baselineFeeder.breaking_capacity !== m.feeder.breaking_capacity;
+          m.baselineFeeder.breaking_capacity !== m.feeder.breaking_capacity ||
+          m.baselineFeeder.device_type !== m.feeder.device_type ||
+          m.baselineFeeder.rated_kw !== m.feeder.rated_kw;
         const draftLineIdSet = new Set(m.lines.map((l) => l.id));
         const linesChanged =
           m.baselineLines.some((l) => !draftLineIdSet.has(l.id)) ||
@@ -647,6 +654,8 @@ export function BomBuilder({
               rated_current: m.feeder.rated_current,
               pole_config: m.feeder.pole_config,
               breaking_capacity: m.feeder.breaking_capacity,
+              device_type: m.feeder.device_type,
+              rated_kw: m.feeder.rated_kw,
               switchboard_id: sb.id,
               is_library: false,
               created_by: currentUserId,
@@ -726,10 +735,18 @@ export function BomBuilder({
           }
 
           if (!forked) {
-            const feederPatch: Partial<Pick<Feeder, "name" | "tag" | "rating_summary">> & { updated_at?: string } = {};
+            const feederPatch: Partial<
+              Pick<Feeder, "name" | "tag" | "category" | "description" | "rated_current" | "pole_config" | "breaking_capacity" | "device_type" | "rated_kw">
+            > & { updated_at?: string } = {};
             if (priorModule.feeder.name !== m.feeder.name) feederPatch.name = m.feeder.name;
             if (priorModule.feeder.tag !== m.feeder.tag) feederPatch.tag = m.feeder.tag;
-            if (priorModule.feeder.rating_summary !== m.feeder.rating_summary) feederPatch.rating_summary = m.feeder.rating_summary;
+            if (priorModule.feeder.category !== m.feeder.category) feederPatch.category = m.feeder.category;
+            if (priorModule.feeder.description !== m.feeder.description) feederPatch.description = m.feeder.description;
+            if (priorModule.feeder.rated_current !== m.feeder.rated_current) feederPatch.rated_current = m.feeder.rated_current;
+            if (priorModule.feeder.pole_config !== m.feeder.pole_config) feederPatch.pole_config = m.feeder.pole_config;
+            if (priorModule.feeder.breaking_capacity !== m.feeder.breaking_capacity) feederPatch.breaking_capacity = m.feeder.breaking_capacity;
+            if (priorModule.feeder.device_type !== m.feeder.device_type) feederPatch.device_type = m.feeder.device_type;
+            if (priorModule.feeder.rated_kw !== m.feeder.rated_kw) feederPatch.rated_kw = m.feeder.rated_kw;
             if (Object.keys(feederPatch).length) {
               feederPatch.updated_at = new Date().toISOString();
               await updateChecked(supabase, "feeders", m.feeder.id, feederPatch, "feeder");
@@ -1051,7 +1068,7 @@ function FeederModuleCard({
   readOnly: boolean;
   canEditLines: boolean;
   allItems: ItemMaster[];
-  onRename: (field: "name" | "tag" | "rating_summary" | "device_type", value: string) => void;
+  onRename: (field: "name" | "tag" | "device_type", value: string) => void;
   onRatingChange: (field: "rated_current" | "rated_kw", value: string) => void;
   onQtyChange: (qty: number) => void;
   onAddLine: (item: ItemMaster, qty: number) => void;
@@ -1143,13 +1160,6 @@ function FeederModuleCard({
           >
             {mod.feeder.is_library ? "Library Feeder" : "Custom Feeder"}
           </span>
-          <input
-            disabled={readOnly || !canEditLines}
-            value={mod.feeder.rating_summary ?? ""}
-            onChange={(e) => onRename("rating_summary", e.target.value)}
-            placeholder="Rating summary"
-            className="w-48 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-0.5 text-[11px] text-secondary disabled:border-transparent disabled:bg-transparent"
-          />
           <select
             disabled={readOnly || !canEditLines}
             value={mod.feeder.device_type ?? ""}
