@@ -40,13 +40,18 @@ type DraftLine = {
   discount_pct_override: number | null;
 };
 
+// One placed_feeders row this module's aggregate qty is currently spread
+// across -- GA Builder can split/merge/move these between bays at will;
+// BOM Builder doesn't care which bay a unit sits in, only how many exist.
+type PlacementRef = { id: string; vertical_id: string; qty: number };
+
 type DraftModule = {
-  feeder: Feeder;
+  feeder: Feeder; // feeder.id is this module's stable identity -- there is exactly one module per feeder in this switchboard's BOM
   baselineFeeder: Feeder;
-  placementId: string; // real placed_feeders id, or "new-<uuid>" if not yet placed
-  qty: number;
+  qty: number; // aggregate across all of baselinePlacements, editable as one number regardless of how GA has it spread across bays
   lines: DraftLine[];
   baselineLines: DraftLine[]; // what's actually in the DB right now, for diffing on Save
+  baselinePlacements: PlacementRef[]; // what's actually in the DB right now, for redistributing a qty change on Save
 };
 
 type DraftBusbar = { id: string; description: string; qty: number; rate: number };
@@ -102,11 +107,18 @@ async function loadBomData(supabase: ReturnType<typeof createClient>, switchboar
   type PlacedRow = { id: string; vertical_id: string; tier_number: number; qty: number; feeder: Feeder };
   const placedRows = (placed ?? []) as unknown as PlacedRow[];
 
-  // Build one module per PLACEMENT, not one per distinct feeder -- the same
-  // library feeder is routinely placed in several bays (e.g. an identical
-  // outgoing MCCB feeder used 6 times), and each of those is a separate
-  // placed_feeders row that needs its own module here, not a collapsed one.
-  const feederIds = Array.from(new Set(placedRows.map((p) => p.feeder.id)));
+  // One module per feeder used in this switchboard's BOM, aggregating qty
+  // across however many placed_feeders rows GA Builder has spread its
+  // physical units across (different bays, the unassigned bucket, ...).
+  // GA owns *where* units sit; BOM Builder only cares *how many* and *what*.
+  const byFeeder = new Map<string, { feeder: Feeder; placements: PlacementRef[] }>();
+  for (const p of placedRows) {
+    const entry = byFeeder.get(p.feeder.id) ?? { feeder: p.feeder, placements: [] };
+    entry.placements.push({ id: p.id, vertical_id: p.vertical_id, qty: p.qty });
+    byFeeder.set(p.feeder.id, entry);
+  }
+
+  const feederIds = Array.from(byFeeder.keys());
   const { data: feederLines } = feederIds.length
     ? await supabase.from("feeder_items").select("*, item:item_master(*)").in("feeder_id", feederIds).order("sort_order")
     : { data: [] };
@@ -118,15 +130,15 @@ async function loadBomData(supabase: ReturnType<typeof createClient>, switchboar
     linesByFeeder.set(line.feeder_id, list);
   }
 
-  const modules: DraftModule[] = placedRows.map((p) => {
-    const lines = (linesByFeeder.get(p.feeder.id) ?? []).map(toDraftLine);
+  const modules: DraftModule[] = Array.from(byFeeder.values()).map(({ feeder, placements }) => {
+    const lines = (linesByFeeder.get(feeder.id) ?? []).map(toDraftLine);
     return {
-      feeder: p.feeder,
-      baselineFeeder: p.feeder,
-      placementId: p.id,
-      qty: p.qty,
+      feeder,
+      baselineFeeder: feeder,
+      qty: placements.reduce((s, p) => s + p.qty, 0),
       lines,
       baselineLines: lines,
+      baselinePlacements: placements,
     };
   });
 
@@ -298,6 +310,13 @@ export function BomBuilder({
   };
 
   async function addLibraryFeeder(opt: LibraryFeederOption) {
+    // Already in this BOM (added before, or GA has it placed somewhere) --
+    // there's only ever one module per feeder, so adding it again just
+    // bumps that module's qty instead of creating a second card for it.
+    if (draft?.modules.some((m) => m.feeder.id === opt.id)) {
+      setDraft((d) => (d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === opt.id ? { ...m, qty: m.qty + 1 } : m)) } : d));
+      return;
+    }
     const { data: feeder } = await supabase.from("feeders").select("*").eq("id", opt.id).single();
     const { data: lines } = await supabase.from("feeder_items").select("*, item:item_master(*)").eq("feeder_id", opt.id).order("sort_order");
     if (!feeder) return;
@@ -308,7 +327,7 @@ export function BomBuilder({
             ...d,
             modules: [
               ...d.modules,
-              { feeder: feeder as Feeder, baselineFeeder: feeder as Feeder, placementId: newId(), qty: 1, lines: draftLines, baselineLines: draftLines },
+              { feeder: feeder as Feeder, baselineFeeder: feeder as Feeder, qty: 1, lines: draftLines, baselineLines: draftLines, baselinePlacements: [] },
             ],
           }
         : d
@@ -322,7 +341,7 @@ export function BomBuilder({
       d
         ? {
             ...d,
-            modules: [...d.modules, { feeder, baselineFeeder: feeder, placementId: newId(), qty: 1, lines: draftLines, baselineLines: draftLines }],
+            modules: [...d.modules, { feeder, baselineFeeder: feeder, qty: 1, lines: draftLines, baselineLines: draftLines, baselinePlacements: [] }],
           }
         : d
     );
@@ -388,10 +407,10 @@ export function BomBuilder({
     const newModule: DraftModule = {
       feeder: newFeeder as Feeder,
       baselineFeeder: newFeeder as Feeder,
-      placementId: placement.id,
       qty: 1,
       lines: draftLines,
       baselineLines: draftLines,
+      baselinePlacements: [{ id: placement.id, vertical_id: vId, qty: 1 }],
     };
     setSaved((s) => (s ? { ...s, modules: [...s.modules, newModule] } : s));
     setDraft((d) => (d ? { ...d, modules: [...d.modules, newModule] } : d));
@@ -399,7 +418,7 @@ export function BomBuilder({
   }
 
   function deleteModule(mod: DraftModule) {
-    setDraft((d) => (d ? { ...d, modules: d.modules.filter((m) => m.placementId !== mod.placementId) } : d));
+    setDraft((d) => (d ? { ...d, modules: d.modules.filter((m) => m.feeder.id !== mod.feeder.id) } : d));
   }
 
   async function promoteToLibrary(mod: DraftModule) {
@@ -428,7 +447,7 @@ export function BomBuilder({
       alert("Could not save the feeder — it may have changed or been removed elsewhere. Refresh and try again.");
       return;
     }
-    const flip = (m: DraftModule) => (m.placementId === mod.placementId ? { ...m, feeder: { ...m.feeder, ...patch }, baselineFeeder: { ...m.baselineFeeder, ...patch } } : m);
+    const flip = (m: DraftModule) => (m.feeder.id === mod.feeder.id ? { ...m, feeder: { ...m.feeder, ...patch }, baselineFeeder: { ...m.baselineFeeder, ...patch } } : m);
     setSaved((s) => (s ? { ...s, modules: s.modules.map(flip) } : s));
     setDraft((d) => (d ? { ...d, modules: d.modules.map(flip) } : d));
     setLibraryFeedersAll((prev) => [
@@ -438,18 +457,18 @@ export function BomBuilder({
   }
 
   function updateModuleQty(mod: DraftModule, qty: number) {
-    setDraft((d) => (d ? { ...d, modules: d.modules.map((m) => (m.placementId === mod.placementId ? { ...m, qty } : m)) } : d));
+    setDraft((d) => (d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, qty } : m)) } : d));
   }
 
   function addLine(mod: DraftModule, item: ItemMaster, qty: number) {
     const line: DraftLine = { id: newId(), item_id: item.id, item, qty, list_price_override: null, discount_pct_override: null };
-    setDraft((d) => (d ? { ...d, modules: d.modules.map((m) => (m.placementId === mod.placementId ? { ...m, lines: [...m.lines, line] } : m)) } : d));
+    setDraft((d) => (d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, lines: [...m.lines, line] } : m)) } : d));
   }
 
   function updateLineQty(mod: DraftModule, lineId: string, qty: number) {
     setDraft((d) =>
       d
-        ? { ...d, modules: d.modules.map((m) => (m.placementId === mod.placementId ? { ...m, lines: m.lines.map((l) => (l.id === lineId ? { ...l, qty } : l)) } : m)) }
+        ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, lines: m.lines.map((l) => (l.id === lineId ? { ...l, qty } : l)) } : m)) }
         : d
     );
   }
@@ -460,7 +479,7 @@ export function BomBuilder({
         ? {
             ...d,
             modules: d.modules.map((m) =>
-              m.placementId === mod.placementId ? { ...m, lines: m.lines.map((l) => (l.id === lineId ? { ...l, [field]: value } : l)) } : m
+              m.feeder.id === mod.feeder.id ? { ...m, lines: m.lines.map((l) => (l.id === lineId ? { ...l, [field]: value } : l)) } : m
             ),
           }
         : d
@@ -469,13 +488,13 @@ export function BomBuilder({
 
   function removeLine(mod: DraftModule, lineId: string) {
     setDraft((d) =>
-      d ? { ...d, modules: d.modules.map((m) => (m.placementId === mod.placementId ? { ...m, lines: m.lines.filter((l) => l.id !== lineId) } : m)) } : d
+      d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, lines: m.lines.filter((l) => l.id !== lineId) } : m)) } : d
     );
   }
 
   function renameFeeder(mod: DraftModule, field: "name" | "tag" | "rating_summary", value: string) {
     setDraft((d) =>
-      d ? { ...d, modules: d.modules.map((m) => (m.placementId === mod.placementId ? { ...m, feeder: { ...m.feeder, [field]: value || null } } : m)) } : d
+      d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, feeder: { ...m.feeder, [field]: value || null } } : m)) } : d
     );
   }
 
@@ -539,22 +558,28 @@ export function BomBuilder({
       await saveLineTable(supabase, "switchboard_busbars", sb.id, saved.busbars, draft.busbars);
       await saveLineTable(supabase, "switchboard_enclosure_lines", sb.id, saved.enclosureLines, draft.enclosureLines);
 
-      const savedPlacementIds = new Set(saved.modules.map((m) => m.placementId));
-      const draftPlacementIds = new Set(draft.modules.map((m) => m.placementId));
+      const savedFeederIds = new Set(saved.modules.map((m) => m.feeder.id));
+      const draftFeederIds = new Set(draft.modules.map((m) => m.feeder.id));
 
       for (const m of saved.modules) {
-        if (!draftPlacementIds.has(m.placementId)) {
-          await deleteChecked(supabase, "placed_feeders", m.placementId, "feeder placement");
-          if (m.feeder.switchboard_id === sb.id && !m.feeder.is_library) {
-            await deleteChecked(supabase, "feeders", m.feeder.id, "custom feeder");
-          }
+        if (draftFeederIds.has(m.feeder.id)) continue;
+        for (const p of m.baselinePlacements) {
+          await deleteChecked(supabase, "placed_feeders", p.id, "feeder placement");
+        }
+        if (m.feeder.switchboard_id === sb.id && !m.feeder.is_library) {
+          await deleteChecked(supabase, "feeders", m.feeder.id, "custom feeder");
         }
       }
 
       let currentUserId: string | undefined;
+      let cachedUnassignedId: string | null = null;
+      async function unassignedVerticalId() {
+        if (!cachedUnassignedId) cachedUnassignedId = await ensureUnassignedVertical(supabase, switchboardId);
+        return cachedUnassignedId;
+      }
 
       for (const m of draft.modules) {
-        const isNewPlacement = !savedPlacementIds.has(m.placementId);
+        const isNewModule = !savedFeederIds.has(m.feeder.id);
 
         // A library feeder is shared master data — editing its fields or
         // lines here must never mutate it. If it was customized in this
@@ -626,19 +651,58 @@ export function BomBuilder({
           }
         }
 
-        if (isNewPlacement) {
-          const vId = await ensureUnassignedVertical(supabase, sb.id);
+        if (isNewModule) {
+          const vId = await unassignedVerticalId();
           const { error } = await supabase
             .from("placed_feeders")
             .insert({ vertical_id: vId, feeder_id: feederId, qty: m.qty, tier_number: 1, sort_order: 0 });
           if (error) throw error;
         } else {
-          const priorModule = saved.modules.find((x) => x.placementId === m.placementId)!;
-          const placementPatch: { qty?: number; feeder_id?: string } = {};
-          if (priorModule.qty !== m.qty) placementPatch.qty = m.qty;
-          if (forked) placementPatch.feeder_id = feederId;
-          if (Object.keys(placementPatch).length) {
-            await updateChecked(supabase, "placed_feeders", m.placementId, placementPatch, "feeder placement");
+          const priorModule = saved.modules.find((x) => x.feeder.id === m.feeder.id)!;
+
+          if (forked) {
+            // Every existing placement of the original library feeder --
+            // wherever GA has them, across however many bays -- now belongs
+            // to the forked custom feeder instead.
+            for (const p of priorModule.baselinePlacements) {
+              await updateChecked(supabase, "placed_feeders", p.id, { feeder_id: feederId }, "feeder placement");
+            }
+          }
+
+          // A qty change is an aggregate across however many placed_feeders
+          // rows GA has this feeder spread across -- redistribute the delta
+          // rather than writing one row's qty, preferring the unassigned
+          // bucket (increase tops it up / decrease drains it first) before
+          // touching anything already spatially placed in GA.
+          const savedQty = priorModule.baselinePlacements.reduce((s, p) => s + p.qty, 0);
+          const delta = m.qty - savedQty;
+          if (delta !== 0) {
+            const vId = await unassignedVerticalId();
+            const ordered = [...priorModule.baselinePlacements].sort((a, b) => (a.vertical_id === vId ? -1 : b.vertical_id === vId ? 1 : 0));
+            if (delta > 0) {
+              const target = ordered.find((p) => p.vertical_id === vId);
+              if (target) {
+                await updateChecked(supabase, "placed_feeders", target.id, { qty: target.qty + delta }, "feeder placement");
+              } else {
+                const { error } = await supabase
+                  .from("placed_feeders")
+                  .insert({ vertical_id: vId, feeder_id: feederId, qty: delta, tier_number: 1, sort_order: 0 });
+                if (error) throw error;
+              }
+            } else {
+              let remaining = -delta;
+              for (const p of ordered) {
+                if (remaining <= 0) break;
+                const take = Math.min(remaining, p.qty);
+                const nextQty = p.qty - take;
+                if (nextQty <= 0) {
+                  await deleteChecked(supabase, "placed_feeders", p.id, "feeder placement");
+                } else {
+                  await updateChecked(supabase, "placed_feeders", p.id, { qty: nextQty }, "feeder placement");
+                }
+                remaining -= take;
+              }
+            }
           }
 
           if (!forked) {
@@ -721,12 +785,12 @@ export function BomBuilder({
     sb.ip_rating ? `IP${sb.ip_rating}` : null,
   ].filter((v): v is string => !!v);
 
-  // The same library feeder can legitimately be placed more than once (e.g.
-  // an identical outgoing MCCB feeder used in several bays) -- it stays in
-  // the picker every time rather than disappearing after the first add.
+  // A library feeder already in this BOM stays in the picker (selecting it
+  // again bumps its qty rather than disappearing) -- the badge shows how
+  // many are already in the BOM.
   const placedCounts = new Map<string, number>();
   for (const m of draft.modules) {
-    if (m.feeder.is_library) placedCounts.set(m.feeder.id, (placedCounts.get(m.feeder.id) ?? 0) + 1);
+    if (m.feeder.is_library) placedCounts.set(m.feeder.id, m.qty);
   }
   const bomCategories = Array.from(
     new Set(draft.modules.flatMap((m) => m.lines.map((l) => l.item.category)).filter((c): c is string => !!c))
@@ -797,7 +861,7 @@ export function BomBuilder({
       <div className="space-y-3">
         {draft.modules.map((mod) => (
           <FeederModuleCard
-            key={mod.placementId}
+            key={mod.feeder.id}
             mod={mod}
             readOnly={readOnly}
             canEditLines={!readOnly && (isAdmin || !mod.feeder.is_library)}
