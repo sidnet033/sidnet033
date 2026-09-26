@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { href: "/", label: "Costing", icon: "payments", activeMatch: (p: string) => p.startsWith("/revisions") },
   { href: "/item-master", label: "Item Master", icon: "inventory_2", activeMatch: (p: string) => p.startsWith("/item-master") },
   { href: "/feeders", label: "Feeder Master", icon: "alt_route", activeMatch: (p: string) => p.startsWith("/feeders") },
+  { href: "/dimensions-master", label: "Dimensions Master", icon: "square_foot", activeMatch: (p: string) => p.startsWith("/dimensions-master") },
 ];
 
 function initials(name: string) {

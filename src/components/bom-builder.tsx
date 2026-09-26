@@ -10,12 +10,14 @@ import { findDuplicateLibraryFeeder } from "@/lib/feeder-duplicate";
 import { ensureUnassignedVertical } from "@/lib/switchboard-bom";
 import { effectiveNetRate } from "@/lib/feeder-cost";
 import { computeFeederTag } from "@/lib/feeder-tag";
+import { DEVICE_TYPE_LABELS, MOTOR_STARTER_TYPES } from "@/lib/artuk-sizing";
 import { itemCode } from "@/lib/item-display";
 import { numericKeyGuard } from "@/lib/numeric-input";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { formatMoney } from "@/lib/money";
 import type {
+  DeviceType,
   Feeder,
   FeederItemWithDetails,
   ItemMaster,
@@ -23,6 +25,8 @@ import type {
   SwitchboardBusbarLine,
   SwitchboardEnclosureLine,
 } from "@/types/database";
+
+const DEVICE_TYPES = Object.keys(DEVICE_TYPE_LABELS) as DeviceType[];
 
 // BOM Builder always works in the base currency (INR) — it's the internal
 // costing/build tool, not a customer-facing price. Only switchboard/project
@@ -501,9 +505,16 @@ export function BomBuilder({
     );
   }
 
-  function renameFeeder(mod: DraftModule, field: "name" | "tag" | "rating_summary", value: string) {
+  function renameFeeder(mod: DraftModule, field: "name" | "tag" | "rating_summary" | "device_type", value: string) {
     setDraft((d) =>
       d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, feeder: { ...m.feeder, [field]: value || null } } : m)) } : d
+    );
+  }
+
+  function updateFeederRating(mod: DraftModule, field: "rated_current" | "rated_kw", value: string) {
+    const num = value.trim() ? Number(value) : null;
+    setDraft((d) =>
+      d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, feeder: { ...m.feeder, [field]: num } } : m)) } : d
     );
   }
 
@@ -876,6 +887,7 @@ export function BomBuilder({
             canEditLines={!readOnly && (isAdmin || !mod.feeder.is_library)}
             allItems={items}
             onRename={(field, value) => renameFeeder(mod, field, value)}
+            onRatingChange={(field, value) => updateFeederRating(mod, field, value)}
             onQtyChange={(qty) => updateModuleQty(mod, qty)}
             onAddLine={(item, qty) => addLine(mod, item, qty)}
             onItemCreated={handleItemCreated}
@@ -1024,6 +1036,7 @@ function FeederModuleCard({
   canEditLines,
   allItems,
   onRename,
+  onRatingChange,
   onQtyChange,
   onAddLine,
   onItemCreated,
@@ -1038,7 +1051,8 @@ function FeederModuleCard({
   readOnly: boolean;
   canEditLines: boolean;
   allItems: ItemMaster[];
-  onRename: (field: "name" | "tag" | "rating_summary", value: string) => void;
+  onRename: (field: "name" | "tag" | "rating_summary" | "device_type", value: string) => void;
+  onRatingChange: (field: "rated_current" | "rated_kw", value: string) => void;
   onQtyChange: (qty: number) => void;
   onAddLine: (item: ItemMaster, qty: number) => void;
   onItemCreated: (item: ItemMaster) => void;
@@ -1136,6 +1150,43 @@ function FeederModuleCard({
             placeholder="Rating summary"
             className="w-48 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-0.5 text-[11px] text-secondary disabled:border-transparent disabled:bg-transparent"
           />
+          <select
+            disabled={readOnly || !canEditLines}
+            value={mod.feeder.device_type ?? ""}
+            onChange={(e) => onRename("device_type", e.target.value)}
+            title="Device type -- drives GA Builder's automatic bay sizing for ArTuK boards"
+            className="w-32 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-0.5 text-[11px] text-secondary disabled:border-transparent disabled:bg-transparent"
+          >
+            <option value="">Device type...</option>
+            {DEVICE_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {DEVICE_TYPE_LABELS[t]}
+              </option>
+            ))}
+          </select>
+          {mod.feeder.device_type && MOTOR_STARTER_TYPES.includes(mod.feeder.device_type) ? (
+            <input
+              disabled={readOnly || !canEditLines}
+              type="text"
+              inputMode="decimal"
+              onKeyDown={numericKeyGuard()}
+              value={mod.feeder.rated_kw != null ? String(mod.feeder.rated_kw) : ""}
+              onChange={(e) => onRatingChange("rated_kw", e.target.value)}
+              placeholder="kW"
+              className="w-16 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-0.5 text-right text-[11px] text-secondary disabled:border-transparent disabled:bg-transparent"
+            />
+          ) : (
+            <input
+              disabled={readOnly || !canEditLines}
+              type="text"
+              inputMode="decimal"
+              onKeyDown={numericKeyGuard()}
+              value={mod.feeder.rated_current != null ? String(mod.feeder.rated_current) : ""}
+              onChange={(e) => onRatingChange("rated_current", e.target.value)}
+              placeholder="Amps"
+              className="w-16 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-0.5 text-right text-[11px] text-secondary disabled:border-transparent disabled:bg-transparent"
+            />
+          )}
         </div>
         <div className="flex items-center gap-1 text-xs text-secondary">
           <span>Qty</span>

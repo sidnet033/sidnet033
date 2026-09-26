@@ -17,6 +17,17 @@ import type { BayType, Feeder, PlacedFeeder, Switchboard, Vertical } from "@/typ
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { numericKeyGuard } from "@/lib/numeric-input";
+import {
+  ACB_2TIER_OUTGOING_E12,
+  ACB_SIZES,
+  MCC_FRONT_ACCESS_PAIR,
+  OUTGOING_MCC_BAY,
+  lookupAcbBaySpec,
+  lookupFeederBoxHeight,
+  suggestAcbFrame,
+  type AcbFrame,
+  type BayFunction,
+} from "@/lib/artuk-sizing";
 
 type VerticalWithFeeders = Vertical & {
   placed: (PlacedFeeder & { feeder: Feeder })[];
@@ -91,6 +102,8 @@ function makeSpareFeeder(name: string): Feeder {
     rated_current: null,
     pole_config: null,
     breaking_capacity: null,
+    device_type: null,
+    rated_kw: null,
   };
 }
 
@@ -151,6 +164,67 @@ function removeUnitFrom(verts: VerticalWithFeeders[], sourceVerticalId: string, 
     if (existing.qty > 1) return { ...v, placed: v.placed.map((p) => (p.id === existing.id ? { ...p, qty: p.qty - 1 } : p)) };
     return { ...v, placed: v.placed.filter((p) => p.id !== existing.id) };
   });
+}
+
+function makeVertical(
+  switchboardId: string,
+  name: string,
+  bayType: BayType,
+  widthMm: number,
+  depthMm: number | null,
+  sortOrder: number
+): VerticalWithFeeders {
+  return {
+    id: newId(),
+    switchboard_id: switchboardId,
+    name,
+    width_mm: widthMm,
+    depth_mm: depthMm,
+    bay_type: bayType,
+    sort_order: sortOrder,
+    created_at: new Date().toISOString(),
+    placed: [],
+  };
+}
+
+function placeUnit(verticalId: string, feeder: Feeder, tierNumber: number, sortOrder: number): PlacedWithFeeder {
+  return {
+    id: newId(),
+    vertical_id: verticalId,
+    feeder_id: feeder.id,
+    label_override: null,
+    qty: 1,
+    sort_order: sortOrder,
+    tier_number: tierNumber,
+    created_at: new Date().toISOString(),
+    feeder,
+  };
+}
+
+// "Incomer"/"Sub-Incomer" -> incomer, "Outgoing" -> outgoing, "Bus Coupler"
+// -> bus_coupler. "APFC Capacitor Bank" and unclassified feeders have no
+// ArTuK sizing data at all, so they're left for auto-generation to skip.
+function bayFunctionOf(feeder: Feeder): BayFunction | null {
+  const cat = (feeder.category ?? "").toLowerCase();
+  if (cat.includes("bus coupler")) return "bus_coupler";
+  if (cat.includes("incomer")) return "incomer";
+  if (cat.includes("outgoing")) return "outgoing";
+  return null;
+}
+
+// One entry per physical unit across the whole board (every bay + the
+// unassigned bucket) -- Auto-generate GA rebuilds the layout from scratch
+// each time it runs, same one-card-per-unit model already used for
+// AvailableUnit. Alley bays are skipped since they never hold feeders.
+function collectAllUnits(verts: VerticalWithFeeders[]): Feeder[] {
+  const units: Feeder[] = [];
+  for (const v of verts) {
+    if (v.bay_type === "cable_alley" || v.bay_type === "busbar_alley") continue;
+    for (const p of v.placed) {
+      for (let i = 0; i < p.qty; i++) units.push(p.feeder);
+    }
+  }
+  return units;
 }
 
 export function GaCanvas({
@@ -320,6 +394,167 @@ export function GaCanvas({
       feeder,
     };
     setVerticals(verts.map((v) => (v.id === unassigned.id ? { ...v, placed: [...v.placed, newRow] } : v)));
+  }
+
+  // Manual alternates to what Auto-generate GA picks by default (see
+  // artuk-sizing.ts's default policy) -- empty bays the user drags
+  // feeders into by hand, same as any other bay template.
+  function addMccFrontAccessPair() {
+    if (!sb || readOnly) return;
+    const primary = makeVertical(sb.id, "MCC Front Access", "outgoing", MCC_FRONT_ACCESS_PAIR.primary.widthMm, MCC_FRONT_ACCESS_PAIR.primary.depthMm, bays.length);
+    const paired = makeVertical(sb.id, "MCC Front Access", "outgoing", MCC_FRONT_ACCESS_PAIR.paired.widthMm, MCC_FRONT_ACCESS_PAIR.paired.depthMm, bays.length + 1);
+    setVerticals([...verticals, primary, paired]);
+  }
+
+  function add2TierOutgoingE12() {
+    if (!sb || readOnly) return;
+    const primary = makeVertical(sb.id, "Outgoing (E1.2 2-Tier)", "outgoing", ACB_2TIER_OUTGOING_E12.primary.widthMm, ACB_2TIER_OUTGOING_E12.primary.depthMm, bays.length);
+    const paired = makeVertical(sb.id, "Outgoing (E1.2 2-Tier)", "outgoing", ACB_2TIER_OUTGOING_E12.paired.widthMm, ACB_2TIER_OUTGOING_E12.paired.depthMm, bays.length + 1);
+    setVerticals([...verticals, primary, paired]);
+  }
+
+  // Rebuilds the whole bay layout from the BOM's feeders using ArTuK's
+  // standard sizing (see artuk-sizing.ts) -- ACB incomer/outgoing/bus-
+  // coupler units each get their own correctly-sized bay (pairing E1.2
+  // outgoing units two-at-a-time into the more space-efficient 2-tier
+  // combo), everything else with a device type set bin-packs by height
+  // into shared 720w rear-access MCC bays, and anything unclassified (or
+  // missing a rating) lands in the unassigned bucket instead of being
+  // guessed at. Cable Alley / Busbar Alley bays are never touched.
+  function autoGenerateGa() {
+    if (!sb || readOnly) return;
+    if (bays.length > 0) {
+      const proceed = window.confirm(
+        "This replaces your current bay layout. Cable Alley / Busbar Alley bays you've added manually are kept. Continue?"
+      );
+      if (!proceed) return;
+    }
+
+    const keptAlleys = bays
+      .filter((v) => v.bay_type === "cable_alley" || v.bay_type === "busbar_alley")
+      .sort((a, b) => a.sort_order - b.sort_order);
+
+    const { unassigned } = withUnassigned(verticals, sb.id);
+    const allUnits = collectAllUnits(verticals);
+
+    const acbGroups = new Map<string, Feeder[]>();
+    const nonAcbUnits: Feeder[] = [];
+    const unplaced: Feeder[] = [];
+
+    for (const feeder of allUnits) {
+      if (feeder.device_type === "ACB") {
+        const fn = bayFunctionOf(feeder);
+        if (!fn || feeder.rated_current == null) {
+          unplaced.push(feeder);
+          continue;
+        }
+        const frame = suggestAcbFrame(feeder.rated_current);
+        const key = `${frame}::${fn}`;
+        const arr = acbGroups.get(key) ?? [];
+        arr.push(feeder);
+        acbGroups.set(key, arr);
+      } else if (feeder.device_type && feeder.device_type !== "OTHER") {
+        if (lookupFeederBoxHeight(feeder) != null) nonAcbUnits.push(feeder);
+        else unplaced.push(feeder);
+      } else {
+        unplaced.push(feeder);
+      }
+    }
+
+    const generated: VerticalWithFeeders[] = [];
+    let sortOrder = keptAlleys.length;
+
+    // E1.2 outgoing ACBs pair up two-at-a-time into the 2-tier combo bay --
+    // any leftover odd unit falls back to the plain single-bay spec below.
+    const e12OutgoingKey = "E1.2::outgoing";
+    const e12Outgoing = acbGroups.get(e12OutgoingKey) ?? [];
+    acbGroups.delete(e12OutgoingKey);
+    let i = 0;
+    for (; i + 1 < e12Outgoing.length; i += 2) {
+      const primary = makeVertical(sb.id, `Outgoing ${sortOrder + 1}`, "outgoing", ACB_2TIER_OUTGOING_E12.primary.widthMm, ACB_2TIER_OUTGOING_E12.primary.depthMm, sortOrder++);
+      primary.placed = [placeUnit(primary.id, e12Outgoing[i], 1, 0)];
+      generated.push(primary);
+      const paired = makeVertical(sb.id, `Outgoing ${sortOrder + 1}`, "outgoing", ACB_2TIER_OUTGOING_E12.paired.widthMm, ACB_2TIER_OUTGOING_E12.paired.depthMm, sortOrder++);
+      paired.placed = [placeUnit(paired.id, e12Outgoing[i + 1], 1, 0)];
+      generated.push(paired);
+    }
+    if (i < e12Outgoing.length) {
+      acbGroups.set(e12OutgoingKey, [e12Outgoing[i]]);
+    }
+
+    for (const [key, feeders] of acbGroups) {
+      const [frame, fn] = key.split("::") as [AcbFrame, BayFunction];
+      let spec = lookupAcbBaySpec(frame, fn);
+      if (!spec) {
+        // No dedicated ArTuK bay-spec row for this combination (only
+        // happens for E4.2/E6.2 bus-coupler, absent from the source's 11
+        // sample rows) -- fall back to the device's own generic
+        // dimensions, using the same 1037mm depth as the rest of the board.
+        const bracket = ACB_SIZES.find((b) => b.frame === frame);
+        if (bracket) {
+          spec = { frame, function: fn, widthMm: bracket.width4P100, heightMm: 2231, depthMm: 1037, ipRating: 54, form: "4b", label: `${frame} ${fn} (generic -- no ArTuK bay-spec row for this combination)` };
+        }
+      }
+      if (!spec) {
+        unplaced.push(...feeders);
+        continue;
+      }
+      const namePrefix = fn === "incomer" ? "Incomer" : fn === "bus_coupler" ? "Bus Coupler" : "Outgoing";
+      const bayTypeMap: Record<BayFunction, BayType> = { incomer: "incomer", outgoing: "outgoing", bus_coupler: "bus_coupler" };
+      for (const feeder of feeders) {
+        const primary = makeVertical(sb.id, `${namePrefix} ${sortOrder + 1}`, bayTypeMap[fn], spec.widthMm, spec.depthMm, sortOrder++);
+        primary.placed = [placeUnit(primary.id, feeder, 1, 0)];
+        generated.push(primary);
+        if (spec.pairedWith) {
+          const paired = makeVertical(sb.id, spec.pairedWith.name ?? `${namePrefix} ${sortOrder + 1}`, spec.pairedWith.bayType, spec.pairedWith.widthMm, spec.depthMm, sortOrder++);
+          generated.push(paired);
+        }
+      }
+    }
+
+    // Bin-pack every non-ACB classified feeder (largest first) into shared
+    // 720w rear-access MCC bays, using the switchboard's panel height minus
+    // a flat 200mm top/bottom clearance allowance as the usable height.
+    const usableHeight = (panelHeight || 2231) - 200;
+    const sortedNonAcb = [...nonAcbUnits].sort((a, b) => (lookupFeederBoxHeight(b) ?? 0) - (lookupFeederBoxHeight(a) ?? 0));
+    let currentBay: VerticalWithFeeders | null = null;
+    let currentHeightUsed = 0;
+    let currentTier = 1;
+    for (const feeder of sortedNonAcb) {
+      const h = lookupFeederBoxHeight(feeder)!;
+      if (!currentBay || currentHeightUsed + h > usableHeight) {
+        currentBay = makeVertical(sb.id, `Outgoing ${sortOrder + 1}`, "outgoing", OUTGOING_MCC_BAY.widthMm, OUTGOING_MCC_BAY.depthMm, sortOrder++);
+        generated.push(currentBay);
+        currentHeightUsed = 0;
+        currentTier = 1;
+      }
+      currentBay.placed.push(placeUnit(currentBay.id, feeder, currentTier, currentBay.placed.length));
+      currentHeightUsed += h;
+      currentTier++;
+    }
+
+    const unplacedQtyByFeeder = new Map<string, { feeder: Feeder; qty: number }>();
+    for (const feeder of unplaced) {
+      const existing = unplacedQtyByFeeder.get(feeder.id);
+      if (existing) existing.qty += 1;
+      else unplacedQtyByFeeder.set(feeder.id, { feeder, qty: 1 });
+    }
+    const unassignedBay: VerticalWithFeeders = {
+      ...unassigned,
+      placed: Array.from(unplacedQtyByFeeder.values()).map((u, idx) => ({
+        id: newId(),
+        vertical_id: unassigned.id,
+        feeder_id: u.feeder.id,
+        label_override: null,
+        qty: u.qty,
+        sort_order: idx,
+        tier_number: 1,
+        created_at: new Date().toISOString(),
+        feeder: u.feeder,
+      })),
+    };
+
+    setVerticals([...keptAlleys, ...generated, unassignedBay]);
   }
 
   // A unit dropped from the available-feeders list moves exactly one unit
@@ -668,6 +903,20 @@ export function GaCanvas({
           </aside>
 
           <div className="flex flex-1 flex-col overflow-hidden">
+            {!readOnly && sb?.std === "ArTuK" && (
+              <div className="mb-3">
+                <button
+                  onClick={autoGenerateGa}
+                  className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary shadow-sm hover:bg-primary-container"
+                >
+                  <Icon name="auto_awesome" size={14} className="mr-1 inline" /> Auto-generate GA
+                </button>
+                <p className="mt-1 text-[11px] text-on-surface-variant">
+                  Builds bays from the BOM&rsquo;s feeders using ArTuK standard sizing. Give each feeder a Device Type and rating in BOM Builder
+                  first -- see Dimensions Master for how sizes are worked out. You can still edit any bay afterward.
+                </p>
+              </div>
+            )}
             {!readOnly && (
               <div className="mb-3 flex flex-wrap gap-2">
                 {BAY_TEMPLATES.map((t) => (
@@ -679,6 +928,24 @@ export function GaCanvas({
                     {t.label}
                   </button>
                 ))}
+                {sb?.std === "ArTuK" && (
+                  <>
+                    <button
+                      onClick={add2TierOutgoingE12}
+                      title="ArTu-K 920+720w Emax 2 E1.2 2-Tier ACB Outgoing"
+                      className="rounded-md border border-dashed border-surface-container-high px-2.5 py-1 text-xs font-medium text-on-surface-variant hover:border-primary/40 hover:text-primary"
+                    >
+                      + 2-Tier ACB Outgoing (E1.2)
+                    </button>
+                    <button
+                      onClick={addMccFrontAccessPair}
+                      title={MCC_FRONT_ACCESS_PAIR.note}
+                      className="rounded-md border border-dashed border-surface-container-high px-2.5 py-1 text-xs font-medium text-on-surface-variant hover:border-primary/40 hover:text-primary"
+                    >
+                      + MCC Vertical Pair (Front Access)
+                    </button>
+                  </>
+                )}
               </div>
             )}
 

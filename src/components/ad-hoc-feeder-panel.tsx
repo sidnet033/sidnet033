@@ -6,7 +6,11 @@ import { itemCode } from "@/lib/item-display";
 import { numericKeyGuard } from "@/lib/numeric-input";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
-import type { Feeder, ItemMaster } from "@/types/database";
+import { DEVICE_TYPE_LABELS, MOTOR_STARTER_TYPES } from "@/lib/artuk-sizing";
+import type { DeviceType, Feeder, ItemMaster } from "@/types/database";
+
+const FEEDER_TYPES = ["Incomer", "Outgoing", "Bus Coupler", "Sub-Incomer", "APFC Capacitor Bank"];
+const DEVICE_TYPES = Object.keys(DEVICE_TYPE_LABELS) as DeviceType[];
 
 type NewFeederLine = { item: ItemMaster; qty: number };
 
@@ -22,6 +26,9 @@ export function AdHocFeederPanel({
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
+  const [deviceType, setDeviceType] = useState<DeviceType | "">("");
+  const [ratedCurrent, setRatedCurrent] = useState("");
+  const [ratedKw, setRatedKw] = useState("");
   const [lines, setLines] = useState<NewFeederLine[]>([]);
   const [itemSearch, setItemSearch] = useState("");
   const [selectedItemId, setSelectedItemId] = useState("");
@@ -55,6 +62,9 @@ export function AdHocFeederPanel({
   function reset() {
     setName("");
     setCategory("");
+    setDeviceType("");
+    setRatedCurrent("");
+    setRatedKw("");
     setLines([]);
     setError(null);
     setOpen(false);
@@ -81,7 +91,10 @@ export function AdHocFeederPanel({
       .from("feeders")
       .insert({
         name: name.trim(),
-        category: category.trim() || null,
+        category: category || null,
+        device_type: deviceType || null,
+        rated_current: ratedCurrent ? Number(ratedCurrent) : null,
+        rated_kw: ratedKw ? Number(ratedKw) : null,
         switchboard_id: switchboardId,
         is_library: false,
         created_by: user?.id,
@@ -128,12 +141,58 @@ export function AdHocFeederPanel({
         placeholder="Feeder name"
         className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
       />
-      <input
-        value={category}
-        onChange={(e) => setCategory(e.target.value)}
-        placeholder="Category (optional)"
-        className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
-      />
+      <div className="grid grid-cols-2 gap-2">
+        <select
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
+        >
+          <option value="">Function (optional)...</option>
+          {FEEDER_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+        <select
+          value={deviceType}
+          onChange={(e) => setDeviceType(e.target.value as DeviceType | "")}
+          className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
+        >
+          <option value="">Device type (optional)...</option>
+          {DEVICE_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {DEVICE_TYPE_LABELS[t]}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {deviceType && (
+        <div className="flex items-center gap-2">
+          {MOTOR_STARTER_TYPES.includes(deviceType as DeviceType) ? (
+            <input
+              type="text"
+              inputMode="decimal"
+              value={ratedKw}
+              onChange={(e) => setRatedKw(e.target.value)}
+              onKeyDown={numericKeyGuard()}
+              placeholder="Rated power (kW)"
+              className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
+            />
+          ) : (
+            <input
+              type="text"
+              inputMode="decimal"
+              value={ratedCurrent}
+              onChange={(e) => setRatedCurrent(e.target.value)}
+              onKeyDown={numericKeyGuard()}
+              placeholder="Rated current (A)"
+              className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
+            />
+          )}
+        </div>
+      )}
 
       <div className="relative">
         <input

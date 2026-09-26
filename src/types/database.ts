@@ -89,7 +89,11 @@ export type Feeder = {
   rated_current: number | null;
   pole_config: string | null;
   breaking_capacity: string | null;
+  device_type: DeviceType | null;
+  rated_kw: number | null;
 };
+
+export type DeviceType = "ACB" | "MCCB" | "MCB" | "DOL" | "RDOL" | "STAR_DELTA" | "VFD" | "SOFT_STARTER" | "OTHER";
 
 export type FeederItem = {
   id: string;

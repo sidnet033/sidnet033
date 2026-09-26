@@ -9,11 +9,13 @@ import { itemCode } from "@/lib/item-display";
 import { numericKeyGuard } from "@/lib/numeric-input";
 import { effectiveNetRate } from "@/lib/feeder-cost";
 import { computeFeederTag } from "@/lib/feeder-tag";
-import type { Feeder, FeederItemWithDetails, ItemMaster } from "@/types/database";
+import { DEVICE_TYPE_LABELS, MOTOR_STARTER_TYPES } from "@/lib/artuk-sizing";
+import type { DeviceType, Feeder, FeederItemWithDetails, ItemMaster } from "@/types/database";
 
 const FEEDER_TYPES = ["Incomer", "Outgoing", "Bus Coupler", "Sub-Incomer", "APFC Capacitor Bank"];
 const POLE_CONFIGS = ["3-Pole (3P)", "4-Pole (4P)", "3P + N", "2-Pole (2P)"];
 const BREAKING_CAPACITIES = ["65 kA (1s)", "50 kA (1s)", "36 kA (1s)", "25 kA (1s)", "100 kA (1s)"];
+const DEVICE_TYPES = Object.keys(DEVICE_TYPE_LABELS) as DeviceType[];
 
 function money(n: number) {
   return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
@@ -41,6 +43,8 @@ type FeederFormState = {
   description: string;
   pole_config: string;
   breaking_capacity: string;
+  device_type: DeviceType | "";
+  rated_kw: string;
 };
 
 function formOf(f: Feeder): FeederFormState {
@@ -51,6 +55,8 @@ function formOf(f: Feeder): FeederFormState {
     description: f.description ?? "",
     pole_config: f.pole_config ?? "",
     breaking_capacity: f.breaking_capacity ?? "",
+    device_type: f.device_type ?? "",
+    rated_kw: f.rated_kw != null ? String(f.rated_kw) : "",
   };
 }
 
@@ -220,6 +226,8 @@ export function FeederMasterWorkspace({
       description: form.description || null,
       pole_config: form.pole_config || null,
       breaking_capacity: form.breaking_capacity || null,
+      device_type: form.device_type || null,
+      rated_kw: form.rated_kw ? Number(form.rated_kw) : null,
       updated_at: new Date().toISOString(),
     };
     const { error } = await supabase.from("feeders").update(patch).eq("id", selectedFeeder.id);
@@ -550,6 +558,23 @@ export function FeederMasterWorkspace({
                       <Icon name="expand_more" size={18} className="pointer-events-none absolute right-space-sm text-on-surface-variant" />
                     </div>
                   </FormField>
+                  <FormField label="Device Type">
+                    <div className="relative flex items-center">
+                      <select
+                        value={form.device_type}
+                        onChange={(e) => updateField("device_type", e.target.value as DeviceType | "")}
+                        className="h-9 w-full appearance-none rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-8 font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        <option value="">Select device...</option>
+                        {DEVICE_TYPES.map((t) => (
+                          <option key={t} value={t}>
+                            {DEVICE_TYPE_LABELS[t]}
+                          </option>
+                        ))}
+                      </select>
+                      <Icon name="expand_more" size={18} className="pointer-events-none absolute right-space-sm text-on-surface-variant" />
+                    </div>
+                  </FormField>
                 </div>
 
                 <div className="flex flex-col gap-space-md">
@@ -572,21 +597,39 @@ export function FeederMasterWorkspace({
                 </div>
 
                 <div className="flex flex-col gap-space-md">
-                  <FormField label="Rated Current">
-                    <div className="relative flex items-center">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={form.rated_current}
-                        onChange={(e) => updateField("rated_current", e.target.value)}
-                        onKeyDown={numericKeyGuard()}
-                        className="h-9 w-full rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-10 text-right font-telemetry-md text-telemetry-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                      />
-                      <span className="pointer-events-none absolute right-0 top-0 bottom-0 flex items-center rounded-r border-l border-outline-variant bg-surface-container-low px-space-sm font-telemetry-md text-telemetry-md font-bold text-on-surface-variant">
-                        A
-                      </span>
-                    </div>
-                  </FormField>
+                  {MOTOR_STARTER_TYPES.includes(form.device_type as DeviceType) ? (
+                    <FormField label="Rated Power">
+                      <div className="relative flex items-center">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={form.rated_kw}
+                          onChange={(e) => updateField("rated_kw", e.target.value)}
+                          onKeyDown={numericKeyGuard()}
+                          className="h-9 w-full rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-10 text-right font-telemetry-md text-telemetry-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                        <span className="pointer-events-none absolute right-0 top-0 bottom-0 flex items-center rounded-r border-l border-outline-variant bg-surface-container-low px-space-sm font-telemetry-md text-telemetry-md font-bold text-on-surface-variant">
+                          kW
+                        </span>
+                      </div>
+                    </FormField>
+                  ) : (
+                    <FormField label="Rated Current">
+                      <div className="relative flex items-center">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={form.rated_current}
+                          onChange={(e) => updateField("rated_current", e.target.value)}
+                          onKeyDown={numericKeyGuard()}
+                          className="h-9 w-full rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-10 text-right font-telemetry-md text-telemetry-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                        <span className="pointer-events-none absolute right-0 top-0 bottom-0 flex items-center rounded-r border-l border-outline-variant bg-surface-container-low px-space-sm font-telemetry-md text-telemetry-md font-bold text-on-surface-variant">
+                          A
+                        </span>
+                      </div>
+                    </FormField>
+                  )}
                   <div className="grid grid-cols-2 gap-space-sm">
                     <FormField label="Pole Config">
                       <div className="relative flex items-center">
