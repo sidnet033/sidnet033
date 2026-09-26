@@ -20,6 +20,7 @@ import { numericKeyGuard } from "@/lib/numeric-input";
 import {
   ACB_2TIER_OUTGOING_E12,
   ACB_SIZES,
+  DEVICE_TYPE_LABELS,
   MCC_FRONT_ACCESS_PAIR,
   OUTGOING_MCC_BAY,
   lookupAcbBaySpec,
@@ -104,6 +105,53 @@ function computeCompartments(vertical: VerticalWithFeeders, panelHeightMm: numbe
     compartments.push({ id: `${vertical.id}-blank`, label: blankCompartmentLabel(vertical.bay_type), heightMm: remaining, topMm: used, isBlank: true });
   }
   return compartments;
+}
+
+// Plain-language explanation of why THIS bay currently has the
+// width/depth it has -- read directly off the same ArTuK sizing lookups
+// Auto-generate GA uses, so it stays accurate for auto-generated bays and
+// still useful (naming what a manual bay is missing) for hand-built ones.
+function explainBay(v: VerticalWithFeeders): string[] {
+  if (v.bay_type === "cable_alley") return ["Cable Alley — structural bay for cable routing; width/depth set by hand."];
+  if (v.bay_type === "busbar_alley") return ["Busbar Alley — structural bay for the busbar run; width/depth set by hand."];
+  if (v.placed.length === 0) return ["No feeders placed yet — width/depth set by hand."];
+
+  const lines: string[] = [];
+  const acbUnits = v.placed.filter((p) => p.feeder.device_type === "ACB");
+  const otherClassified = v.placed.filter((p) => p.feeder.device_type && p.feeder.device_type !== "ACB" && p.feeder.device_type !== "OTHER");
+  const unclassified = v.placed.filter((p) => !p.feeder.device_type || p.feeder.device_type === "OTHER");
+
+  if (acbUnits.length > 0) {
+    const p = acbUnits[0];
+    if (p.feeder.rated_current != null) {
+      const frame = suggestAcbFrame(p.feeder.rated_current);
+      const fn = bayFunctionOf(p.feeder) ?? "outgoing";
+      const spec = lookupAcbBaySpec(frame, fn);
+      if (spec) {
+        lines.push(`ACB ${p.feeder.rated_current}A → frame ${frame}, ${fn.replace("_", " ")} → ArTuK spec: ${spec.widthMm}×${spec.heightMm}×${spec.depthMm}mm (IP${spec.ipRating}, Form ${spec.form}).`);
+        if (v.width_mm !== spec.widthMm) lines.push(`Current width ${v.width_mm ?? "—"}mm differs from the ${spec.widthMm}mm standard — likely adjusted by hand.`);
+      } else {
+        lines.push(`ACB ${p.feeder.rated_current}A → frame ${frame}, ${fn.replace("_", " ")} → no ArTuK bay-spec row for this combination; generic device dimensions used, 1037mm depth assumed.`);
+      }
+    } else {
+      lines.push("ACB with no rated current set — width/depth set by hand; give it a rating in BOM Builder for a real ArTuK size.");
+    }
+    if (acbUnits.length > 1) lines.push(`${acbUnits.length} ACB units share this bay — unusual; each ACB normally gets its own dedicated bay.`);
+  }
+
+  if (otherClassified.length > 0) {
+    const types = Array.from(new Set(otherClassified.map((p) => DEVICE_TYPE_LABELS[p.feeder.device_type!])));
+    lines.push(
+      `${otherClassified.length} feeder(s) (${types.join(", ")}) pack into ArTuK's standard ${OUTGOING_MCC_BAY.widthMm}×${OUTGOING_MCC_BAY.depthMm}mm outgoing module, stacked by each feeder's rated height (see Dimensions Master).`
+    );
+    if (v.width_mm !== OUTGOING_MCC_BAY.widthMm) lines.push(`Current width ${v.width_mm ?? "—"}mm differs from the ${OUTGOING_MCC_BAY.widthMm}mm standard — likely adjusted by hand.`);
+  }
+
+  if (unclassified.length > 0) {
+    lines.push(`${unclassified.length} feeder(s) with no Device Type set — sized with a flat ${DEFAULT_COMPARTMENT_HEIGHT_MM}mm fallback slot; set Device Type + rating in BOM Builder for a real ArTuK height.`);
+  }
+
+  return lines;
 }
 
 function newId() {
@@ -310,6 +358,9 @@ export function GaCanvas({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [draggingFeeder, setDraggingFeeder] = useState<Feeder | null>(null);
   const [hover, setHover] = useState<HoverExtent>(null);
+  const [selectedBayId, setSelectedBayId] = useState<string | null>(null);
+  const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
+  const [sizingLogicOpen, setSizingLogicOpen] = useState(true);
 
   async function refreshGaData() {
     const data = await loadGaData(supabase, switchboardId);
@@ -371,6 +422,7 @@ export function GaCanvas({
 
   const totalHeightMm = BUSBAR_CHAMBER_HEIGHT_MM + panelHeight + plinthHeight;
   const pxPerMm = computePxPerMm(totalHeightMm);
+  const selectedBay = bays.find((v) => v.id === selectedBayId) ?? null;
 
   // Physically, the busbar chamber sits away from wherever cables enter the
   // panel (more room to route cable near the entry side); the base plinth
@@ -1044,11 +1096,10 @@ export function GaCanvas({
                           pxPerMm={pxPerMm}
                           panelHeightMm={panelHeight}
                           bayLeftMm={bayOffsets[i]}
+                          isSelected={selectedBayId === v.id}
+                          onSelect={() => setSelectedBayId(v.id)}
                           onHover={setHover}
                           onHoverEnd={() => setHover(null)}
-                          onRename={(newName) => renameBay(v.id, newName)}
-                          onDimChange={(field, val) => setBayDim(v.id, field, val)}
-                          onDelete={() => deleteBay(v.id)}
                           onRemove={(placedId) => removeFromBay(v.id, placedId)}
                         />
                       ))}
@@ -1075,6 +1126,69 @@ export function GaCanvas({
               )}
             </div>
           </div>
+
+          <aside
+            className={`shrink-0 overflow-y-auto rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-xs transition-[width] ${
+              rightSidebarCollapsed ? "w-11 p-2" : "w-80 p-3"
+            }`}
+          >
+            <button
+              onClick={() => setRightSidebarCollapsed(!rightSidebarCollapsed)}
+              title={rightSidebarCollapsed ? "Expand bay details" : "Collapse bay details"}
+              className={`mb-2 flex items-center justify-center rounded p-1 text-secondary hover:bg-surface-container-low ${
+                rightSidebarCollapsed ? "w-full" : ""
+              }`}
+            >
+              <Icon name={rightSidebarCollapsed ? "chevron_left" : "chevron_right"} size={16} />
+            </button>
+
+            {!rightSidebarCollapsed && (
+              <>
+                <BayDetailsPanel
+                  key={selectedBay?.id ?? "none"}
+                  vertical={selectedBay}
+                  readOnly={readOnly}
+                  onRename={(name) => selectedBay && renameBay(selectedBay.id, name)}
+                  onDimChange={(field, val) => selectedBay && setBayDim(selectedBay.id, field, val)}
+                  onDelete={() => {
+                    if (!selectedBay) return;
+                    deleteBay(selectedBay.id);
+                    setSelectedBayId(null);
+                  }}
+                  onClose={() => setSelectedBayId(null)}
+                />
+
+                <div className="mt-4 border-t border-surface-container-high pt-3">
+                  <button
+                    onClick={() => setSizingLogicOpen((v) => !v)}
+                    className="flex w-full items-center justify-between text-left font-label-sm text-label-sm uppercase tracking-wide text-secondary"
+                  >
+                    Sizing Logic
+                    <Icon name={sizingLogicOpen ? "expand_less" : "expand_more"} size={16} />
+                  </button>
+                  {sizingLogicOpen && (
+                    <div className="mt-2 space-y-2">
+                      <p className="font-body-sm text-[11px] leading-snug text-on-surface-variant">
+                        How each bay&rsquo;s width and height were worked out, based on its placed feeders. See Dimensions Master for the
+                        underlying ArTuK data.
+                      </p>
+                      {bays.length === 0 && <p className="font-body-sm text-body-sm text-on-surface-variant">No bays yet.</p>}
+                      {bays.map((v) => (
+                        <div key={v.id} className="rounded border border-surface-container-high p-2">
+                          <p className="font-body-sm text-body-sm font-semibold text-on-surface">{v.name}</p>
+                          {explainBay(v).map((line, i) => (
+                            <p key={i} className="mt-1 text-[11px] leading-snug text-on-surface-variant">
+                              {line}
+                            </p>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </aside>
         </div>
       </div>
 
@@ -1207,17 +1321,20 @@ function HorizontalRuler({
   );
 }
 
+// The bay's own outline -- to-scale, no header box above it (that used to
+// throw off alignment with the ruler since it had its own minimum width
+// independent of the drawing's scale). Clicking the bay selects it, and
+// its name/type/width/depth become editable in the right sidebar instead.
 function BayColumn({
   vertical,
   readOnly,
   pxPerMm,
   panelHeightMm,
   bayLeftMm,
+  isSelected,
+  onSelect,
   onHover,
   onHoverEnd,
-  onRename,
-  onDimChange,
-  onDelete,
   onRemove,
 }: {
   vertical: VerticalWithFeeders;
@@ -1225,17 +1342,13 @@ function BayColumn({
   pxPerMm: number;
   panelHeightMm: number;
   bayLeftMm: number;
+  isSelected: boolean;
+  onSelect: () => void;
   onHover: (extent: HoverExtent) => void;
   onHoverEnd: () => void;
-  onRename: (name: string) => void;
-  onDimChange: (field: "width_mm" | "depth_mm", value: string) => void;
-  onDelete: () => void;
   onRemove: (placedId: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `bay-${vertical.id}`, disabled: readOnly });
-  const [localName, setLocalName] = useState(vertical.name);
-  const [localWidth, setLocalWidth] = useState(vertical.width_mm ? String(vertical.width_mm) : "");
-  const [localDepth, setLocalDepth] = useState(vertical.depth_mm ? String(vertical.depth_mm) : "");
 
   const widthMm = vertical.width_mm ?? 0;
   const widthPx = widthMm * pxPerMm;
@@ -1243,28 +1356,94 @@ function BayColumn({
   const compartments = computeCompartments(vertical, panelHeightMm);
 
   return (
-    <div className="flex shrink-0 flex-col">
-      <div className="mb-1 rounded border border-surface-container-high bg-surface-container-lowest p-1.5" style={{ width: Math.max(widthPx, 96) }}>
-        <div className="flex items-center justify-between gap-1">
-          <input
-            value={localName}
-            disabled={readOnly}
-            onChange={(e) => setLocalName(e.target.value)}
-            onBlur={() => onRename(localName)}
-            className="w-full rounded border-none bg-transparent px-0.5 py-0.5 text-[11px] font-semibold text-on-surface focus:bg-surface-container-low disabled:text-secondary"
-          />
-          {!readOnly && (
-            <button onClick={onDelete} title="Delete bay" className="shrink-0 text-error hover:text-error/80">
-              <Icon name="close" size={13} />
+    <div
+      ref={setNodeRef}
+      onClick={onSelect}
+      className={`relative shrink-0 cursor-pointer border bg-white ${isOver ? "border-primary" : isSelected ? "border-2 border-primary" : "border-black/70"}`}
+      style={{ width: Math.max(widthPx, 2), height: Math.max(heightPx, 2) }}
+    >
+      {compartments.map((c) => (
+        <div
+          key={c.id}
+          onMouseEnter={() => onHover({ topMm: c.topMm, heightMm: c.heightMm, bayLeftMm, bayWidthMm: widthMm, label: c.label })}
+          onMouseLeave={onHoverEnd}
+          title={`${c.label} — ${widthMm}mm × ${c.heightMm}mm`}
+          className={`group relative flex items-center justify-center overflow-hidden border-b border-black/40 px-1 text-center last:border-b-0 ${
+            c.isBlank ? "bg-surface-container-low/50" : "bg-white hover:bg-amber-50"
+          }`}
+          style={{ height: Math.max(c.heightMm * pxPerMm, 1) }}
+        >
+          <span className="truncate font-telemetry-md text-[9px] uppercase tracking-wide text-black">{c.label}</span>
+          {!c.isBlank && !readOnly && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemove(c.id);
+              }}
+              title="Move back to available feeders"
+              className="absolute right-0.5 top-0.5 text-error opacity-0 group-hover:opacity-100"
+            >
+              <Icon name="close" size={10} />
             </button>
           )}
         </div>
-        {vertical.bay_type && (
-          <span className="mb-1 inline-block rounded border border-surface-container-high bg-surface-container-low px-1 py-0.5 text-[9px] capitalize text-secondary">
-            {vertical.bay_type.replace("_", " ")}
-          </span>
-        )}
-        <div className="flex items-center gap-1 font-telemetry-md text-[10px] text-on-surface-variant">
+      ))}
+    </div>
+  );
+}
+
+// Editable name/type/width/depth for whichever bay is currently selected
+// -- lives in the right sidebar instead of a header above each bay, which
+// used to throw off the drawing's alignment with the ruler.
+function BayDetailsPanel({
+  vertical,
+  readOnly,
+  onRename,
+  onDimChange,
+  onDelete,
+  onClose,
+}: {
+  vertical: VerticalWithFeeders | null;
+  readOnly: boolean;
+  onRename: (name: string) => void;
+  onDimChange: (field: "width_mm" | "depth_mm", value: string) => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  const [localName, setLocalName] = useState(vertical?.name ?? "");
+  const [localWidth, setLocalWidth] = useState(vertical?.width_mm ? String(vertical.width_mm) : "");
+  const [localDepth, setLocalDepth] = useState(vertical?.depth_mm ? String(vertical.depth_mm) : "");
+
+  if (!vertical) {
+    return <p className="font-body-sm text-body-sm text-on-surface-variant">Click a bay in the drawing to edit its name, type, and dimensions here.</p>;
+  }
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between">
+        <p className="font-label-sm text-label-sm uppercase tracking-wide text-secondary">Bay Details</p>
+        <button onClick={onClose} title="Deselect" className="text-secondary hover:text-on-surface">
+          <Icon name="close" size={14} />
+        </button>
+      </div>
+      <label className="mb-2 block">
+        <span className="mb-1 block text-[10px] font-medium text-on-surface-variant">Name</span>
+        <input
+          value={localName}
+          disabled={readOnly}
+          onChange={(e) => setLocalName(e.target.value)}
+          onBlur={() => onRename(localName)}
+          className="w-full rounded border border-surface-container-high px-2 py-1 text-sm disabled:bg-surface-container-low"
+        />
+      </label>
+      {vertical.bay_type && (
+        <span className="mb-2 inline-block rounded border border-surface-container-high bg-surface-container-low px-1.5 py-0.5 text-[10px] capitalize text-secondary">
+          {vertical.bay_type.replace("_", " ")}
+        </span>
+      )}
+      <div className="mb-3 flex items-end gap-2">
+        <label>
+          <span className="mb-1 block text-[10px] font-medium text-on-surface-variant">Width</span>
           <input
             type="text"
             inputMode="decimal"
@@ -1273,10 +1452,11 @@ function BayColumn({
             onChange={(e) => setLocalWidth(e.target.value)}
             onKeyDown={numericKeyGuard()}
             onBlur={() => onDimChange("width_mm", localWidth)}
-            placeholder="W"
-            className="w-10 rounded border border-surface-container-high px-1 py-0.5 disabled:bg-surface-container-low"
+            className="w-20 rounded border border-surface-container-high px-2 py-1 text-sm disabled:bg-surface-container-low"
           />
-          ×
+        </label>
+        <label>
+          <span className="mb-1 block text-[10px] font-medium text-on-surface-variant">Depth</span>
           <input
             type="text"
             inputMode="decimal"
@@ -1285,42 +1465,16 @@ function BayColumn({
             onChange={(e) => setLocalDepth(e.target.value)}
             onKeyDown={numericKeyGuard()}
             onBlur={() => onDimChange("depth_mm", localDepth)}
-            placeholder="D"
-            className="w-10 rounded border border-surface-container-high px-1 py-0.5 disabled:bg-surface-container-low"
+            className="w-20 rounded border border-surface-container-high px-2 py-1 text-sm disabled:bg-surface-container-low"
           />
-          <span>mm</span>
-        </div>
+        </label>
+        <span className="pb-1.5 text-xs text-on-surface-variant">mm</span>
       </div>
-
-      <div
-        ref={setNodeRef}
-        className={`relative shrink-0 border bg-white ${isOver ? "border-primary" : "border-black/70"}`}
-        style={{ width: Math.max(widthPx, 1), height: Math.max(heightPx, 1) }}
-      >
-        {compartments.map((c) => (
-          <div
-            key={c.id}
-            onMouseEnter={() => onHover({ topMm: c.topMm, heightMm: c.heightMm, bayLeftMm, bayWidthMm: widthMm, label: c.label })}
-            onMouseLeave={onHoverEnd}
-            title={`${c.label} — ${widthMm}mm × ${c.heightMm}mm`}
-            className={`group relative flex items-center justify-center overflow-hidden border-b border-black/40 px-1 text-center last:border-b-0 ${
-              c.isBlank ? "bg-surface-container-low/50" : "bg-white hover:bg-amber-50"
-            }`}
-            style={{ height: Math.max(c.heightMm * pxPerMm, 1) }}
-          >
-            <span className="truncate font-telemetry-md text-[9px] uppercase tracking-wide text-black">{c.label}</span>
-            {!c.isBlank && !readOnly && (
-              <button
-                onClick={() => onRemove(c.id)}
-                title="Move back to available feeders"
-                className="absolute right-0.5 top-0.5 text-error opacity-0 group-hover:opacity-100"
-              >
-                <Icon name="close" size={10} />
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
+      {!readOnly && (
+        <button onClick={onDelete} className="font-body-sm text-body-sm text-error hover:underline">
+          Delete bay
+        </button>
+      )}
     </div>
   );
 }
