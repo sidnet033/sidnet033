@@ -10,6 +10,7 @@ import { StageStepper } from "@/components/stage-stepper";
 import { COUNTRIES } from "@/lib/countries";
 import { CURRENCIES } from "@/lib/currencies";
 import { formatMoneyDual } from "@/lib/money";
+import { numericKeyGuard } from "@/lib/numeric-input";
 import type { SwitchboardListItem } from "@/lib/revision-context";
 import type { Customer, Project, ProjectStage, Revision, Switchboard } from "@/types/database";
 import type { Tab } from "@/components/revision-workspace";
@@ -475,12 +476,12 @@ export function ProjectDetailTab({
                 </Field>
                 <Field label="Exchange Rate" className="sm:col-span-2">
                   <input
-                    type="number"
-                    step="0.0001"
-                    min="0"
+                    type="text"
+                    inputMode="decimal"
                     disabled={revisionArchived}
                     value={form.exchange_rate}
                     onChange={(e) => patch("exchange_rate", Number(e.target.value) || 0)}
+                    onKeyDown={numericKeyGuard()}
                     className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low"
                   />
                 </Field>
@@ -688,10 +689,11 @@ export function ProjectDetailTab({
                       </td>
                       <td className="px-space-md py-space-md text-right">
                         <input
-                          type="number"
-                          min="1"
+                          type="text"
+                          inputMode="numeric"
                           disabled={rowDisabled}
                           defaultValue={sb.qty}
+                          onKeyDown={numericKeyGuard()}
                           onBlur={(e) => {
                             const next = Number(e.target.value) || 1;
                             if (next === sb.qty) return;

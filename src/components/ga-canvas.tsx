@@ -19,6 +19,7 @@ import { getSwitchboardCostBreakdown } from "@/lib/switchboard-cost";
 import { AdHocFeederPanel } from "@/components/ad-hoc-feeder-panel";
 import { findDuplicateLibraryFeeder } from "@/lib/feeder-duplicate";
 import { Icon } from "@/components/icon";
+import { numericKeyGuard } from "@/lib/numeric-input";
 
 type FeederWithCost = Feeder & { cost: number };
 type VerticalWithFeeders = Vertical & {
@@ -367,9 +368,11 @@ export function GaCanvas({
           <Field label="Amps">
             <input
               disabled={readOnly}
-              type="number"
+              type="text"
+              inputMode="decimal"
               value={amps}
               onChange={(e) => setAmps(e.target.value ? Number(e.target.value) : "")}
+              onKeyDown={numericKeyGuard()}
               onBlur={() => saveMasterParam("amps", amps === "" ? null : Number(amps))}
               className="w-20 rounded border border-surface-container-high px-1.5 py-1"
             />
@@ -377,9 +380,11 @@ export function GaCanvas({
           <Field label="kA">
             <input
               disabled={readOnly}
-              type="number"
+              type="text"
+              inputMode="decimal"
               value={ka}
               onChange={(e) => setKa(e.target.value ? Number(e.target.value) : "")}
+              onKeyDown={numericKeyGuard()}
               onBlur={() => saveMasterParam("ka", ka === "" ? null : Number(ka))}
               className="w-16 rounded border border-surface-container-high px-1.5 py-1"
             />
@@ -648,20 +653,24 @@ function BayColumn({
         </div>
         <div className="mt-1 flex items-center gap-1.5 px-1 text-xs text-on-surface-variant">
           <input
-            type="number"
+            type="text"
+            inputMode="decimal"
             value={localWidth}
             disabled={readOnly}
             onChange={(e) => setLocalWidth(e.target.value)}
+            onKeyDown={numericKeyGuard()}
             onBlur={() => onDimChange("width_mm", localWidth)}
             placeholder="W"
             className="w-14 rounded border border-surface-container-high px-1 py-0.5 disabled:bg-surface-container-low"
           />
           ×
           <input
-            type="number"
+            type="text"
+            inputMode="decimal"
             value={localDepth}
             disabled={readOnly}
             onChange={(e) => setLocalDepth(e.target.value)}
+            onKeyDown={numericKeyGuard()}
             onBlur={() => onDimChange("depth_mm", localDepth)}
             placeholder="D"
             className="w-14 rounded border border-surface-container-high px-1 py-0.5 disabled:bg-surface-container-low"
@@ -699,20 +708,22 @@ function BayColumn({
                       <div className="flex items-center gap-1">
                         <label className="text-secondary">Qty</label>
                         <input
-                          type="number"
-                          min="1"
+                          type="text"
+                          inputMode="numeric"
                           value={p.qty}
                           disabled={readOnly}
                           onChange={(e) => onQtyChange(p.id, Number(e.target.value) || 1)}
+                          onKeyDown={numericKeyGuard()}
                           className="w-10 rounded border border-surface-container-high px-1 py-0.5 disabled:bg-surface-container-low"
                         />
                         <label className="text-secondary">Tier</label>
                         <input
-                          type="number"
-                          min="1"
+                          type="text"
+                          inputMode="numeric"
                           value={p.tier_number}
                           disabled={readOnly}
                           onChange={(e) => onTierChange(p.id, Number(e.target.value) || 1)}
+                          onKeyDown={numericKeyGuard()}
                           className="w-10 rounded border border-surface-container-high px-1 py-0.5 disabled:bg-surface-container-low"
                         />
                       </div>

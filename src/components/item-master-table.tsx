@@ -9,6 +9,7 @@ import { XlsUpload } from "@/components/xls-upload";
 import { SheetSyncButton } from "@/components/sheet-sync-button";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
+import { numericKeyGuard } from "@/lib/numeric-input";
 
 const EMPTY_DRAFT = {
   sku: "",
@@ -722,17 +723,17 @@ export function ItemMasterTable({
       case "uom":
         return <input className="w-16 rounded border px-1 py-0.5" value={editDraft.uom} onChange={(e) => setEditDraft({ ...editDraft, uom: e.target.value })} />;
       case "unit_cost":
-        return <input type="number" className="w-24 rounded border px-1 py-0.5 text-right" value={editDraft.unit_cost} onChange={(e) => setEditDraft({ ...editDraft, unit_cost: e.target.value })} />;
+        return <input type="text" inputMode="decimal" onKeyDown={numericKeyGuard()} className="w-24 rounded border px-1 py-0.5 text-right" value={editDraft.unit_cost} onChange={(e) => setEditDraft({ ...editDraft, unit_cost: e.target.value })} />;
       case "list_price":
-        return <input type="number" className="w-24 rounded border px-1 py-0.5 text-right" value={editDraft.list_price} onChange={(e) => setEditDraft({ ...editDraft, list_price: e.target.value })} />;
+        return <input type="text" inputMode="decimal" onKeyDown={numericKeyGuard()} className="w-24 rounded border px-1 py-0.5 text-right" value={editDraft.list_price} onChange={(e) => setEditDraft({ ...editDraft, list_price: e.target.value })} />;
       case "discount_pct":
-        return <input type="number" className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.discount_pct} onChange={(e) => setEditDraft({ ...editDraft, discount_pct: e.target.value })} />;
+        return <input type="text" inputMode="decimal" onKeyDown={numericKeyGuard()} className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.discount_pct} onChange={(e) => setEditDraft({ ...editDraft, discount_pct: e.target.value })} />;
       case "amps":
-        return <input type="number" className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.amps} onChange={(e) => setEditDraft({ ...editDraft, amps: e.target.value })} />;
+        return <input type="text" inputMode="decimal" onKeyDown={numericKeyGuard()} className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.amps} onChange={(e) => setEditDraft({ ...editDraft, amps: e.target.value })} />;
       case "poles":
-        return <input type="number" className="w-14 rounded border px-1 py-0.5 text-right" value={editDraft.poles} onChange={(e) => setEditDraft({ ...editDraft, poles: e.target.value })} />;
+        return <input type="text" inputMode="numeric" onKeyDown={numericKeyGuard()} className="w-14 rounded border px-1 py-0.5 text-right" value={editDraft.poles} onChange={(e) => setEditDraft({ ...editDraft, poles: e.target.value })} />;
       case "ka":
-        return <input type="number" className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.ka} onChange={(e) => setEditDraft({ ...editDraft, ka: e.target.value })} />;
+        return <input type="text" inputMode="decimal" onKeyDown={numericKeyGuard()} className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.ka} onChange={(e) => setEditDraft({ ...editDraft, ka: e.target.value })} />;
       case "status":
         return (
           <select className="rounded border px-1 py-0.5" value={editDraft.status} onChange={(e) => setEditDraft({ ...editDraft, status: e.target.value as ItemStatus })}>
@@ -980,10 +981,11 @@ export function ItemMasterTable({
                 <div className="absolute left-0 top-full z-20 mt-1 flex items-center gap-1.5 rounded-[4px] bg-surface-container-lowest p-2 shadow-md">
                   <input
                     autoFocus
-                    type="number"
-                    step="0.1"
+                    type="text"
+                    inputMode="decimal"
                     value={bulkDiscountValue}
                     onChange={(e) => setBulkDiscountValue(e.target.value)}
+                    onKeyDown={numericKeyGuard()}
                     placeholder="%"
                     className="w-16 rounded border border-outline-variant/50 px-1.5 py-1 text-xs text-on-surface"
                   />
@@ -1314,11 +1316,14 @@ function Field({
   required?: boolean;
   className?: string;
 }) {
+  const isNumeric = type === "number";
   return (
     <div className={className}>
       <label className="mb-1 block text-xs font-medium text-on-surface-variant">{label}</label>
       <input
-        type={type}
+        type={isNumeric ? "text" : type}
+        inputMode={isNumeric ? "decimal" : undefined}
+        onKeyDown={isNumeric ? numericKeyGuard() : undefined}
         required={required}
         value={value}
         onChange={(e) => onChange(e.target.value)}

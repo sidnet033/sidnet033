@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { itemCode } from "@/lib/item-display";
+import { numericKeyGuard } from "@/lib/numeric-input";
 import { effectiveNetRate } from "@/lib/feeder-cost";
 import { computeFeederTag } from "@/lib/feeder-tag";
 import type { Feeder, FeederItemWithDetails, ItemMaster } from "@/types/database";
@@ -555,10 +556,11 @@ export function FeederMasterWorkspace({
                   <FormField label="Rated Current">
                     <div className="relative flex items-center">
                       <input
-                        type="number"
-                        min="0"
+                        type="text"
+                        inputMode="decimal"
                         value={form.rated_current}
                         onChange={(e) => updateField("rated_current", e.target.value)}
+                        onKeyDown={numericKeyGuard()}
                         className="h-9 w-full rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-10 text-right font-telemetry-md text-telemetry-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
                       />
                       <span className="pointer-events-none absolute right-0 top-0 bottom-0 flex items-center rounded-r border-l border-outline-variant bg-surface-container-low px-space-sm font-telemetry-md text-telemetry-md font-bold text-on-surface-variant">
@@ -724,11 +726,11 @@ export function FeederMasterWorkspace({
                         <td className="px-space-sm py-space-sm font-medium text-on-surface">{line.item.description}</td>
                         <td className="px-space-sm py-space-sm text-center">
                           <input
-                            type="number"
-                            min="0"
-                            step="0.01"
+                            type="text"
+                            inputMode="decimal"
                             value={line.qty}
                             onChange={(e) => updateLineQty(line.id, Number(e.target.value) || 0)}
+                            onKeyDown={numericKeyGuard()}
                             className="h-7 w-14 rounded bg-surface-container-low text-center font-telemetry-md text-telemetry-md focus:outline-none focus:ring-1 focus:ring-primary"
                           />
                         </td>

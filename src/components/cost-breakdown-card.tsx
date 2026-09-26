@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { formatMoney } from "@/lib/money";
+import { numericKeyGuard } from "@/lib/numeric-input";
 import type { CostBreakdown } from "@/lib/switchboard-cost";
 import type { Switchboard } from "@/types/database";
 
@@ -125,11 +126,12 @@ function PctRow({
       <span className="flex items-center gap-1">
         {label}
         <input
-          type="number"
-          step="0.1"
+          type="text"
+          inputMode="decimal"
           disabled={readOnly}
           value={local}
           onChange={(e) => setLocal(e.target.value)}
+          onKeyDown={numericKeyGuard()}
           onBlur={() => onChange(Number(local) || 0)}
           className="w-14 rounded border border-surface-container-high px-1 py-0.5 text-right text-xs disabled:border-transparent disabled:bg-transparent"
         />

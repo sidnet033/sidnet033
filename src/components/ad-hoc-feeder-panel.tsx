@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { itemCode } from "@/lib/item-display";
+import { numericKeyGuard } from "@/lib/numeric-input";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import type { Feeder, ItemMaster } from "@/types/database";
@@ -168,11 +169,11 @@ export function AdHocFeederPanel({
       </div>
       <div className="flex items-center gap-2">
         <input
-          type="number"
-          min="0"
-          step="0.01"
+          type="text"
+          inputMode="decimal"
           value={qty}
           onChange={(e) => setQty(e.target.value)}
+          onKeyDown={numericKeyGuard()}
           className="w-16 rounded border border-surface-container-high px-2 py-1 text-xs"
         />
         <button

@@ -10,6 +10,7 @@ import { ensureUnassignedVertical } from "@/lib/switchboard-bom";
 import { effectiveNetRate } from "@/lib/feeder-cost";
 import { computeFeederTag } from "@/lib/feeder-tag";
 import { itemCode } from "@/lib/item-display";
+import { numericKeyGuard } from "@/lib/numeric-input";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { formatMoney } from "@/lib/money";
@@ -918,12 +919,11 @@ function CategoryDiscountTool({ categories, onApply }: { categories: string[]; o
       <div className="flex flex-col gap-0.5">
         <label className="font-label-sm text-[10px] uppercase tracking-wide text-secondary">Disc %</label>
         <input
-          type="number"
-          min="0"
-          max="100"
-          step="0.1"
+          type="text"
+          inputMode="decimal"
           value={discount}
           onChange={(e) => setDiscount(e.target.value)}
+          onKeyDown={numericKeyGuard()}
           className="w-16 rounded border border-surface-container-high px-1.5 py-1 text-right text-xs"
         />
       </div>
@@ -1057,11 +1057,12 @@ function FeederModuleCard({
         <div className="flex items-center gap-1 text-xs text-secondary">
           <span>Qty</span>
           <input
-            type="number"
-            min="1"
+            type="text"
+            inputMode="decimal"
             disabled={readOnly}
             value={mod.qty}
             onChange={(e) => onQtyChange(Number(e.target.value) || 1)}
+            onKeyDown={numericKeyGuard()}
             className="w-14 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:bg-surface-container-low"
           />
         </div>
@@ -1123,11 +1124,11 @@ function FeederModuleCard({
                     <td className="px-2 py-1.5 text-right">
                       {canEditLines ? (
                         <input
-                          type="number"
-                          min="0"
-                          step="0.01"
+                          type="text"
+                          inputMode="decimal"
                           value={line.qty}
                           onChange={(e) => onLineQtyChange(line.id, Number(e.target.value) || 0)}
+                          onKeyDown={numericKeyGuard()}
                           className="w-16 rounded border border-surface-container-high px-1 py-0.5 text-right"
                         />
                       ) : (
@@ -1137,12 +1138,12 @@ function FeederModuleCard({
                     <td className="px-2 py-1.5 text-right tabular-nums text-on-surface-variant">
                       {canEditLines ? (
                         <input
-                          type="number"
-                          min="0"
-                          step="0.01"
+                          type="text"
+                          inputMode="decimal"
                           value={listPrice ?? ""}
                           placeholder="—"
                           onChange={(e) => onLineOverrideChange(line.id, "list_price_override", e.target.value === "" ? null : Number(e.target.value))}
+                          onKeyDown={numericKeyGuard()}
                           className="w-20 rounded border border-surface-container-high px-1 py-0.5 text-right"
                         />
                       ) : listPrice != null ? (
@@ -1154,13 +1155,12 @@ function FeederModuleCard({
                     <td className="px-2 py-1.5 text-right tabular-nums text-on-surface-variant">
                       {canEditLines ? (
                         <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="0.1"
+                          type="text"
+                          inputMode="decimal"
                           value={discountPct ?? ""}
                           placeholder="—"
                           onChange={(e) => onLineOverrideChange(line.id, "discount_pct_override", e.target.value === "" ? null : Number(e.target.value))}
+                          onKeyDown={numericKeyGuard()}
                           className="w-16 rounded border border-surface-container-high px-1 py-0.5 text-right"
                         />
                       ) : discountPct != null ? (
@@ -1374,19 +1374,23 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
               </td>
               <td className="px-3 py-1.5 text-right">
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   disabled={readOnly}
                   value={l.qty}
                   onChange={(e) => onUpdate(l.id, { qty: Number(e.target.value) || 0 } as Partial<T>)}
+                  onKeyDown={numericKeyGuard()}
                   className="w-16 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
                 />
               </td>
               <td className="px-3 py-1.5 text-right">
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   disabled={readOnly}
                   value={l.rate}
                   onChange={(e) => onUpdate(l.id, { rate: Number(e.target.value) || 0 } as Partial<T>)}
+                  onKeyDown={numericKeyGuard()}
                   className="w-24 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
                 />
               </td>

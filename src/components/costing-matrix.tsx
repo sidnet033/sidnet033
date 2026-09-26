@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { formatMoneyDual } from "@/lib/money";
+import { numericKeyGuard } from "@/lib/numeric-input";
 import { CURRENCIES } from "@/lib/currencies";
 import type { CostBreakdown } from "@/lib/switchboard-cost";
 import type { Customer, Project, Revision, Switchboard } from "@/types/database";
@@ -232,11 +233,12 @@ export function CostingMatrix({
               {columns.map((c) => (
                 <td key={c.switchboard.id} className="px-3 py-1.5 text-right">
                   <input
-                    type="number"
-                    step="0.5"
+                    type="text"
+                    inputMode="decimal"
                     disabled={archived}
                     value={pctFor(c.switchboard.id)}
                     onChange={(e) => updateProfitPct(c.switchboard.id, Number(e.target.value) || 0)}
+                    onKeyDown={numericKeyGuard()}
                     className="w-16 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
                   />
                 </td>
@@ -367,10 +369,12 @@ function LogisticsRow({
       </td>
       <td className="px-3 py-1.5 text-right">
         <input
-          type="number"
+          type="text"
+          inputMode="decimal"
           disabled={readOnly}
           value={amount}
           onChange={(e) => onAmountChange(Number(e.target.value) || 0)}
+          onKeyDown={numericKeyGuard()}
           className="w-28 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
         />
       </td>
