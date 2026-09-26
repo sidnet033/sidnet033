@@ -1211,7 +1211,7 @@ function FeederModuleCard({
           onClick={closeAddDialog}
         >
           <div
-            className="flex max-h-[80vh] w-full max-w-xl flex-col overflow-hidden rounded-xl bg-surface-container-lowest shadow-xl"
+            className="flex max-h-[80vh] w-[75vw] flex-col overflow-hidden rounded-xl bg-surface-container-lowest shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-surface-container-high bg-surface-container-low p-space-md">
@@ -1286,13 +1286,13 @@ function FeederModuleCard({
                       type="button"
                       key={m.id}
                       onClick={() => addItem(m)}
-                      className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-surface-container-low ${i === 0 ? "bg-primary/5" : ""}`}
+                      className={`flex w-full items-start gap-2 px-2 py-1.5 text-left text-xs hover:bg-surface-container-low ${i === 0 ? "bg-primary/5" : ""}`}
                     >
                       <span className="w-24 shrink-0 truncate font-mono text-secondary">{itemCode(m)}</span>
                       <span className="w-24 shrink-0 truncate font-mono text-secondary">{m.vendor_cat || "—"}</span>
                       <span className="w-28 shrink-0 truncate text-on-surface-variant">{m.make || "—"}</span>
-                      <span className="min-w-0 flex-1 truncate">{m.description}</span>
-                      <Icon name="add" size={14} className="shrink-0 text-primary" />
+                      <span className="min-w-0 flex-1 whitespace-normal break-words">{m.description}</span>
+                      <Icon name="add" size={14} className="mt-0.5 shrink-0 text-primary" />
                     </button>
                   ))}
                 </div>
