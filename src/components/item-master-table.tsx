@@ -8,6 +8,7 @@ import type { ItemMaster, ItemStatus } from "@/types/database";
 import { XlsUpload } from "@/components/xls-upload";
 import { SheetSyncButton } from "@/components/sheet-sync-button";
 import { Icon } from "@/components/icon";
+import { SavingOverlay } from "@/components/saving-overlay";
 
 const EMPTY_DRAFT = {
   sku: "",
@@ -318,6 +319,7 @@ export function ItemMasterTable({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<Draft>(EMPTY_DRAFT);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const supabase = useMemo(() => createClient(), []);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -542,14 +544,17 @@ export function ItemMasterTable({
       return;
     }
     setError(null);
+    setSaving(true);
     const { error } = await supabase.from("item_master").insert(draftToRow(draft));
     if (error) {
       setError(error.message);
+      setSaving(false);
       return;
     }
     setDraft(EMPTY_DRAFT);
     setAdding(false);
-    refresh();
+    await refresh();
+    setSaving(false);
   }
 
   function startEdit(item: ItemMaster) {
@@ -580,16 +585,19 @@ export function ItemMasterTable({
       return;
     }
     setError(null);
+    setSaving(true);
     const { error } = await supabase
       .from("item_master")
       .update({ ...draftToRow(editDraft), updated_at: new Date().toISOString() })
       .eq("id", id);
     if (error) {
       setError(error.message);
+      setSaving(false);
       return;
     }
     setEditingId(null);
-    refresh();
+    await refresh();
+    setSaving(false);
   }
 
   // Optimistic: updates the row in place instead of re-fetching the whole
@@ -747,6 +755,7 @@ export function ItemMasterTable({
 
   return (
     <div className="space-y-3">
+      <SavingOverlay show={saving} />
       <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
         <div>
           <h1 className="font-display text-2xl font-semibold tracking-tight text-on-surface">Item Master</h1>

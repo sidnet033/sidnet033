@@ -11,6 +11,7 @@ import { effectiveNetRate } from "@/lib/feeder-cost";
 import { computeFeederTag } from "@/lib/feeder-tag";
 import { itemCode } from "@/lib/item-display";
 import { Icon } from "@/components/icon";
+import { SavingOverlay } from "@/components/saving-overlay";
 import { formatMoney } from "@/lib/money";
 import type {
   Feeder,
@@ -732,6 +733,7 @@ export function BomBuilder({
 
   return (
     <div className="space-y-space-lg p-margin-lg">
+      <SavingOverlay show={saving} />
       <div className="flex flex-wrap items-start justify-between gap-space-md">
         <div>
           <h1 className="font-display text-headline-lg text-on-surface">

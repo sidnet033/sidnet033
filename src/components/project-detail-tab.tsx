@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
+import { SavingOverlay } from "@/components/saving-overlay";
 import { LookupSelect } from "@/components/lookup-select";
 import { StageStepper } from "@/components/stage-stepper";
 import { COUNTRIES } from "@/lib/countries";
@@ -262,6 +263,7 @@ export function ProjectDetailTab({
 
   return (
     <div className="w-full">
+      <SavingOverlay show={saving} />
       <div className="flex flex-wrap items-center justify-between gap-space-md border-b border-surface-container-high bg-surface-container-lowest px-margin-lg py-space-lg">
         <div>
           <div className="flex items-center gap-2">

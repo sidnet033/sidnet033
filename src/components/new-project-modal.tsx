@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
+import { SavingOverlay } from "@/components/saving-overlay";
 import type { Customer } from "@/types/database";
 
 export function NewProjectModal({ customers }: { customers: Customer[] }) {
@@ -103,6 +104,7 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
 
   return (
     <>
+      <SavingOverlay show={saving} label="Creating project..." />
       <button
         onClick={() => setOpen(true)}
         className="flex h-9 items-center gap-space-xs rounded-lg bg-primary px-space-md font-body-md text-body-md font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-container"

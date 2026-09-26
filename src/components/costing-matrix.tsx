@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
+import { SavingOverlay } from "@/components/saving-overlay";
 import { formatMoneyDual } from "@/lib/money";
 import { CURRENCIES } from "@/lib/currencies";
 import type { CostBreakdown } from "@/lib/switchboard-cost";
@@ -143,6 +144,7 @@ export function CostingMatrix({
 
   return (
     <div className="space-y-space-lg p-margin-lg">
+      <SavingOverlay show={saving} />
       <div className="flex flex-wrap items-start justify-between gap-space-md">
         <div>
           <div className="flex items-center gap-2">

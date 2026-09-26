@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { itemCode } from "@/lib/item-display";
 import { Icon } from "@/components/icon";
+import { SavingOverlay } from "@/components/saving-overlay";
 import type { Feeder, ItemMaster } from "@/types/database";
 
 type NewFeederLine = { item: ItemMaster; qty: number };
@@ -119,6 +120,7 @@ export function AdHocFeederPanel({
 
   return (
     <div className="mb-3 space-y-2 rounded-lg border border-surface-container-high bg-surface-container-low p-3">
+      <SavingOverlay show={saving} label="Creating feeder..." />
       <input
         value={name}
         onChange={(e) => setName(e.target.value)}

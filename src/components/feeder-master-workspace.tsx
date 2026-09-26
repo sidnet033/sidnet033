@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
+import { SavingOverlay } from "@/components/saving-overlay";
 import { itemCode } from "@/lib/item-display";
 import { effectiveNetRate } from "@/lib/feeder-cost";
 import { computeFeederTag } from "@/lib/feeder-tag";
@@ -278,6 +279,7 @@ export function FeederMasterWorkspace({
 
   return (
     <div className="w-full bg-surface px-gutter-lg py-gutter">
+      <SavingOverlay show={saving} />
       <div className="flex flex-col gap-space-lg pb-space-2xl">
         {/* Top context & actions bar */}
         <div className="flex flex-col justify-between gap-space-md md:flex-row md:items-center">

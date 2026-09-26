@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
+import { SavingOverlay } from "@/components/saving-overlay";
 import { Modal } from "@/components/admin/modal";
 import { useToast } from "@/components/admin/toast";
 import type { Profile, Role } from "@/types/database";
@@ -266,6 +267,7 @@ export function UsersTab({
 
   return (
     <div className="w-full space-y-space-md">
+      <SavingOverlay show={saving} />
       <Modal
         open={inviteOpen}
         onClose={closeInvite}
