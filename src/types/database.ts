@@ -179,6 +179,7 @@ export type Switchboard = {
   form_of_separation: string | null;
   plinth_height_mm: number | null;
   panel_height_mm: number | null;
+  busbar_chamber_height_mm: number | null;
   amps: number | null;
   ka: number | null;
   ip_rating: string | null;

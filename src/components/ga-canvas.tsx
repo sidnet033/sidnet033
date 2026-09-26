@@ -56,9 +56,9 @@ const BAY_TEMPLATES: { bay_type: BayType; label: string; namePrefix: string }[] 
 const PLINTH_OPTIONS = [75, 100, 150, 200];
 const PANEL_HEIGHT_OPTIONS = [1800, 2000, 2100, 2200];
 
-// Elevation drawing scale. The busbar chamber has no real height in our
-// data model yet -- BUSBAR_CHAMBER_HEIGHT_MM is a nominal value used only
-// so the drawing's proportions and ruler stay consistent.
+// Elevation drawing scale. BUSBAR_CHAMBER_HEIGHT_MM is only the default
+// used when a switchboard has no busbar_chamber_height_mm set yet -- the
+// user can select the busbar chamber in the drawing and edit its real height.
 const BUSBAR_CHAMBER_HEIGHT_MM = 100;
 const DEFAULT_COMPARTMENT_HEIGHT_MM = 150;
 const DRAWING_TARGET_HEIGHT_PX = 520;
@@ -99,8 +99,13 @@ function computeCompartments(vertical: VerticalWithFeeders, panelHeightMm: numbe
   let used = 0;
   for (const p of sorted) {
     const heightMm = lookupFeederBoxHeight(p.feeder) ?? DEFAULT_COMPARTMENT_HEIGHT_MM;
-    compartments.push({ id: p.id, placedId: p.id, label: p.feeder.name, heightMm, topMm: used, isBlank: false });
-    used += heightMm;
+    // A placed_feeders row with qty > 1 (several units of the same feeder
+    // merged into one bay) is that many separate physical devices -- each
+    // gets its own compartment, not one compartment for the whole row.
+    for (let i = 0; i < p.qty; i++) {
+      compartments.push({ id: `${p.id}::${i}`, placedId: p.id, label: p.feeder.name, heightMm, topMm: used, isBlank: false });
+      used += heightMm;
+    }
   }
   const remaining = panelHeightMm - used;
   if (remaining > 0) {
@@ -337,6 +342,8 @@ export function GaCanvas({
   const [savedPlinthHeight, setSavedPlinthHeight] = useState(100);
   const [panelHeight, setPanelHeight] = useState(2100);
   const [savedPanelHeight, setSavedPanelHeight] = useState(2100);
+  const [busbarHeight, setBusbarHeight] = useState(BUSBAR_CHAMBER_HEIGHT_MM);
+  const [savedBusbarHeight, setSavedBusbarHeight] = useState(BUSBAR_CHAMBER_HEIGHT_MM);
   const [saving, setSaving] = useState(false);
   const [resetKey, setResetKey] = useState(0);
 
@@ -346,6 +353,7 @@ export function GaCanvas({
   const [hover, setHover] = useState<HoverExtent>(null);
   const [selectedBayId, setSelectedBayId] = useState<string | null>(null);
   const [selectedPlacedId, setSelectedPlacedId] = useState<string | null>(null);
+  const [busbarSelected, setBusbarSelected] = useState(false);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
   const [sizingLogicOpen, setSizingLogicOpen] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -375,10 +383,13 @@ export function GaCanvas({
     setSavedVerticals(data.verticals);
     const plinth = data.switchboard.plinth_height_mm ?? 100;
     const panel = data.switchboard.panel_height_mm ?? 2100;
+    const busbar = data.switchboard.busbar_chamber_height_mm ?? BUSBAR_CHAMBER_HEIGHT_MM;
     setPlinthHeight(plinth);
     setSavedPlinthHeight(plinth);
     setPanelHeight(panel);
     setSavedPanelHeight(panel);
+    setBusbarHeight(busbar);
+    setSavedBusbarHeight(busbar);
   }
 
   useEffect(() => {
@@ -392,10 +403,13 @@ export function GaCanvas({
       setSavedVerticals(data.verticals);
       const plinth = data.switchboard.plinth_height_mm ?? 100;
       const panel = data.switchboard.panel_height_mm ?? 2100;
+      const busbar = data.switchboard.busbar_chamber_height_mm ?? BUSBAR_CHAMBER_HEIGHT_MM;
       setPlinthHeight(plinth);
       setSavedPlinthHeight(plinth);
       setPanelHeight(panel);
       setSavedPanelHeight(panel);
+      setBusbarHeight(busbar);
+      setSavedBusbarHeight(busbar);
       setLoading(false);
     })();
     return () => {
@@ -408,7 +422,8 @@ export function GaCanvas({
   const dirty =
     JSON.stringify(verticals) !== JSON.stringify(savedVerticals) ||
     plinthHeight !== savedPlinthHeight ||
-    panelHeight !== savedPanelHeight;
+    panelHeight !== savedPanelHeight ||
+    busbarHeight !== savedBusbarHeight;
 
   const bays = verticals.filter((v) => v.bay_type !== "unassigned").sort((a, b) => a.sort_order - b.sort_order);
   const unallocated = verticals.find((v) => v.bay_type === "unassigned") ?? null;
@@ -425,7 +440,7 @@ export function GaCanvas({
     }
   }
 
-  const totalHeightMm = BUSBAR_CHAMBER_HEIGHT_MM + panelHeight + plinthHeight;
+  const totalHeightMm = busbarHeight + panelHeight + plinthHeight;
   const pxPerMm = computePxPerMm(totalHeightMm);
   const selectedBay = bays.find((v) => v.id === selectedBayId) ?? null;
 
@@ -650,6 +665,8 @@ export function GaCanvas({
     setVerticals(structuredClone(savedVerticals));
     setPlinthHeight(savedPlinthHeight);
     setPanelHeight(savedPanelHeight);
+    setBusbarHeight(savedBusbarHeight);
+    setBusbarSelected(false);
     setResetKey((k) => k + 1);
   }
 
@@ -741,6 +758,7 @@ export function GaCanvas({
       const paramPatch: Partial<Switchboard> = {};
       if (plinthHeight !== savedPlinthHeight) paramPatch.plinth_height_mm = plinthHeight;
       if (panelHeight !== savedPanelHeight) paramPatch.panel_height_mm = panelHeight;
+      if (busbarHeight !== savedBusbarHeight) paramPatch.busbar_chamber_height_mm = busbarHeight;
       if (Object.keys(paramPatch).length > 0) {
         const { error } = await supabase.from("switchboards").update(paramPatch).eq("id", sb.id);
         if (error) throw new Error(error.message);
@@ -1059,7 +1077,21 @@ export function GaCanvas({
                   {busbarPosition === "top" && (
                     <div className="flex">
                       <div style={{ width: RULER_WIDTH_PX }} />
-                      <DrawingBar label={busbarLabel} heightPx={BUSBAR_CHAMBER_HEIGHT_MM * pxPerMm} widthPx={totalWidth * pxPerMm} />
+                      <DrawingBar
+                        label={busbarLabel}
+                        heightPx={busbarHeight * pxPerMm}
+                        widthPx={totalWidth * pxPerMm}
+                        isSelected={busbarSelected}
+                        onClick={
+                          readOnly
+                            ? undefined
+                            : () => {
+                                setBusbarSelected(true);
+                                setSelectedBayId(null);
+                                setSelectedPlacedId(null);
+                              }
+                        }
+                      />
                     </div>
                   )}
 
@@ -1076,13 +1108,17 @@ export function GaCanvas({
                           bayLeftMm={bayOffsets[i]}
                           isSelected={selectedBayId === v.id}
                           selectedPlacedId={selectedBayId === v.id ? selectedPlacedId : null}
+                          cableEntry={sb.cable_entry}
+                          cableExit={sb.cable_exit}
                           onSelectBay={() => {
                             setSelectedBayId(v.id);
                             setSelectedPlacedId(null);
+                            setBusbarSelected(false);
                           }}
                           onSelectFeeder={(placedId) => {
                             setSelectedBayId(v.id);
                             setSelectedPlacedId(placedId);
+                            setBusbarSelected(false);
                           }}
                           onMoveBay={(direction) => moveBay(v.id, direction)}
                           onMoveFeeder={(placedId, direction) => moveFeeder(v.id, placedId, direction)}
@@ -1097,7 +1133,21 @@ export function GaCanvas({
                   {busbarPosition === "bottom" && (
                     <div className="flex">
                       <div style={{ width: RULER_WIDTH_PX }} />
-                      <DrawingBar label={busbarLabel} heightPx={BUSBAR_CHAMBER_HEIGHT_MM * pxPerMm} widthPx={totalWidth * pxPerMm} />
+                      <DrawingBar
+                        label={busbarLabel}
+                        heightPx={busbarHeight * pxPerMm}
+                        widthPx={totalWidth * pxPerMm}
+                        isSelected={busbarSelected}
+                        onClick={
+                          readOnly
+                            ? undefined
+                            : () => {
+                                setBusbarSelected(true);
+                                setSelectedBayId(null);
+                                setSelectedPlacedId(null);
+                              }
+                        }
+                      />
                     </div>
                   )}
 
@@ -1132,23 +1182,33 @@ export function GaCanvas({
 
             {!rightSidebarCollapsed && (
               <>
-                <BayDetailsPanel
-                  key={selectedBay?.id ?? "none"}
-                  vertical={selectedBay}
-                  readOnly={readOnly}
-                  onRename={(name) => selectedBay && renameBay(selectedBay.id, name)}
-                  onDimChange={(field, val) => selectedBay && setBayDim(selectedBay.id, field, val)}
-                  onDelete={() => {
-                    if (!selectedBay) return;
-                    deleteBay(selectedBay.id);
-                    setSelectedBayId(null);
-                    setSelectedPlacedId(null);
-                  }}
-                  onClose={() => {
-                    setSelectedBayId(null);
-                    setSelectedPlacedId(null);
-                  }}
-                />
+                {busbarSelected ? (
+                  <BusbarDetailsPanel
+                    key={`busbar-${resetKey}`}
+                    height={busbarHeight}
+                    readOnly={readOnly}
+                    onHeightChange={setBusbarHeight}
+                    onClose={() => setBusbarSelected(false)}
+                  />
+                ) : (
+                  <BayDetailsPanel
+                    key={selectedBay?.id ?? "none"}
+                    vertical={selectedBay}
+                    readOnly={readOnly}
+                    onRename={(name) => selectedBay && renameBay(selectedBay.id, name)}
+                    onDimChange={(field, val) => selectedBay && setBayDim(selectedBay.id, field, val)}
+                    onDelete={() => {
+                      if (!selectedBay) return;
+                      deleteBay(selectedBay.id);
+                      setSelectedBayId(null);
+                      setSelectedPlacedId(null);
+                    }}
+                    onClose={() => {
+                      setSelectedBayId(null);
+                      setSelectedPlacedId(null);
+                    }}
+                  />
+                )}
 
                 <div className="mt-4 border-t border-surface-container-high pt-3">
                   <button
@@ -1242,10 +1302,27 @@ function AvailableFeederCard({ unit, disabled = false }: { unit: AvailableUnit; 
 
 // A plain technical-drawing style bar (busbar chamber, plinth) spanning
 // the full drawing width -- line art, not a themed alert/status bar.
-function DrawingBar({ label, heightPx, widthPx }: { label: string; heightPx: number; widthPx: number }) {
+// The busbar chamber is the one bar that's clickable/selectable (its height
+// is user-editable in the right sidebar); the plinth stays plain.
+function DrawingBar({
+  label,
+  heightPx,
+  widthPx,
+  onClick,
+  isSelected,
+}: {
+  label: string;
+  heightPx: number;
+  widthPx: number;
+  onClick?: () => void;
+  isSelected?: boolean;
+}) {
   return (
     <div
-      className="flex shrink-0 items-center justify-center overflow-hidden border border-black/70 bg-white px-2 text-center font-telemetry-md text-[9px] font-semibold uppercase tracking-wide text-black"
+      onClick={onClick}
+      className={`flex shrink-0 items-center justify-center overflow-hidden border bg-white px-2 text-center font-telemetry-md text-[9px] font-semibold uppercase tracking-wide text-black ${
+        isSelected ? "border-2 border-primary" : "border-black/70"
+      } ${onClick ? "cursor-pointer hover:bg-amber-50" : ""}`}
       style={{ height: Math.max(heightPx, 16), width: Math.max(widthPx, 1) }}
     >
       {label}
@@ -1325,6 +1402,8 @@ function BayColumn({
   bayLeftMm,
   isSelected,
   selectedPlacedId,
+  cableEntry,
+  cableExit,
   onSelectBay,
   onSelectFeeder,
   onMoveBay,
@@ -1340,6 +1419,8 @@ function BayColumn({
   bayLeftMm: number;
   isSelected: boolean;
   selectedPlacedId: string | null;
+  cableEntry: "Top" | "Bottom" | null;
+  cableExit: "Top" | "Bottom" | null;
   onSelectBay: () => void;
   onSelectFeeder: (placedId: string) => void;
   onMoveBay: (direction: "left" | "right") => void;
@@ -1387,7 +1468,7 @@ function BayColumn({
         </>
       )}
       {compartments.map((c) => {
-        const isFeederSelected = !c.isBlank && c.id === selectedPlacedId;
+        const isFeederSelected = !c.isBlank && c.placedId === selectedPlacedId;
         return (
           <div
             key={c.id}
@@ -1396,7 +1477,7 @@ function BayColumn({
                 ? undefined
                 : (e) => {
                     e.stopPropagation();
-                    onSelectFeeder(c.id);
+                    onSelectFeeder(c.placedId!);
                   }
             }
             onMouseEnter={() => onHover({ topMm: c.topMm, heightMm: c.heightMm, bayLeftMm, bayWidthMm: widthMm, label: c.label })}
@@ -1412,7 +1493,7 @@ function BayColumn({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  onRemove(c.id);
+                  onRemove(c.placedId!);
                 }}
                 title="Move back to available feeders"
                 className="absolute right-0.5 top-0.5 text-error opacity-0 group-hover:opacity-100"
@@ -1425,7 +1506,7 @@ function BayColumn({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    onMoveFeeder(c.id, "up");
+                    onMoveFeeder(c.placedId!, "up");
                   }}
                   title="Move feeder up"
                   className="absolute -top-3 left-1/2 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-primary bg-surface-container-lowest text-primary shadow-sm hover:bg-primary/10"
@@ -1435,7 +1516,7 @@ function BayColumn({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    onMoveFeeder(c.id, "down");
+                    onMoveFeeder(c.placedId!, "down");
                   }}
                   title="Move feeder down"
                   className="absolute -bottom-3 left-1/2 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-primary bg-surface-container-lowest text-primary shadow-sm hover:bg-primary/10"
@@ -1447,6 +1528,70 @@ function BayColumn({
           </div>
         );
       })}
+      {vertical.bay_type === "incomer" && cableEntry && (
+        <div
+          title={`Cable entry — ${cableEntry.toLowerCase()}`}
+          className="pointer-events-auto absolute left-1/2 z-10 h-1.5 w-3/4 -translate-x-1/2 bg-blue-600"
+          style={cableEntry === "Top" ? { top: 0 } : { bottom: 0 }}
+        />
+      )}
+      {vertical.bay_type === "outgoing" && cableExit && (
+        <div
+          title={`Cable exit — ${cableExit.toLowerCase()}`}
+          className="pointer-events-auto absolute left-1/2 z-10 h-1.5 w-3/4 -translate-x-1/2 bg-purple-600"
+          style={cableExit === "Top" ? { top: 0 } : { bottom: 0 }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Editable height for the main horizontal busbar chamber -- selected by
+// clicking its bar in the drawing, mutually exclusive with a bay selection.
+function BusbarDetailsPanel({
+  height,
+  readOnly,
+  onHeightChange,
+  onClose,
+}: {
+  height: number;
+  readOnly: boolean;
+  onHeightChange: (value: number) => void;
+  onClose: () => void;
+}) {
+  const [local, setLocal] = useState(String(height));
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between">
+        <p className="font-label-sm text-label-sm uppercase tracking-wide text-secondary">Busbar Chamber</p>
+        <button onClick={onClose} title="Deselect" className="text-secondary hover:text-on-surface">
+          <Icon name="close" size={14} />
+        </button>
+      </div>
+      <label className="mb-2 block">
+        <span className="mb-1 block text-[10px] font-medium text-on-surface-variant">Height</span>
+        <div className="flex items-end gap-2">
+          <input
+            type="text"
+            inputMode="decimal"
+            value={local}
+            disabled={readOnly}
+            onChange={(e) => setLocal(e.target.value)}
+            onKeyDown={numericKeyGuard()}
+            onBlur={() => {
+              const num = Math.max(1, Math.round(Number(local) || height));
+              setLocal(String(num));
+              onHeightChange(num);
+            }}
+            className="w-20 rounded border border-surface-container-high px-2 py-1 text-sm disabled:bg-surface-container-low"
+          />
+          <span className="pb-1.5 text-xs text-on-surface-variant">mm</span>
+        </div>
+      </label>
+      <p className="text-[11px] leading-snug text-on-surface-variant">
+        Height of the main horizontal busbar chamber, spanning the full width of the switchboard.
+      </p>
     </div>
   );
 }
