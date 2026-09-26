@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
@@ -19,6 +19,23 @@ const STD_OPTIONS = ["ArTuK", "61439", "60439"] as const;
 const IP_OPTIONS = ["42", "52", "54", "55", "63"];
 const FORM_OPTIONS = ["Form 1", "Form 2a", "Form 2b", "Form 3a", "Form 3b", "Form 4a", "Form 4b (Type 7)"];
 const CABLE_OPTIONS = ["Top", "Bottom"] as const;
+
+// The switchboard table fields the Save button/Ctrl+S actually cover --
+// everything else on a SwitchboardListItem (breakdown, lockedByName, ...)
+// is server-computed and never part of the diff.
+const EDITABLE_SWITCHBOARD_FIELDS = [
+  "title",
+  "description",
+  "switchboard_type_id",
+  "std",
+  "form_of_separation",
+  "amps",
+  "ip_rating",
+  "ka",
+  "cable_entry",
+  "cable_exit",
+  "qty",
+] as const satisfies readonly (keyof Switchboard)[];
 
 function formatDate(iso: string | null) {
   if (!iso) return "—";
@@ -109,7 +126,6 @@ export function ProjectDetailTab({
   const [justSaved, setJustSaved] = useState(false);
   const [infoCollapsed, setInfoCollapsed] = useState(false);
 
-  const dirty = JSON.stringify(form) !== JSON.stringify(savedSnapshot);
   const money = (n: number) => formatMoneyDual(n, form.currency, form.exchange_rate);
 
   useEffect(() => {
@@ -129,27 +145,74 @@ export function ProjectDetailTab({
     setJustSaved(false);
   }
 
-  async function handleSave() {
-    setSaving(true);
-    const { error } = await supabase.from("projects").update(form).eq("id", project.id);
-    setSaving(false);
-    if (error) {
-      alert(error.message);
-      return;
-    }
-    setSavedSnapshot(form);
-    setJustSaved(true);
-  }
-
-  // switchboard table: local optimistic state so field edits (which fire on
-  // every blur) never need a full-page refresh, which is what was causing
-  // the "Failed to fetch" errors on this table.
+  // switchboard table: local draft state, same draft/save pattern as the
+  // project fields above -- edits stage into `boards` and only reach
+  // Supabase when Save (or Ctrl+S) runs, diffed against `boardsSnapshot`.
   const [prevSwitchboards, setPrevSwitchboards] = useState(switchboards);
   const [boards, setBoards] = useState(switchboards);
+  const [boardsSnapshot, setBoardsSnapshot] = useState(switchboards);
   if (switchboards !== prevSwitchboards) {
     setPrevSwitchboards(switchboards);
     setBoards(switchboards);
+    setBoardsSnapshot(switchboards);
   }
+
+  const boardsDirty = JSON.stringify(boards) !== JSON.stringify(boardsSnapshot);
+  const dirty = JSON.stringify(form) !== JSON.stringify(savedSnapshot) || boardsDirty;
+
+  async function handleSave() {
+    setSaving(true);
+    const { error: projectError } = await supabase.from("projects").update(form).eq("id", project.id);
+    if (projectError) {
+      setSaving(false);
+      alert(projectError.message);
+      return;
+    }
+
+    for (const b of boards) {
+      const prev = boardsSnapshot.find((x) => x.switchboard.id === b.switchboard.id);
+      if (!prev) continue;
+      const fieldPatch: Partial<Switchboard> = {};
+      for (const key of EDITABLE_SWITCHBOARD_FIELDS) {
+        if (b.switchboard[key] !== prev.switchboard[key]) {
+          (fieldPatch as Record<string, unknown>)[key] = b.switchboard[key];
+        }
+      }
+      if (Object.keys(fieldPatch).length === 0) continue;
+      const { error } = await supabase.from("switchboards").update(fieldPatch).eq("id", b.switchboard.id);
+      if (error) {
+        setSaving(false);
+        alert(`Could not save "${b.switchboard.tag}": ${error.message}`);
+        return;
+      }
+    }
+
+    setSaving(false);
+    setSavedSnapshot(form);
+    setBoardsSnapshot(boards);
+    setJustSaved(true);
+  }
+
+  // Ctrl+S / Cmd+S saves the whole page (project fields + switchboard
+  // table), same as clicking "Save Changes". Tracked via a ref (updated on
+  // every render) so the listener stays mounted once while always calling
+  // the freshest save function instead of one captured from a stale render.
+  const keyboardSaveRef = useRef({ dirty, saving, handleSave: () => {} });
+  useEffect(() => {
+    keyboardSaveRef.current = { dirty, saving, handleSave };
+  });
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        const { dirty, saving, handleSave } = keyboardSaveRef.current;
+        if (!revisionArchived && dirty && !saving) handleSave();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [revisionArchived]);
 
   const [typeOptions, setTypeOptions] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => {
@@ -167,7 +230,17 @@ export function ProjectDetailTab({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
 
+  // Add/delete/clone/lock/release all end in router.refresh(), which
+  // replaces `boards` with the fresh server copy -- silently discarding any
+  // staged-but-unsaved switchboard edits. Confirm first so that never
+  // happens without the user knowing.
+  function confirmDiscardUnsaved(): boolean {
+    if (!dirty) return true;
+    return confirm("You have unsaved changes on this page. Continue and lose them?");
+  }
+
   async function handleLockAndOpen(switchboardId: string, alreadyLockedByMe: boolean) {
+    if (!confirmDiscardUnsaved()) return;
     if (!alreadyLockedByMe) {
       setBusyId(switchboardId);
       const { error } = await supabase.rpc("lock_switchboard", { p_switchboard_id: switchboardId });
@@ -182,6 +255,7 @@ export function ProjectDetailTab({
   }
 
   async function handleRelease(switchboardId: string) {
+    if (!confirmDiscardUnsaved()) return;
     setBusyId(switchboardId);
     const { error } = await supabase.rpc("unlock_switchboard", { p_switchboard_id: switchboardId });
     setBusyId(null);
@@ -193,6 +267,7 @@ export function ProjectDetailTab({
   }
 
   async function handleClone(switchboardId: string) {
+    if (!confirmDiscardUnsaved()) return;
     setBusyId(switchboardId);
     const { error } = await supabase.rpc("clone_switchboard", { p_switchboard_id: switchboardId });
     setBusyId(null);
@@ -205,6 +280,7 @@ export function ProjectDetailTab({
 
   async function handleDelete(switchboardId: string, tag: string) {
     if (!confirm(`Delete switchboard "${tag}"? This removes its whole BOM and GA layout. This can't be undone.`)) return;
+    if (!confirmDiscardUnsaved()) return;
     setBusyId(switchboardId);
     const { error } = await supabase.from("switchboards").delete().eq("id", switchboardId);
     setBusyId(null);
@@ -216,6 +292,7 @@ export function ProjectDetailTab({
   }
 
   async function handleAddSwitchboard() {
+    if (!confirmDiscardUnsaved()) return;
     const nextNum = boards.length + 1;
     const { error } = await supabase.from("switchboards").insert({
       revision_id: revisionId,
@@ -230,16 +307,16 @@ export function ProjectDetailTab({
     router.refresh();
   }
 
-  // Optimistic, local-only update: reflects instantly in the table and
-  // fires the write in the background. No router.refresh() here — this
-  // runs on every field blur, and refreshing the whole page each time is
-  // what produced the "Failed to fetch" errors.
-  async function updateSwitchboardField(switchboardId: string, fieldPatch: Partial<Switchboard>) {
+  // Local draft update only -- reflects instantly in the table but doesn't
+  // write to Supabase itself; handleSave diffs `boards` against
+  // `boardsSnapshot` and persists whatever actually changed. This is what
+  // makes the Save button (and Ctrl+S) light up when a switchboard
+  // property is edited, same as every other draft/save screen in the app.
+  function updateSwitchboardField(switchboardId: string, fieldPatch: Partial<Switchboard>) {
     setBoards((prev) =>
       prev.map((item) => (item.switchboard.id === switchboardId ? { ...item, switchboard: { ...item.switchboard, ...fieldPatch } } : item))
     );
-    const { error } = await supabase.from("switchboards").update(fieldPatch).eq("id", switchboardId);
-    if (error) alert(error.message);
+    setJustSaved(false);
   }
 
   function startRename(sb: Switchboard) {
