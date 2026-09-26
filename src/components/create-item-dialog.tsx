@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { numericKeyGuard } from "@/lib/numeric-input";
+import { itemCode, findDuplicateItem } from "@/lib/item-display";
 import type { ItemMaster, ItemSource, ItemStatus } from "@/types/database";
 
 const EMPTY_DRAFT = {
@@ -100,6 +101,15 @@ export function CreateItemDialog({
     setError(null);
     setSaving(true);
     const supabase = createClient();
+
+    const dup = await findDuplicateItem(supabase, { sku: resolved.sku, vendor_cat: resolved.vendor_cat });
+    if (dup) {
+      setSaving(false);
+      const matchedOn = resolved.sku.trim() && dup.sku === resolved.sku.trim() ? "SKU" : "Vendor Cat";
+      setError(`An item with this ${matchedOn} already exists: ${itemCode(dup)} — ${dup.description}. Use that item instead of creating a duplicate.`);
+      return;
+    }
+
     const { data, error } = await supabase.from("item_master").insert(draftToRow(resolved)).select("*").single();
     setSaving(false);
     if (error || !data) {
