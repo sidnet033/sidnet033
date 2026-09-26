@@ -77,6 +77,12 @@ export function CreateItemDialog({
     setDraft((d) => ({ ...d, ...p }));
   }
 
+  // Items without a SKU are almost always ones raised during estimation
+  // (a Design-catalog item normally has one) -- so default Source to
+  // Estimation whenever the SKU is blank, unless the user has actively
+  // picked a source themselves.
+  const effectiveSource: ItemSource | "" = draft.source || (draft.sku.trim() ? "" : "Estimation");
+
   function handleClose() {
     setDraft(EMPTY_DRAFT);
     setError(null);
@@ -85,7 +91,8 @@ export function CreateItemDialog({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const validationError = validateDraft(draft);
+    const resolved: Draft = { ...draft, source: effectiveSource };
+    const validationError = validateDraft(resolved);
     if (validationError) {
       setError(validationError);
       return;
@@ -93,7 +100,7 @@ export function CreateItemDialog({
     setError(null);
     setSaving(true);
     const supabase = createClient();
-    const { data, error } = await supabase.from("item_master").insert(draftToRow(draft)).select("*").single();
+    const { data, error } = await supabase.from("item_master").insert(draftToRow(resolved)).select("*").single();
     setSaving(false);
     if (error || !data) {
       setError(error?.message ?? "Could not create item.");
@@ -126,7 +133,7 @@ export function CreateItemDialog({
             <Field label="Description" value={draft.description} onChange={(v) => patch({ description: v })} required className="sm:col-span-2" />
             <Field label="Make" value={draft.make} onChange={(v) => patch({ make: v })} />
             <Field label="Category" value={draft.category} onChange={(v) => patch({ category: v })} />
-            <SourceField value={draft.source} onChange={(v) => patch({ source: v })} />
+            <SourceField value={effectiveSource} onChange={(v) => patch({ source: v })} />
             <StatusField value={draft.status} onChange={(v) => patch({ status: v })} />
             <Field label="Amps" value={draft.amps} onChange={(v) => patch({ amps: v })} numeric />
             <Field label="kA" value={draft.ka} onChange={(v) => patch({ ka: v })} numeric />

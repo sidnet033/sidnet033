@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { CostBreakdownCard } from "@/components/cost-breakdown-card";
 import { AdHocFeederPanel } from "@/components/ad-hoc-feeder-panel";
+import { CreateItemDialog } from "@/components/create-item-dialog";
 import { findDuplicateLibraryFeeder } from "@/lib/feeder-duplicate";
 import { ensureUnassignedVertical } from "@/lib/switchboard-bom";
 import { effectiveNetRate } from "@/lib/feeder-cost";
@@ -244,6 +245,14 @@ export function BomBuilder({
   const [libraryFeedersAll, setLibraryFeedersAll] = useState<LibraryFeederOption[]>([]);
   const [saving, setSaving] = useState(false);
   const [resetKey, setResetKey] = useState(0);
+  const [items, setItems] = useState(allItems);
+
+  // Creating a new item from within the BOM Builder (e.g. next to "Add Item
+  // to Feeder") should be searchable immediately across every feeder module
+  // in this same session, without waiting on a page reload.
+  function handleItemCreated(item: ItemMaster) {
+    setItems((prev) => [...prev, item]);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -852,7 +861,7 @@ export function BomBuilder({
         <div className="flex flex-wrap items-start gap-3">
           <AddFromLibrary options={libraryFeedersAll} placedCounts={placedCounts} onSelect={addLibraryFeeder} />
           <div className="flex-1">
-            <AdHocFeederPanel switchboardId={sb.id} allItems={allItems} onCreated={handleAdHocCreated} />
+            <AdHocFeederPanel switchboardId={sb.id} allItems={items} onCreated={handleAdHocCreated} />
           </div>
           {bomCategories.length > 0 && <CategoryDiscountTool categories={bomCategories} onApply={applyCategoryDiscount} />}
         </div>
@@ -865,10 +874,11 @@ export function BomBuilder({
             mod={mod}
             readOnly={readOnly}
             canEditLines={!readOnly && (isAdmin || !mod.feeder.is_library)}
-            allItems={allItems}
+            allItems={items}
             onRename={(field, value) => renameFeeder(mod, field, value)}
             onQtyChange={(qty) => updateModuleQty(mod, qty)}
             onAddLine={(item, qty) => addLine(mod, item, qty)}
+            onItemCreated={handleItemCreated}
             onLineQtyChange={(lineId, qty) => updateLineQty(mod, lineId, qty)}
             onLineOverrideChange={(lineId, field, value) => updateLineOverride(mod, lineId, field, value)}
             onRemoveLine={(lineId) => removeLine(mod, lineId)}
@@ -1016,6 +1026,7 @@ function FeederModuleCard({
   onRename,
   onQtyChange,
   onAddLine,
+  onItemCreated,
   onLineQtyChange,
   onLineOverrideChange,
   onRemoveLine,
@@ -1030,6 +1041,7 @@ function FeederModuleCard({
   onRename: (field: "name" | "tag" | "rating_summary", value: string) => void;
   onQtyChange: (qty: number) => void;
   onAddLine: (item: ItemMaster, qty: number) => void;
+  onItemCreated: (item: ItemMaster) => void;
   onLineQtyChange: (lineId: string, qty: number) => void;
   onLineOverrideChange: (lineId: string, field: "list_price_override" | "discount_pct_override", value: number | null) => void;
   onRemoveLine: (lineId: string) => void;
@@ -1039,6 +1051,7 @@ function FeederModuleCard({
 }) {
   const [expanded, setExpanded] = useState(true);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [createItemOpen, setCreateItemOpen] = useState(false);
   const [itemSearch, setItemSearch] = useState("");
   const [categoryChip, setCategoryChip] = useState<string | null>(null);
   const [justAdded, setJustAdded] = useState<{ id: string; label: string }[]>([]);
@@ -1066,6 +1079,12 @@ function FeederModuleCard({
     onAddLine(item, 1);
     setJustAdded((prev) => [{ id: item.id, label: `${itemCode(item)} — ${item.description}` }, ...prev].slice(0, 10));
     setItemSearch("");
+  }
+
+  function handleItemCreated(item: ItemMaster) {
+    onItemCreated(item);
+    setCreateItemOpen(false);
+    addItem(item);
   }
 
   function closeAddDialog() {
@@ -1257,9 +1276,14 @@ function FeederModuleCard({
           </table>
 
           {canEditLines && (
-            <button type="button" onClick={() => setAddDialogOpen(true)} className="btn btn-primary btn-sm mt-2">
-              <Icon name="add" size={14} /> Add Item to Feeder
-            </button>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button type="button" onClick={() => setAddDialogOpen(true)} className="btn btn-primary btn-sm">
+                <Icon name="add" size={14} /> Add Item to Feeder
+              </button>
+              <button type="button" onClick={() => setCreateItemOpen(true)} className="btn btn-secondary btn-sm">
+                <Icon name="add_circle" size={14} /> Create New Item in Master &amp; Add
+              </button>
+            </div>
           )}
 
           <div className="mt-2 flex items-center justify-end gap-3 border-t border-surface-container pt-2 text-xs text-secondary">
@@ -1385,6 +1409,8 @@ function FeederModuleCard({
           </div>
         </div>
       )}
+
+      <CreateItemDialog open={createItemOpen} onClose={() => setCreateItemOpen(false)} onCreated={handleItemCreated} />
     </div>
   );
 }
