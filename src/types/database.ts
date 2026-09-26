@@ -62,6 +62,7 @@ export type ItemMaster = {
   source: ItemSource;
   status: ItemStatus;
   amps: number | null;
+  frame: string | null;
   ka: number | null;
   poles: number | null;
   uom: string;

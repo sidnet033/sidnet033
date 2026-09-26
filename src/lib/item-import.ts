@@ -12,6 +12,7 @@ export type ParsedItemRow = {
   source: string;
   status: string;
   amps: number | null;
+  frame: string | null;
   ka: number | null;
   poles: number | null;
   uom: string;

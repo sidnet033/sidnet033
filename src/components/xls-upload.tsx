@@ -7,10 +7,12 @@ import { importItemRows, logImport, type ImportSummary, type ParsedItemRow } fro
 import { Icon } from "@/components/icon";
 
 // Expected columns in the sheet's header row (any order, case-insensitive):
-// sku, vendor_cat, description, make, category, source, status, amps, ka,
-// poles, uom, unit_cost, list_price, discount_pct, supplier, notes. Every
-// row needs a sku or a vendor_cat (or both), a description, and a Source
-// (Design or Estimation) — everything else is optional.
+// sku, vendor_cat, description, make, category, source, status, amps,
+// frame, ka, poles, uom, unit_cost, list_price, discount_pct, supplier,
+// notes. Every row needs a sku or a vendor_cat (or both), a description,
+// and a Source (Design or Estimation) — everything else is optional.
+// frame only means anything for ACB/MCCB/MCB items, but it's a plain
+// optional column like the rest.
 const REQUIRED_DESCRIPTION = "description";
 const REQUIRED_SOURCE = "source";
 
@@ -80,6 +82,7 @@ export function XlsUpload({ onDone, currentUserName }: { onDone: () => void; cur
             source: cellText("source").trim(),
             status: cellText("status").trim().toLowerCase() || "active",
             amps: cellText("amps") ? Number(cellText("amps")) : null,
+            frame: cellText("frame").trim() || null,
             ka: cellText("ka") ? Number(cellText("ka")) : null,
             poles: cellText("poles") ? Number(cellText("poles")) : null,
             uom: cellText("uom").trim() || "nos",

@@ -17,6 +17,7 @@ const EMPTY_DRAFT = {
   source: "" as ItemSource | "",
   status: "active" as ItemStatus,
   amps: "",
+  frame: "",
   ka: "",
   poles: "",
   uom: "nos",
@@ -46,6 +47,7 @@ function draftToRow(d: Draft) {
     source: d.source as ItemSource,
     status: d.status,
     amps: d.amps.trim() ? Number(d.amps) : null,
+    frame: d.frame.trim() || null,
     ka: d.ka.trim() ? Number(d.ka) : null,
     poles: d.poles.trim() ? Number(d.poles) : null,
     uom: d.uom.trim() || "nos",
@@ -146,6 +148,7 @@ export function CreateItemDialog({
             <SourceField value={effectiveSource} onChange={(v) => patch({ source: v })} />
             <StatusField value={draft.status} onChange={(v) => patch({ status: v })} />
             <Field label="Amps" value={draft.amps} onChange={(v) => patch({ amps: v })} numeric />
+            <Field label="Frame (ACB/MCCB/MCB)" value={draft.frame} onChange={(v) => patch({ frame: v })} />
             <Field label="kA" value={draft.ka} onChange={(v) => patch({ ka: v })} numeric />
             <Field label="Poles" value={draft.poles} onChange={(v) => patch({ poles: v })} numeric />
             <Field label="UOM" value={draft.uom} onChange={(v) => patch({ uom: v })} />

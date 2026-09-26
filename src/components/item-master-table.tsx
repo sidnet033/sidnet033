@@ -22,6 +22,7 @@ const EMPTY_DRAFT = {
   source: "Estimation" as ItemSource,
   status: "active" as ItemStatus,
   amps: "",
+  frame: "",
   ka: "",
   poles: "",
   uom: "nos",
@@ -43,6 +44,7 @@ const CSV_FIELDS: (keyof ItemMaster)[] = [
   "source",
   "status",
   "amps",
+  "frame",
   "ka",
   "poles",
   "uom",
@@ -81,6 +83,7 @@ type ColumnKey =
   | "list_price"
   | "discount_pct"
   | "amps"
+  | "frame"
   | "poles"
   | "ka"
   | "status";
@@ -97,6 +100,7 @@ const ALL_COLUMNS: ColumnKey[] = [
   "list_price",
   "discount_pct",
   "amps",
+  "frame",
   "poles",
   "ka",
   "status",
@@ -114,6 +118,7 @@ const COLUMN_LABELS: Record<ColumnKey, string> = {
   list_price: "List Price",
   discount_pct: "Disc %",
   amps: "Amps",
+  frame: "Frame",
   poles: "Poles",
   ka: "kA",
   status: "Status",
@@ -131,6 +136,7 @@ const COLUMN_ALIGN: Record<ColumnKey, "left" | "right" | "center"> = {
   list_price: "right",
   discount_pct: "center",
   amps: "right",
+  frame: "center",
   poles: "center",
   ka: "right",
   status: "left",
@@ -148,6 +154,7 @@ const CELL_CLASS: Record<ColumnKey, string> = {
   list_price: "px-2 text-right font-display tabular-nums text-secondary line-through",
   discount_pct: "px-2 text-center",
   amps: "px-2 text-right font-display font-semibold tabular-nums text-on-surface",
+  frame: "px-2 text-center font-display text-secondary",
   poles: "px-2 text-center font-display tabular-nums text-on-surface",
   ka: "px-2 text-right font-display font-bold tabular-nums text-primary",
   status: "px-2",
@@ -226,6 +233,7 @@ function draftToRow(d: Draft) {
     source: d.source,
     status: d.status,
     amps: d.amps.trim() ? Number(d.amps) : null,
+    frame: d.frame.trim() || null,
     ka: d.ka.trim() ? Number(d.ka) : null,
     poles: d.poles.trim() ? Number(d.poles) : null,
     uom: d.uom.trim() || "nos",
@@ -557,6 +565,7 @@ export function ItemMasterTable({
       source: item.source,
       status: item.status,
       amps: item.amps === null ? "" : String(item.amps),
+      frame: item.frame ?? "",
       ka: item.ka === null ? "" : String(item.ka),
       poles: item.poles === null ? "" : String(item.poles),
       uom: item.uom,
@@ -690,6 +699,8 @@ export function ItemMasterTable({
         );
       case "amps":
         return item.amps ?? "—";
+      case "frame":
+        return item.frame || "—";
       case "poles":
         return item.poles ?? "—";
       case "ka":
@@ -732,6 +743,8 @@ export function ItemMasterTable({
         return <input type="text" inputMode="decimal" onKeyDown={numericKeyGuard()} className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.discount_pct} onChange={(e) => setEditDraft({ ...editDraft, discount_pct: e.target.value })} />;
       case "amps":
         return <input type="text" inputMode="decimal" onKeyDown={numericKeyGuard()} className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.amps} onChange={(e) => setEditDraft({ ...editDraft, amps: e.target.value })} />;
+      case "frame":
+        return <input className="w-20 rounded border px-1 py-0.5 text-center" value={editDraft.frame} onChange={(e) => setEditDraft({ ...editDraft, frame: e.target.value })} />;
       case "poles":
         return <input type="text" inputMode="numeric" onKeyDown={numericKeyGuard()} className="w-14 rounded border px-1 py-0.5 text-right" value={editDraft.poles} onChange={(e) => setEditDraft({ ...editDraft, poles: e.target.value })} />;
       case "ka":

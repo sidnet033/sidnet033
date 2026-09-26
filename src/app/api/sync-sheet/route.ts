@@ -6,9 +6,9 @@ import { importItemRows, type ParsedItemRow } from "@/lib/item-import";
 // Reads item master rows from a Google Sheet and imports them into
 // item_master. The sheet's first row must be a header with description and
 // source (Design or Estimation), plus sku and/or vendor_cat (every row
-// needs at least one of those two). make / category / status / amps / ka /
-// poles / uom / unit_cost / list_price / discount_pct / supplier / notes
-// are optional. Columns can be in any order.
+// needs at least one of those two). make / category / status / amps /
+// frame / ka / poles / uom / unit_cost / list_price / discount_pct /
+// supplier / notes are optional. Columns can be in any order.
 export async function POST() {
   const supabase = await createClient();
   const {
@@ -20,7 +20,7 @@ export async function POST() {
 
   const { GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY, GOOGLE_SHEET_ID } =
     process.env;
-  const range = process.env.GOOGLE_SHEET_RANGE || "Item Master!A:P";
+  const range = process.env.GOOGLE_SHEET_RANGE || "Item Master!A:Q";
 
   if (!GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || !GOOGLE_SHEET_ID) {
     return NextResponse.json(
@@ -81,6 +81,7 @@ export async function POST() {
           source: get("source"),
           status: get("status").toLowerCase() || "active",
           amps: get("amps") ? Number(get("amps")) : null,
+          frame: get("frame") || null,
           ka: get("ka") ? Number(get("ka")) : null,
           poles: get("poles") ? Number(get("poles")) : null,
           uom: get("uom") || "nos",
