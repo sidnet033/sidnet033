@@ -100,16 +100,11 @@ async function loadBomData(supabase: ReturnType<typeof createClient>, switchboar
   type PlacedRow = { id: string; vertical_id: string; tier_number: number; qty: number; feeder: Feeder };
   const placedRows = (placed ?? []) as unknown as PlacedRow[];
 
-  const feederById = new Map<string, Feeder>();
-  const placementIdByFeeder = new Map<string, string>();
-  const qtyByFeeder = new Map<string, number>();
-  for (const p of placedRows) {
-    feederById.set(p.feeder.id, p.feeder);
-    placementIdByFeeder.set(p.feeder.id, p.id);
-    qtyByFeeder.set(p.feeder.id, p.qty);
-  }
-
-  const feederIds = Array.from(feederById.keys());
+  // Build one module per PLACEMENT, not one per distinct feeder -- the same
+  // library feeder is routinely placed in several bays (e.g. an identical
+  // outgoing MCCB feeder used 6 times), and each of those is a separate
+  // placed_feeders row that needs its own module here, not a collapsed one.
+  const feederIds = Array.from(new Set(placedRows.map((p) => p.feeder.id)));
   const { data: feederLines } = feederIds.length
     ? await supabase.from("feeder_items").select("*, item:item_master(*)").in("feeder_id", feederIds).order("sort_order")
     : { data: [] };
@@ -121,14 +116,13 @@ async function loadBomData(supabase: ReturnType<typeof createClient>, switchboar
     linesByFeeder.set(line.feeder_id, list);
   }
 
-  const modules: DraftModule[] = feederIds.map((fid) => {
-    const feeder = feederById.get(fid)!;
-    const lines = (linesByFeeder.get(fid) ?? []).map(toDraftLine);
+  const modules: DraftModule[] = placedRows.map((p) => {
+    const lines = (linesByFeeder.get(p.feeder.id) ?? []).map(toDraftLine);
     return {
-      feeder,
-      baselineFeeder: feeder,
-      placementId: placementIdByFeeder.get(fid)!,
-      qty: qtyByFeeder.get(fid) ?? 1,
+      feeder: p.feeder,
+      baselineFeeder: p.feeder,
+      placementId: p.id,
+      qty: p.qty,
       lines,
       baselineLines: lines,
     };
@@ -403,7 +397,7 @@ export function BomBuilder({
   }
 
   function deleteModule(mod: DraftModule) {
-    setDraft((d) => (d ? { ...d, modules: d.modules.filter((m) => m.feeder.id !== mod.feeder.id) } : d));
+    setDraft((d) => (d ? { ...d, modules: d.modules.filter((m) => m.placementId !== mod.placementId) } : d));
   }
 
   async function promoteToLibrary(mod: DraftModule) {
@@ -432,7 +426,7 @@ export function BomBuilder({
       alert("Could not save the feeder — it may have changed or been removed elsewhere. Refresh and try again.");
       return;
     }
-    const flip = (m: DraftModule) => (m.feeder.id === mod.feeder.id ? { ...m, feeder: { ...m.feeder, ...patch }, baselineFeeder: { ...m.baselineFeeder, ...patch } } : m);
+    const flip = (m: DraftModule) => (m.placementId === mod.placementId ? { ...m, feeder: { ...m.feeder, ...patch }, baselineFeeder: { ...m.baselineFeeder, ...patch } } : m);
     setSaved((s) => (s ? { ...s, modules: s.modules.map(flip) } : s));
     setDraft((d) => (d ? { ...d, modules: d.modules.map(flip) } : d));
     setLibraryFeedersAll((prev) => [
@@ -442,18 +436,18 @@ export function BomBuilder({
   }
 
   function updateModuleQty(mod: DraftModule, qty: number) {
-    setDraft((d) => (d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, qty } : m)) } : d));
+    setDraft((d) => (d ? { ...d, modules: d.modules.map((m) => (m.placementId === mod.placementId ? { ...m, qty } : m)) } : d));
   }
 
   function addLine(mod: DraftModule, item: ItemMaster, qty: number) {
     const line: DraftLine = { id: newId(), item_id: item.id, item, qty, list_price_override: null, discount_pct_override: null };
-    setDraft((d) => (d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, lines: [...m.lines, line] } : m)) } : d));
+    setDraft((d) => (d ? { ...d, modules: d.modules.map((m) => (m.placementId === mod.placementId ? { ...m, lines: [...m.lines, line] } : m)) } : d));
   }
 
   function updateLineQty(mod: DraftModule, lineId: string, qty: number) {
     setDraft((d) =>
       d
-        ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, lines: m.lines.map((l) => (l.id === lineId ? { ...l, qty } : l)) } : m)) }
+        ? { ...d, modules: d.modules.map((m) => (m.placementId === mod.placementId ? { ...m, lines: m.lines.map((l) => (l.id === lineId ? { ...l, qty } : l)) } : m)) }
         : d
     );
   }
@@ -464,7 +458,7 @@ export function BomBuilder({
         ? {
             ...d,
             modules: d.modules.map((m) =>
-              m.feeder.id === mod.feeder.id ? { ...m, lines: m.lines.map((l) => (l.id === lineId ? { ...l, [field]: value } : l)) } : m
+              m.placementId === mod.placementId ? { ...m, lines: m.lines.map((l) => (l.id === lineId ? { ...l, [field]: value } : l)) } : m
             ),
           }
         : d
@@ -473,13 +467,13 @@ export function BomBuilder({
 
   function removeLine(mod: DraftModule, lineId: string) {
     setDraft((d) =>
-      d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, lines: m.lines.filter((l) => l.id !== lineId) } : m)) } : d
+      d ? { ...d, modules: d.modules.map((m) => (m.placementId === mod.placementId ? { ...m, lines: m.lines.filter((l) => l.id !== lineId) } : m)) } : d
     );
   }
 
   function renameFeeder(mod: DraftModule, field: "name" | "tag" | "rating_summary", value: string) {
     setDraft((d) =>
-      d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, feeder: { ...m.feeder, [field]: value || null } } : m)) } : d
+      d ? { ...d, modules: d.modules.map((m) => (m.placementId === mod.placementId ? { ...m, feeder: { ...m.feeder, [field]: value || null } } : m)) } : d
     );
   }
 
@@ -543,11 +537,11 @@ export function BomBuilder({
       await saveLineTable(supabase, "switchboard_busbars", sb.id, saved.busbars, draft.busbars);
       await saveLineTable(supabase, "switchboard_enclosure_lines", sb.id, saved.enclosureLines, draft.enclosureLines);
 
-      const savedModuleIds = new Set(saved.modules.map((m) => m.feeder.id));
-      const draftModuleIds = new Set(draft.modules.map((m) => m.feeder.id));
+      const savedPlacementIds = new Set(saved.modules.map((m) => m.placementId));
+      const draftPlacementIds = new Set(draft.modules.map((m) => m.placementId));
 
       for (const m of saved.modules) {
-        if (!draftModuleIds.has(m.feeder.id)) {
+        if (!draftPlacementIds.has(m.placementId)) {
           await deleteChecked(supabase, "placed_feeders", m.placementId, "feeder placement");
           if (m.feeder.switchboard_id === sb.id && !m.feeder.is_library) {
             await deleteChecked(supabase, "feeders", m.feeder.id, "custom feeder");
@@ -558,7 +552,7 @@ export function BomBuilder({
       let currentUserId: string | undefined;
 
       for (const m of draft.modules) {
-        const isNewPlacement = !savedModuleIds.has(m.feeder.id);
+        const isNewPlacement = !savedPlacementIds.has(m.placementId);
 
         // A library feeder is shared master data — editing its fields or
         // lines here must never mutate it. If it was customized in this
@@ -637,7 +631,7 @@ export function BomBuilder({
             .insert({ vertical_id: vId, feeder_id: feederId, qty: m.qty, tier_number: 1, sort_order: 0 });
           if (error) throw error;
         } else {
-          const priorModule = saved.modules.find((x) => x.feeder.id === m.feeder.id)!;
+          const priorModule = saved.modules.find((x) => x.placementId === m.placementId)!;
           const placementPatch: { qty?: number; feeder_id?: string } = {};
           if (priorModule.qty !== m.qty) placementPatch.qty = m.qty;
           if (forked) placementPatch.feeder_id = feederId;
@@ -725,8 +719,13 @@ export function BomBuilder({
     sb.ip_rating ? `IP${sb.ip_rating}` : null,
   ].filter((v): v is string => !!v);
 
-  const draftFeederIds = new Set(draft.modules.map((m) => m.feeder.id));
-  const libraryOptions = libraryFeedersAll.filter((f) => !draftFeederIds.has(f.id));
+  // The same library feeder can legitimately be placed more than once (e.g.
+  // an identical outgoing MCCB feeder used in several bays) -- it stays in
+  // the picker every time rather than disappearing after the first add.
+  const placedCounts = new Map<string, number>();
+  for (const m of draft.modules) {
+    if (m.feeder.is_library) placedCounts.set(m.feeder.id, (placedCounts.get(m.feeder.id) ?? 0) + 1);
+  }
   const bomCategories = Array.from(
     new Set(draft.modules.flatMap((m) => m.lines.map((l) => l.item.category)).filter((c): c is string => !!c))
   ).sort();
@@ -784,7 +783,7 @@ export function BomBuilder({
 
       {!readOnly && (
         <div className="flex flex-wrap items-start gap-3">
-          <AddFromLibrary options={libraryOptions} onSelect={addLibraryFeeder} />
+          <AddFromLibrary options={libraryFeedersAll} placedCounts={placedCounts} onSelect={addLibraryFeeder} />
           <div className="flex-1">
             <AdHocFeederPanel switchboardId={sb.id} allItems={allItems} onCreated={handleAdHocCreated} />
           </div>
@@ -795,7 +794,7 @@ export function BomBuilder({
       <div className="space-y-3">
         {draft.modules.map((mod) => (
           <FeederModuleCard
-            key={mod.feeder.id}
+            key={mod.placementId}
             mod={mod}
             readOnly={readOnly}
             canEditLines={!readOnly && (isAdmin || !mod.feeder.is_library)}
@@ -831,7 +830,15 @@ export function BomBuilder({
   );
 }
 
-function AddFromLibrary({ options, onSelect }: { options: LibraryFeederOption[]; onSelect: (opt: LibraryFeederOption) => void }) {
+function AddFromLibrary({
+  options,
+  placedCounts,
+  onSelect,
+}: {
+  options: LibraryFeederOption[];
+  placedCounts: Map<string, number>;
+  onSelect: (opt: LibraryFeederOption) => void;
+}) {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const matches = search
@@ -866,7 +873,14 @@ function AddFromLibrary({ options, onSelect }: { options: LibraryFeederOption[];
                 }}
                 className="block w-full px-3 py-2 text-left text-sm hover:bg-surface-container-low"
               >
-                <p className="font-medium text-on-surface">{f.name}</p>
+                <p className="flex items-center gap-1.5 font-medium text-on-surface">
+                  {f.name}
+                  {(placedCounts.get(f.id) ?? 0) > 0 && (
+                    <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                      In BOM ×{placedCounts.get(f.id)}
+                    </span>
+                  )}
+                </p>
                 <p className="text-xs text-on-surface-variant">{f.rating_summary || f.category || "—"}</p>
               </button>
             ))}
