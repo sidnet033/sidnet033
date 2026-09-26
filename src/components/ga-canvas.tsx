@@ -53,6 +53,59 @@ const BAY_TEMPLATES: { bay_type: BayType; label: string; namePrefix: string }[] 
 const PLINTH_OPTIONS = [75, 100, 150, 200];
 const PANEL_HEIGHT_OPTIONS = [1800, 2000, 2100, 2200];
 
+// Elevation drawing scale. The busbar chamber has no real height in our
+// data model yet -- BUSBAR_CHAMBER_HEIGHT_MM is a nominal value used only
+// so the drawing's proportions and ruler stay consistent.
+const BUSBAR_CHAMBER_HEIGHT_MM = 100;
+const DEFAULT_COMPARTMENT_HEIGHT_MM = 150;
+const DRAWING_TARGET_HEIGHT_PX = 520;
+const MIN_PX_PER_MM = 0.12;
+const MAX_PX_PER_MM = 0.6;
+const RULER_WIDTH_PX = 44;
+
+function computePxPerMm(totalHeightMm: number): number {
+  if (totalHeightMm <= 0) return MIN_PX_PER_MM;
+  return Math.min(MAX_PX_PER_MM, Math.max(MIN_PX_PER_MM, DRAWING_TARGET_HEIGHT_PX / totalHeightMm));
+}
+
+// Smallest of a set of "nice" mm steps whose on-screen spacing stays
+// readable at the current scale.
+function niceTickStepMm(pxPerMm: number): number {
+  const candidates = [25, 50, 100, 200, 250, 500, 1000, 2000];
+  return candidates.find((step) => step * pxPerMm >= 28) ?? candidates[candidates.length - 1];
+}
+
+type HoverExtent = { topMm: number; heightMm: number; bayLeftMm: number; bayWidthMm: number; label: string } | null;
+
+type Compartment = { id: string; label: string; heightMm: number; topMm: number; isBlank: boolean; placedId?: string };
+
+function blankCompartmentLabel(bayType: BayType | null): string {
+  if (bayType === "cable_alley") return "CABLE ALLEY";
+  if (bayType === "busbar_alley") return "BUSBAR ALLEY";
+  return "DUMMY";
+}
+
+// Placed feeders stack top-to-bottom by tier_number (this is the first
+// place tier_number actually drives visual order), each sized by its real
+// ArTuK height when the feeder has a device_type set, else a flat fallback
+// slot so something always renders. Unused height at the bottom of the bay
+// becomes a labeled blank compartment instead of stretching the last one.
+function computeCompartments(vertical: VerticalWithFeeders, panelHeightMm: number): Compartment[] {
+  const sorted = [...vertical.placed].sort((a, b) => a.tier_number - b.tier_number || a.sort_order - b.sort_order);
+  const compartments: Compartment[] = [];
+  let used = 0;
+  for (const p of sorted) {
+    const heightMm = lookupFeederBoxHeight(p.feeder) ?? DEFAULT_COMPARTMENT_HEIGHT_MM;
+    compartments.push({ id: p.id, placedId: p.id, label: p.feeder.name, heightMm, topMm: used, isBlank: false });
+    used += heightMm;
+  }
+  const remaining = panelHeightMm - used;
+  if (remaining > 0) {
+    compartments.push({ id: `${vertical.id}-blank`, label: blankCompartmentLabel(vertical.bay_type), heightMm: remaining, topMm: used, isBlank: true });
+  }
+  return compartments;
+}
+
 function newId() {
   return `new-${crypto.randomUUID()}`;
 }
@@ -256,6 +309,7 @@ export function GaCanvas({
   const [search, setSearch] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [draggingFeeder, setDraggingFeeder] = useState<Feeder | null>(null);
+  const [hover, setHover] = useState<HoverExtent>(null);
 
   async function refreshGaData() {
     const data = await loadGaData(supabase, switchboardId);
@@ -303,6 +357,20 @@ export function GaCanvas({
   const bays = verticals.filter((v) => v.bay_type !== "unassigned").sort((a, b) => a.sort_order - b.sort_order);
   const unallocated = verticals.find((v) => v.bay_type === "unassigned") ?? null;
   const totalWidth = bays.reduce((s, v) => s + (v.width_mm ?? 0), 0);
+
+  // Left-edge cumulative offset (mm) of each bay, for the horizontal ruler
+  // and the hover-highlight band.
+  const bayOffsets: number[] = [];
+  {
+    let cum = 0;
+    for (const v of bays) {
+      bayOffsets.push(cum);
+      cum += v.width_mm ?? 0;
+    }
+  }
+
+  const totalHeightMm = BUSBAR_CHAMBER_HEIGHT_MM + panelHeight + plinthHeight;
+  const pxPerMm = computePxPerMm(totalHeightMm);
 
   // Physically, the busbar chamber sits away from wherever cables enter the
   // panel (more room to route cable near the entry side); the base plinth
@@ -746,17 +814,7 @@ export function GaCanvas({
     return <div className="p-8 text-sm text-on-surface-variant">Loading...</div>;
   }
 
-  const busbarBar = (
-    <div
-      className={`flex items-center justify-center border-amber-300/60 bg-amber-50 py-2 text-[11px] font-medium text-amber-800 ${
-        busbarPosition === "top" ? "mb-2 rounded-t-lg border border-b-0" : "mt-2 border"
-      }`}
-      style={{ minWidth: bays.length * 220 }}
-    >
-      Busbar Chamber{sb.amps ? ` · ${sb.amps}A` : ""}
-      {sb.ka ? ` · ${sb.ka}kA` : ""} {sb.busbar ?? "Cu"} Horizontal Busbar
-    </div>
-  );
+  const busbarLabel = `BUSBAR CHAMBER${sb.amps ? ` · ${sb.amps}A` : ""}${sb.ka ? ` · ${sb.ka}kA` : ""} · ${sb.busbar ?? "Cu"}`;
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
@@ -949,34 +1007,70 @@ export function GaCanvas({
               </div>
             )}
 
-            <div className="flex-1 overflow-x-auto rounded-xl border border-surface-container-high bg-surface-container-low/40 p-3">
-              {bays.length > 0 && busbarPosition === "top" && busbarBar}
-              <div className="flex gap-3" style={{ minWidth: bays.length * 220 }}>
-                {bays.map((v) => (
-                  <BayColumn
-                    key={`${v.id}-${resetKey}`}
-                    vertical={v}
-                    readOnly={readOnly}
-                    totalWidth={totalWidth}
-                    onRename={(newName) => renameBay(v.id, newName)}
-                    onDimChange={(field, val) => setBayDim(v.id, field, val)}
-                    onDelete={() => deleteBay(v.id)}
-                    onRemove={(placedId) => removeFromBay(v.id, placedId)}
-                  />
-                ))}
-                {bays.length === 0 && (
-                  <p className="w-full py-10 text-center text-sm text-on-surface-variant">
-                    No bays yet — add one from the Modular Bay Templates above.
-                  </p>
-                )}
-              </div>
-              {bays.length > 0 && busbarPosition === "bottom" && busbarBar}
-              {bays.length > 0 && (
-                <div
-                  className="mt-2 flex items-center justify-center gap-4 rounded-b-lg border border-t-0 border-surface-container-high bg-surface-container-high py-2 text-[11px] font-medium text-on-surface-variant"
-                  style={{ minWidth: bays.length * 220 }}
-                >
-                  <Icon name="anchor" size={13} /> Base Plinth ({plinthHeight}mm) <Icon name="anchor" size={13} />
+            <div className="flex-1 overflow-auto rounded-xl border border-surface-container-high bg-surface-container-low/40 p-4">
+              {bays.length === 0 ? (
+                <p className="w-full py-10 text-center text-sm text-on-surface-variant">
+                  No bays yet — add one from the Modular Bay Templates above.
+                </p>
+              ) : (
+                <div className="inline-block">
+                  {sb.std === "ArTuK" && (
+                    <div className="flex">
+                      <div style={{ width: RULER_WIDTH_PX }} />
+                      <div
+                        className="flex items-center justify-center bg-red-600 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-white"
+                        style={{ width: totalWidth * pxPerMm }}
+                      >
+                        ArTuK
+                      </div>
+                    </div>
+                  )}
+
+                  {busbarPosition === "top" && (
+                    <div className="flex">
+                      <div style={{ width: RULER_WIDTH_PX }} />
+                      <DrawingBar label={busbarLabel} heightPx={BUSBAR_CHAMBER_HEIGHT_MM * pxPerMm} widthPx={totalWidth * pxPerMm} />
+                    </div>
+                  )}
+
+                  <div className="flex">
+                    <VerticalRuler totalHeightMm={panelHeight} pxPerMm={pxPerMm} hover={hover} />
+                    <div className="flex">
+                      {bays.map((v, i) => (
+                        <BayColumn
+                          key={`${v.id}-${resetKey}`}
+                          vertical={v}
+                          readOnly={readOnly}
+                          pxPerMm={pxPerMm}
+                          panelHeightMm={panelHeight}
+                          bayLeftMm={bayOffsets[i]}
+                          onHover={setHover}
+                          onHoverEnd={() => setHover(null)}
+                          onRename={(newName) => renameBay(v.id, newName)}
+                          onDimChange={(field, val) => setBayDim(v.id, field, val)}
+                          onDelete={() => deleteBay(v.id)}
+                          onRemove={(placedId) => removeFromBay(v.id, placedId)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {busbarPosition === "bottom" && (
+                    <div className="flex">
+                      <div style={{ width: RULER_WIDTH_PX }} />
+                      <DrawingBar label={busbarLabel} heightPx={BUSBAR_CHAMBER_HEIGHT_MM * pxPerMm} widthPx={totalWidth * pxPerMm} />
+                    </div>
+                  )}
+
+                  <div className="flex">
+                    <div style={{ width: RULER_WIDTH_PX }} />
+                    <DrawingBar label={`PLINTH · ${plinthHeight}mm`} heightPx={plinthHeight * pxPerMm} widthPx={totalWidth * pxPerMm} />
+                  </div>
+
+                  <div className="flex">
+                    <div style={{ width: RULER_WIDTH_PX }} />
+                    <HorizontalRuler bayOffsets={bayOffsets} totalWidth={totalWidth} pxPerMm={pxPerMm} hover={hover} />
+                  </div>
                 </div>
               )}
             </div>
@@ -1040,10 +1134,87 @@ function AvailableFeederCard({ unit, disabled = false }: { unit: AvailableUnit; 
   );
 }
 
+// A plain technical-drawing style bar (busbar chamber, plinth) spanning
+// the full drawing width -- line art, not a themed alert/status bar.
+function DrawingBar({ label, heightPx, widthPx }: { label: string; heightPx: number; widthPx: number }) {
+  return (
+    <div
+      className="flex shrink-0 items-center justify-center overflow-hidden border border-black/70 bg-white px-2 text-center font-telemetry-md text-[9px] font-semibold uppercase tracking-wide text-black"
+      style={{ height: Math.max(heightPx, 16), width: Math.max(widthPx, 1) }}
+    >
+      {label}
+    </div>
+  );
+}
+
+// Left-edge mm scale for the bays' shared panel height, measured bottom-up
+// (0 at the base of the bays) to match a real elevation drawing.
+function VerticalRuler({ totalHeightMm, pxPerMm, hover }: { totalHeightMm: number; pxPerMm: number; hover: HoverExtent }) {
+  const heightPx = totalHeightMm * pxPerMm;
+  const step = niceTickStepMm(pxPerMm);
+  const ticks: number[] = [];
+  for (let mm = 0; mm <= totalHeightMm; mm += step) ticks.push(mm);
+
+  return (
+    <div className="relative shrink-0 border-r border-black/40" style={{ width: RULER_WIDTH_PX, height: heightPx }}>
+      {hover && (
+        <div
+          className="absolute right-0 w-full bg-amber-300/50"
+          style={{ bottom: (totalHeightMm - hover.topMm - hover.heightMm) * pxPerMm, height: Math.max(hover.heightMm * pxPerMm, 1) }}
+        />
+      )}
+      {ticks.map((mm) => (
+        <div key={mm} className="absolute right-0 flex items-center gap-1" style={{ bottom: mm * pxPerMm - 0.5 }}>
+          <span className="font-mono text-[8px] leading-none text-on-surface-variant">{mm}</span>
+          <span className="h-px w-2 bg-black/50" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Bottom mm scale across the bays' cumulative width, one tick per bay
+// boundary.
+function HorizontalRuler({
+  bayOffsets,
+  totalWidth,
+  pxPerMm,
+  hover,
+}: {
+  bayOffsets: number[];
+  totalWidth: number;
+  pxPerMm: number;
+  hover: HoverExtent;
+}) {
+  const widthPx = totalWidth * pxPerMm;
+  const boundaries = Array.from(new Set([...bayOffsets, totalWidth]));
+
+  return (
+    <div className="relative shrink-0 border-t border-black/40" style={{ width: Math.max(widthPx, 1), height: 24 }}>
+      {hover && (
+        <div
+          className="absolute top-0 h-full bg-amber-300/50"
+          style={{ left: hover.bayLeftMm * pxPerMm, width: Math.max(hover.bayWidthMm * pxPerMm, 1) }}
+        />
+      )}
+      {boundaries.map((mm) => (
+        <div key={mm} className="absolute top-0 flex flex-col items-center" style={{ left: mm * pxPerMm }}>
+          <span className="h-2 w-px bg-black/50" />
+          <span className="mt-0.5 font-mono text-[8px] leading-none text-on-surface-variant">{mm}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function BayColumn({
   vertical,
   readOnly,
-  totalWidth,
+  pxPerMm,
+  panelHeightMm,
+  bayLeftMm,
+  onHover,
+  onHoverEnd,
   onRename,
   onDimChange,
   onDelete,
@@ -1051,7 +1222,11 @@ function BayColumn({
 }: {
   vertical: VerticalWithFeeders;
   readOnly: boolean;
-  totalWidth: number;
+  pxPerMm: number;
+  panelHeightMm: number;
+  bayLeftMm: number;
+  onHover: (extent: HoverExtent) => void;
+  onHoverEnd: () => void;
   onRename: (name: string) => void;
   onDimChange: (field: "width_mm" | "depth_mm", value: string) => void;
   onDelete: () => void;
@@ -1062,27 +1237,34 @@ function BayColumn({
   const [localWidth, setLocalWidth] = useState(vertical.width_mm ? String(vertical.width_mm) : "");
   const [localDepth, setLocalDepth] = useState(vertical.depth_mm ? String(vertical.depth_mm) : "");
 
-  const widthPct = totalWidth > 0 && vertical.width_mm ? Math.round((vertical.width_mm / totalWidth) * 100) : null;
-  const placed = [...vertical.placed].sort((a, b) => a.sort_order - b.sort_order);
+  const widthMm = vertical.width_mm ?? 0;
+  const widthPx = widthMm * pxPerMm;
+  const heightPx = panelHeightMm * pxPerMm;
+  const compartments = computeCompartments(vertical, panelHeightMm);
 
   return (
-    <div className="flex w-56 shrink-0 flex-col rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-xs">
-      <div className="border-b border-surface-container p-2">
-        <div className="flex items-center justify-between">
+    <div className="flex shrink-0 flex-col">
+      <div className="mb-1 rounded border border-surface-container-high bg-surface-container-lowest p-1.5" style={{ width: Math.max(widthPx, 96) }}>
+        <div className="flex items-center justify-between gap-1">
           <input
             value={localName}
             disabled={readOnly}
             onChange={(e) => setLocalName(e.target.value)}
             onBlur={() => onRename(localName)}
-            className="w-full rounded border-none bg-transparent px-1 py-0.5 text-sm font-semibold text-on-surface focus:bg-surface-container-low disabled:text-secondary"
+            className="w-full rounded border-none bg-transparent px-0.5 py-0.5 text-[11px] font-semibold text-on-surface focus:bg-surface-container-low disabled:text-secondary"
           />
-          {vertical.bay_type && (
-            <span className="shrink-0 rounded border border-surface-container-high bg-surface-container-low px-1 py-0.5 text-[10px] capitalize text-secondary">
-              {vertical.bay_type.replace("_", " ")}
-            </span>
+          {!readOnly && (
+            <button onClick={onDelete} title="Delete bay" className="shrink-0 text-error hover:text-error/80">
+              <Icon name="close" size={13} />
+            </button>
           )}
         </div>
-        <div className="mt-1 flex items-center gap-1.5 px-1 text-xs text-on-surface-variant">
+        {vertical.bay_type && (
+          <span className="mb-1 inline-block rounded border border-surface-container-high bg-surface-container-low px-1 py-0.5 text-[9px] capitalize text-secondary">
+            {vertical.bay_type.replace("_", " ")}
+          </span>
+        )}
+        <div className="flex items-center gap-1 font-telemetry-md text-[10px] text-on-surface-variant">
           <input
             type="text"
             inputMode="decimal"
@@ -1092,7 +1274,7 @@ function BayColumn({
             onKeyDown={numericKeyGuard()}
             onBlur={() => onDimChange("width_mm", localWidth)}
             placeholder="W"
-            className="w-14 rounded border border-surface-container-high px-1 py-0.5 disabled:bg-surface-container-low"
+            className="w-10 rounded border border-surface-container-high px-1 py-0.5 disabled:bg-surface-container-low"
           />
           ×
           <input
@@ -1104,34 +1286,40 @@ function BayColumn({
             onKeyDown={numericKeyGuard()}
             onBlur={() => onDimChange("depth_mm", localDepth)}
             placeholder="D"
-            className="w-14 rounded border border-surface-container-high px-1 py-0.5 disabled:bg-surface-container-low"
+            className="w-10 rounded border border-surface-container-high px-1 py-0.5 disabled:bg-surface-container-low"
           />
-          <span>mm{widthPct !== null && ` · ${widthPct}%`}</span>
+          <span>mm</span>
         </div>
-        {!readOnly && (
-          <div className="mt-1 px-1">
-            <button onClick={onDelete} className="text-xs text-error hover:underline">
-              Delete
-            </button>
-          </div>
-        )}
       </div>
 
-      <div ref={setNodeRef} className={`flex-1 space-y-1.5 p-2 ${isOver ? "bg-blue-50" : ""}`} style={{ minHeight: 220 }}>
-        {placed.map((p) => (
-          <div key={p.id} className="rounded-lg border border-surface-container-high bg-surface-container-low p-2 text-xs">
-            <div className="flex items-start justify-between gap-1">
-              <p className="font-medium text-on-surface">{p.feeder.name}</p>
-              {!readOnly && (
-                <button onClick={() => onRemove(p.id)} title="Move back to available feeders" className="text-error hover:underline">
-                  ✕
-                </button>
-              )}
-            </div>
-            <p className="text-[10px] text-on-surface-variant">{p.feeder.rating_summary || p.feeder.category || "—"}</p>
+      <div
+        ref={setNodeRef}
+        className={`relative shrink-0 border bg-white ${isOver ? "border-primary" : "border-black/70"}`}
+        style={{ width: Math.max(widthPx, 1), height: Math.max(heightPx, 1) }}
+      >
+        {compartments.map((c) => (
+          <div
+            key={c.id}
+            onMouseEnter={() => onHover({ topMm: c.topMm, heightMm: c.heightMm, bayLeftMm, bayWidthMm: widthMm, label: c.label })}
+            onMouseLeave={onHoverEnd}
+            title={`${c.label} — ${widthMm}mm × ${c.heightMm}mm`}
+            className={`group relative flex items-center justify-center overflow-hidden border-b border-black/40 px-1 text-center last:border-b-0 ${
+              c.isBlank ? "bg-surface-container-low/50" : "bg-white hover:bg-amber-50"
+            }`}
+            style={{ height: Math.max(c.heightMm * pxPerMm, 1) }}
+          >
+            <span className="truncate font-telemetry-md text-[9px] uppercase tracking-wide text-black">{c.label}</span>
+            {!c.isBlank && !readOnly && (
+              <button
+                onClick={() => onRemove(c.id)}
+                title="Move back to available feeders"
+                className="absolute right-0.5 top-0.5 text-error opacity-0 group-hover:opacity-100"
+              >
+                <Icon name="close" size={10} />
+              </button>
+            )}
           </div>
         ))}
-        {placed.length === 0 && <p className="pt-6 text-center text-xs text-on-surface-variant">Drop feeders here</p>}
       </div>
     </div>
   );
