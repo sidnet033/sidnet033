@@ -17,6 +17,8 @@ import type { Tab } from "@/components/revision-workspace";
 
 const STD_OPTIONS = ["ArTuK", "61439", "60439"] as const;
 const IP_OPTIONS = ["42", "52", "54", "55", "63"];
+const FORM_OPTIONS = ["Form 1", "Form 2a", "Form 2b", "Form 3a", "Form 3b", "Form 4a", "Form 4b (Type 7)"];
+const CABLE_OPTIONS = ["Top", "Bottom"] as const;
 
 function formatDate(iso: string | null) {
   if (!iso) return "—";
@@ -530,9 +532,12 @@ export function ProjectDetailTab({
                   <th className="px-space-md py-space-sm">Switchboard</th>
                   <th className="px-space-md py-space-sm">Type</th>
                   <th className="w-36 px-space-md py-space-sm">Std</th>
+                  <th className="w-32 px-space-md py-space-sm">Form of Separation</th>
                   <th className="px-space-md py-space-sm text-right">Amps</th>
                   <th className="px-space-md py-space-sm">IP</th>
                   <th className="px-space-md py-space-sm text-right">kA</th>
+                  <th className="px-space-md py-space-sm">Cable Entry</th>
+                  <th className="px-space-md py-space-sm">Cable Exit</th>
                   <th className="px-space-md py-space-sm text-right">Qty</th>
                   <th className="px-space-md py-space-sm text-right">Unit Cost</th>
                   <th className="px-space-md py-space-sm text-right">Margin</th>
@@ -640,6 +645,21 @@ export function ProjectDetailTab({
                           ))}
                         </select>
                       </td>
+                      <td className="w-32 px-space-md py-space-md">
+                        <select
+                          disabled={rowDisabled}
+                          value={sb.form_of_separation ?? ""}
+                          onChange={(e) => updateSwitchboardField(sb.id, { form_of_separation: e.target.value || null })}
+                          className="w-full min-w-[104px] rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 disabled:border-transparent disabled:bg-transparent"
+                        >
+                          <option value="">—</option>
+                          {FORM_OPTIONS.map((f) => (
+                            <option key={f} value={f}>
+                              {f}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
                       <td className="px-space-md py-space-md text-right">
                         <input
                           type="text"
@@ -686,6 +706,36 @@ export function ProjectDetailTab({
                           }}
                           className="w-12 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
                         />
+                      </td>
+                      <td className="px-space-md py-space-md">
+                        <select
+                          disabled={rowDisabled}
+                          value={sb.cable_entry ?? ""}
+                          onChange={(e) => updateSwitchboardField(sb.id, { cable_entry: (e.target.value || null) as Switchboard["cable_entry"] })}
+                          className="w-20 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 disabled:border-transparent disabled:bg-transparent"
+                        >
+                          <option value="">—</option>
+                          {CABLE_OPTIONS.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-space-md py-space-md">
+                        <select
+                          disabled={rowDisabled}
+                          value={sb.cable_exit ?? ""}
+                          onChange={(e) => updateSwitchboardField(sb.id, { cable_exit: (e.target.value || null) as Switchboard["cable_exit"] })}
+                          className="w-20 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 disabled:border-transparent disabled:bg-transparent"
+                        >
+                          <option value="">—</option>
+                          {CABLE_OPTIONS.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
                       </td>
                       <td className="px-space-md py-space-md text-right">
                         <input

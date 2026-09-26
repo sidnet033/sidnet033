@@ -13,28 +13,32 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { createClient } from "@/lib/supabase/client";
-import type { BayType, Feeder, ItemMaster, PlacedFeeder, Switchboard, Vertical } from "@/types/database";
-import { getFeederCosts } from "@/lib/feeder-cost";
-import { getSwitchboardCostBreakdown } from "@/lib/switchboard-cost";
-import { AdHocFeederPanel } from "@/components/ad-hoc-feeder-panel";
-import { findDuplicateLibraryFeeder } from "@/lib/feeder-duplicate";
+import type { BayType, Feeder, PlacedFeeder, Switchboard, Vertical } from "@/types/database";
+import { ensureUnassignedVertical } from "@/lib/switchboard-bom";
 import { Icon } from "@/components/icon";
 import { numericKeyGuard } from "@/lib/numeric-input";
 
-type FeederWithCost = Feeder & { cost: number };
 type VerticalWithFeeders = Vertical & {
-  placed: (PlacedFeeder & { feeder: FeederWithCost })[];
+  placed: (PlacedFeeder & { feeder: Feeder })[];
 };
 type PlacedWithFeeder = VerticalWithFeeders["placed"][number];
+
+// One draggable card per physical unit of a feeder waiting to be placed --
+// a placed_feeders row of qty 3 sitting in the unassigned bucket shows up
+// here as 3 separate cards, each of which moves exactly one unit into a
+// bay when dropped.
+type AvailableUnit = { unitId: string; placedId: string; feeder: Feeder };
 
 const BAY_TEMPLATES: { bay_type: BayType; label: string; namePrefix: string }[] = [
   { bay_type: "incomer", label: "+ Incomer Bay", namePrefix: "Incomer" },
   { bay_type: "outgoing", label: "+ Outgoing Bay", namePrefix: "Outgoing" },
   { bay_type: "riser", label: "+ Cable Spreader", namePrefix: "Riser" },
   { bay_type: "bus_coupler", label: "+ Bus Coupler", namePrefix: "Bus Coupler" },
+  { bay_type: "bay", label: "+ Add Bay", namePrefix: "Bay" },
+  { bay_type: "cable_alley", label: "+ Cable Alley", namePrefix: "Cable Alley" },
+  { bay_type: "busbar_alley", label: "+ Busbar Alley", namePrefix: "Busbar Alley" },
 ];
 
-const FORM_OPTIONS = ["Form 1", "Form 2a", "Form 2b", "Form 3a", "Form 3b", "Form 4a", "Form 4b (Type 7)"];
 const PLINTH_OPTIONS = [75, 100, 150, 200];
 const PANEL_HEIGHT_OPTIONS = [1800, 2000, 2100, 2200];
 
@@ -42,12 +46,11 @@ async function loadGaData(supabase: ReturnType<typeof createClient>, switchboard
   const { data: switchboard } = await supabase.from("switchboards").select("*").eq("id", switchboardId).single();
   if (!switchboard) return null;
 
-  const [{ data: verticals }, { data: feeders }, feederCosts, breakdown] = await Promise.all([
-    supabase.from("verticals").select("*").eq("switchboard_id", switchboardId).order("sort_order"),
-    supabase.from("feeders").select("*").or(`is_library.eq.true,switchboard_id.eq.${switchboardId}`).order("name"),
-    getFeederCosts(supabase),
-    getSwitchboardCostBreakdown(supabase, switchboard as Switchboard),
-  ]);
+  const { data: verticals } = await supabase
+    .from("verticals")
+    .select("*")
+    .eq("switchboard_id", switchboardId)
+    .order("sort_order");
 
   const verticalIds = (verticals ?? []).map((v) => v.id);
   const { data: placed } = verticalIds.length
@@ -56,32 +59,23 @@ async function loadGaData(supabase: ReturnType<typeof createClient>, switchboard
 
   const verticalsWithFeeders: VerticalWithFeeders[] = (verticals ?? []).map((v) => ({
     ...v,
-    placed: ((placed ?? []) as unknown as (PlacedFeeder & { feeder: Feeder; vertical_id: string })[])
-      .filter((p) => p.vertical_id === v.id)
-      .map((p) => ({ ...p, feeder: { ...p.feeder, cost: feederCosts.get(p.feeder.id) ?? 0 } })),
-  }));
-
-  const feederLibrary: FeederWithCost[] = ((feeders ?? []) as Feeder[]).map((f) => ({
-    ...f,
-    cost: feederCosts.get(f.id) ?? 0,
+    placed: ((placed ?? []) as unknown as (PlacedFeeder & { feeder: Feeder; vertical_id: string })[]).filter(
+      (p) => p.vertical_id === v.id
+    ),
   }));
 
   return {
     switchboard: switchboard as Switchboard,
     verticals: verticalsWithFeeders,
-    feederLibrary,
-    enclosureCost: breakdown.enclosure,
   };
 }
 
 export function GaCanvas({
   switchboardId,
-  allItems,
   currentUserId,
   revisionArchived,
 }: {
   switchboardId: string;
-  allItems: ItemMaster[];
   currentUserId: string;
   revisionArchived: boolean;
 }) {
@@ -90,17 +84,19 @@ export function GaCanvas({
   const [loading, setLoading] = useState(true);
   const [sb, setSb] = useState<Switchboard | null>(null);
   const [verticals, setVerticals] = useState<VerticalWithFeeders[]>([]);
-  const [library, setLibrary] = useState<FeederWithCost[]>([]);
-  const [enclosureCost, setEnclosureCost] = useState(0);
 
-  const [formOfSeparation, setFormOfSeparation] = useState("");
   const [plinthHeight, setPlinthHeight] = useState(100);
   const [panelHeight, setPanelHeight] = useState(2100);
-  const [amps, setAmps] = useState<number | "">("");
-  const [ka, setKa] = useState<number | "">("");
 
   const [search, setSearch] = useState("");
-  const [draggingFeeder, setDraggingFeeder] = useState<FeederWithCost | null>(null);
+  const [draggingFeeder, setDraggingFeeder] = useState<Feeder | null>(null);
+
+  async function refreshGaData() {
+    const data = await loadGaData(supabase, switchboardId);
+    if (!data) return;
+    setSb(data.switchboard);
+    setVerticals(data.verticals);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -110,13 +106,8 @@ export function GaCanvas({
       if (cancelled || !data) return;
       setSb(data.switchboard);
       setVerticals(data.verticals);
-      setLibrary(data.feederLibrary);
-      setEnclosureCost(data.enclosureCost);
-      setFormOfSeparation(data.switchboard.form_of_separation ?? "");
       setPlinthHeight(data.switchboard.plinth_height_mm ?? 100);
       setPanelHeight(data.switchboard.panel_height_mm ?? 2100);
-      setAmps(data.switchboard.amps ?? "");
-      setKa(data.switchboard.ka ?? "");
       setLoading(false);
     })();
     return () => {
@@ -132,10 +123,21 @@ export function GaCanvas({
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
-  const filteredLibrary = library.filter(
-    (f) =>
-      f.name.toLowerCase().includes(search.toLowerCase()) ||
-      (f.category ?? "").toLowerCase().includes(search.toLowerCase())
+  const availableUnits: AvailableUnit[] = useMemo(() => {
+    if (!unallocated) return [];
+    const units: AvailableUnit[] = [];
+    for (const p of unallocated.placed) {
+      for (let i = 0; i < p.qty; i++) {
+        units.push({ unitId: `${p.id}::${i}`, placedId: p.id, feeder: p.feeder });
+      }
+    }
+    return units;
+  }, [unallocated]);
+
+  const filteredUnits = availableUnits.filter(
+    (u) =>
+      u.feeder.name.toLowerCase().includes(search.toLowerCase()) ||
+      (u.feeder.category ?? "").toLowerCase().includes(search.toLowerCase())
   );
 
   async function saveMasterParam(field: string, value: string | number | null) {
@@ -173,89 +175,134 @@ export function GaCanvas({
   }
 
   async function deleteBay(id: string) {
-    if (!confirm("Delete this bay and everything placed in it?")) return;
-    setVerticals(verticals.filter((v) => v.id !== id));
+    if (!confirm("Delete this bay? Anything placed in it goes back to the available feeders list.")) return;
+    if (!sb) return;
+    const vertical = verticals.find((v) => v.id === id);
+    if (vertical && vertical.placed.length > 0) {
+      const unassignedId = await ensureUnassignedVertical(supabase, sb.id);
+      await supabase
+        .from("placed_feeders")
+        .update({ vertical_id: unassignedId })
+        .in("id", vertical.placed.map((p) => p.id));
+    }
     await supabase.from("verticals").delete().eq("id", id);
+    await refreshGaData();
   }
 
-  async function allocateExisting(placedId: string, fromVerticalId: string, toVerticalId: string) {
-    const fromVertical = verticals.find((v) => v.id === fromVerticalId);
-    const placedRow = fromVertical?.placed.find((p) => p.id === placedId);
-    if (!placedRow) return;
+  async function addSpare() {
+    if (!sb || readOnly) return;
+    const name = window.prompt('Name this spare feeder (e.g. "Spare", "Future Outgoing")', "Spare");
+    if (name === null) return;
+    const trimmedName = name.trim() || "Spare";
+    const qtyInput = window.prompt("How many spare units?", "1");
+    const qty = Math.max(1, Math.round(Number(qtyInput) || 1));
 
-    setVerticals(
-      verticals.map((v) => {
-        if (v.id === fromVerticalId) return { ...v, placed: v.placed.filter((p) => p.id !== placedId) };
-        if (v.id === toVerticalId) return { ...v, placed: [...v.placed, { ...placedRow, tier_number: 1 }] };
-        return v;
-      })
+    const { data: feederRow, error: feederError } = await supabase
+      .from("feeders")
+      .insert({ name: trimmedName, category: "Spare", switchboard_id: sb.id, is_library: false, created_by: currentUserId })
+      .select("id")
+      .single();
+    if (feederError || !feederRow) return alert(feederError?.message ?? "Could not create spare feeder.");
+
+    const unassignedId = await ensureUnassignedVertical(supabase, sb.id);
+    const { error: placedError } = await supabase.from("placed_feeders").insert(
+      Array.from({ length: qty }, (_, i) => ({
+        vertical_id: unassignedId,
+        feeder_id: (feederRow as { id: string }).id,
+        qty: 1,
+        sort_order: i,
+        tier_number: 1,
+      }))
     );
-    await supabase.from("placed_feeders").update({ vertical_id: toVerticalId, tier_number: 1 }).eq("id", placedId);
+    if (placedError) return alert(placedError.message);
+
+    await refreshGaData();
   }
 
-  async function addFeederToBay(verticalId: string, feeder: FeederWithCost) {
-    const vertical = verticals.find((v) => v.id === verticalId);
-    if (!vertical) return;
+  // A unit dropped from the available-feeders list moves exactly one unit
+  // of that placement into the target bay -- splitting a qty>1 row in the
+  // unassigned bucket if needed -- rather than moving the whole placement.
+  async function allocateUnit(placedId: string, toVerticalId: string) {
+    if (!unallocated) return;
+    const placedRow = unallocated.placed.find((p) => p.id === placedId);
+    if (!placedRow) return;
+    const targetVertical = verticals.find((v) => v.id === toVerticalId);
+    if (!targetVertical) return;
+    const newSortOrder = targetVertical.placed.length;
+
+    if (placedRow.qty <= 1) {
+      setVerticals(
+        verticals.map((v) => {
+          if (v.id === unallocated.id) return { ...v, placed: v.placed.filter((p) => p.id !== placedId) };
+          if (v.id === toVerticalId)
+            return { ...v, placed: [...v.placed, { ...placedRow, vertical_id: toVerticalId, sort_order: newSortOrder }] };
+          return v;
+        })
+      );
+      const { error } = await supabase
+        .from("placed_feeders")
+        .update({ vertical_id: toVerticalId, sort_order: newSortOrder })
+        .eq("id", placedId);
+      if (error) {
+        alert(error.message);
+        await refreshGaData();
+      }
+      return;
+    }
 
     const { data, error } = await supabase
       .from("placed_feeders")
-      .insert({ vertical_id: verticalId, feeder_id: feeder.id, qty: 1, sort_order: vertical.placed.length, tier_number: 1 })
+      .insert({ vertical_id: toVerticalId, feeder_id: placedRow.feeder_id, qty: 1, sort_order: newSortOrder, tier_number: 1 })
       .select("*")
       .single();
     if (error) return alert(error.message);
+    const newRow = { ...(data as PlacedFeeder), feeder: placedRow.feeder } as PlacedWithFeeder;
 
-    const placedRow = { ...(data as PlacedFeeder), feeder } as PlacedWithFeeder;
-    setVerticals(verticals.map((v) => (v.id === verticalId ? { ...v, placed: [...v.placed, placedRow] } : v)));
-  }
-
-  async function updatePlacedTier(verticalId: string, placedId: string, tier: number) {
     setVerticals(
-      verticals.map((v) =>
-        v.id === verticalId ? { ...v, placed: v.placed.map((p) => (p.id === placedId ? { ...p, tier_number: tier } : p)) } : v
-      )
+      verticals.map((v) => {
+        if (v.id === unallocated.id)
+          return { ...v, placed: v.placed.map((p) => (p.id === placedId ? { ...p, qty: p.qty - 1 } : p)) };
+        if (v.id === toVerticalId) return { ...v, placed: [...v.placed, newRow] };
+        return v;
+      })
     );
-    await supabase.from("placed_feeders").update({ tier_number: tier }).eq("id", placedId);
-  }
-
-  async function updatePlacedQty(verticalId: string, placedId: string, qty: number) {
-    setVerticals(
-      verticals.map((v) =>
-        v.id === verticalId ? { ...v, placed: v.placed.map((p) => (p.id === placedId ? { ...p, qty } : p)) } : v
-      )
-    );
-    await supabase.from("placed_feeders").update({ qty }).eq("id", placedId);
-  }
-
-  async function removePlaced(verticalId: string, placedId: string) {
-    setVerticals(verticals.map((v) => (v.id === verticalId ? { ...v, placed: v.placed.filter((p) => p.id !== placedId) } : v)));
-    await supabase.from("placed_feeders").delete().eq("id", placedId);
-  }
-
-  async function promoteToLibrary(feeder: FeederWithCost) {
-    const { data: feederItemRows } = await supabase.from("feeder_items").select("item_id").eq("feeder_id", feeder.id);
-    const itemIds = ((feederItemRows ?? []) as { item_id: string }[]).map((r) => r.item_id);
-
-    const duplicate = await findDuplicateLibraryFeeder(supabase, itemIds, feeder.id);
-    if (duplicate) {
-      alert(`A feeder with the same items already exists in the Feeder Library: "${duplicate.name}". Not creating a duplicate.`);
-      return;
+    const { error: decError } = await supabase.from("placed_feeders").update({ qty: placedRow.qty - 1 }).eq("id", placedId);
+    if (decError) {
+      alert(decError.message);
+      await refreshGaData();
     }
+  }
 
-    const { error } = await supabase.from("feeders").update({ is_library: true }).eq("id", feeder.id);
+  // "Removing" a feeder from a bay sends it back to the available-feeders
+  // list instead of deleting it -- feeders (other than spares) belong to
+  // the BOM, so GA only ever re-files their placement, never their
+  // existence.
+  async function removeFromBay(verticalId: string, placedId: string) {
+    if (!sb) return;
+    const vertical = verticals.find((v) => v.id === verticalId);
+    const placedRow = vertical?.placed.find((p) => p.id === placedId);
+    if (!placedRow) return;
+
+    const unassignedId = await ensureUnassignedVertical(supabase, sb.id);
+
+    setVerticals((prev) =>
+      prev.map((v) => {
+        if (v.id === verticalId) return { ...v, placed: v.placed.filter((p) => p.id !== placedId) };
+        if (v.id === unassignedId) return { ...v, placed: [...v.placed, { ...placedRow, vertical_id: unassignedId }] };
+        return v;
+      })
+    );
+    const { error } = await supabase.from("placed_feeders").update({ vertical_id: unassignedId }).eq("id", placedId);
     if (error) {
       alert(error.message);
-      return;
+      await refreshGaData();
     }
-    setLibrary(library.map((f) => (f.id === feeder.id ? { ...f, is_library: true } : f)));
   }
 
   function handleDragStart(event: DragStartEvent) {
     const id = String(event.active.id);
-    if (id.startsWith("lib-")) {
-      const feederId = id.replace("lib-", "");
-      setDraggingFeeder(library.find((f) => f.id === feederId) ?? null);
-    } else if (id.startsWith("unalloc-")) {
-      const placedId = id.replace("unalloc-", "");
+    if (id.startsWith("unit-")) {
+      const placedId = id.replace("unit-", "").split("::")[0];
       const placed = unallocated?.placed.find((p) => p.id === placedId);
       if (placed) setDraggingFeeder(placed.feeder);
     }
@@ -271,13 +318,9 @@ export function GaCanvas({
     if (!overId.startsWith("bay-")) return;
     const verticalId = overId.replace("bay-", "");
 
-    if (activeId.startsWith("lib-")) {
-      const feederId = activeId.replace("lib-", "");
-      const feeder = library.find((f) => f.id === feederId);
-      if (feeder) addFeederToBay(verticalId, feeder);
-    } else if (activeId.startsWith("unalloc-") && unallocated) {
-      const placedId = activeId.replace("unalloc-", "");
-      allocateExisting(placedId, unallocated.id, verticalId);
+    if (activeId.startsWith("unit-") && unallocated) {
+      const placedId = activeId.replace("unit-", "").split("::")[0];
+      allocateUnit(placedId, verticalId);
     }
   }
 
@@ -347,48 +390,12 @@ export function GaCanvas({
               ))}
             </select>
           </Field>
-          <Field label="Form of Separation">
-            <select
-              disabled={readOnly}
-              value={formOfSeparation}
-              onChange={(e) => {
-                setFormOfSeparation(e.target.value);
-                saveMasterParam("form_of_separation", e.target.value || null);
-              }}
-              className="rounded border border-surface-container-high px-1.5 py-1"
-            >
-              <option value="">—</option>
-              {FORM_OPTIONS.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Amps">
-            <input
-              disabled={readOnly}
-              type="text"
-              inputMode="decimal"
-              value={amps}
-              onChange={(e) => setAmps(e.target.value ? Number(e.target.value) : "")}
-              onKeyDown={numericKeyGuard()}
-              onBlur={() => saveMasterParam("amps", amps === "" ? null : Number(amps))}
-              className="w-20 rounded border border-surface-container-high px-1.5 py-1"
-            />
-          </Field>
-          <Field label="kA">
-            <input
-              disabled={readOnly}
-              type="text"
-              inputMode="decimal"
-              value={ka}
-              onChange={(e) => setKa(e.target.value ? Number(e.target.value) : "")}
-              onKeyDown={numericKeyGuard()}
-              onBlur={() => saveMasterParam("ka", ka === "" ? null : Number(ka))}
-              className="w-16 rounded border border-surface-container-high px-1.5 py-1"
-            />
-          </Field>
+          <ReadOnlyField label="Form of Separation" value={sb.form_of_separation} />
+          <ReadOnlyField label="Amps" value={sb.amps != null ? `${sb.amps}A` : null} />
+          <ReadOnlyField label="kA" value={sb.ka != null ? `${sb.ka}kA` : null} />
+          <ReadOnlyField label="Cable Entry" value={sb.cable_entry} />
+          <ReadOnlyField label="Cable Exit" value={sb.cable_exit} />
+          <span className="text-[10px] text-on-surface-variant">Set in Project Detail →</span>
           <button
             onClick={() => alert("Export (DXF / DWG / PDF) is coming in a later phase.")}
             className="ml-auto flex items-center gap-1 rounded-md border border-surface-container-high bg-surface-container-lowest px-2.5 py-1.5 font-medium text-on-surface hover:bg-surface-container-low"
@@ -399,26 +406,14 @@ export function GaCanvas({
 
         <div className="flex flex-1 gap-4 overflow-hidden p-4">
           <aside className="w-72 shrink-0 overflow-y-auto rounded-xl border border-surface-container-high bg-surface-container-lowest p-3 shadow-xs">
-            {unallocated && unallocated.placed.length > 0 && (
-              <div className="mb-4">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-600">
-                  Unallocated ({unallocated.placed.length})
-                </p>
-                <div className="space-y-2">
-                  {unallocated.placed.map((p) => (
-                    <UnallocatedCard key={p.id} placed={p} disabled={readOnly} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-secondary">Feeder Master</p>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-secondary">Available Feeders</p>
+            <p className="mb-2 text-[11px] text-on-surface-variant">
+              Feeders come from BOM Builder. Use a spare to fill a gap in a bay.
+            </p>
             {!readOnly && (
-              <AdHocFeederPanel
-                switchboardId={sb.id}
-                allItems={allItems}
-                onCreated={(f) => setLibrary([...library, f])}
-              />
+              <button onClick={addSpare} className="btn btn-outline btn-sm mb-3 w-full">
+                <Icon name="add_circle" size={14} /> Add Spare Feeder
+              </button>
             )}
             <input
               value={search}
@@ -430,15 +425,14 @@ export function GaCanvas({
               {readOnly ? "Read only — lock this switchboard to edit." : "Drag a feeder onto a bay →"}
             </p>
             <div className="space-y-2">
-              {filteredLibrary.map((f) => (
-                <LibraryFeederCard
-                  key={f.id}
-                  feeder={f}
-                  disabled={readOnly}
-                  onPromote={!readOnly && !f.is_library ? () => promoteToLibrary(f) : undefined}
-                />
+              {filteredUnits.map((u) => (
+                <AvailableFeederCard key={u.unitId} unit={u} disabled={readOnly} />
               ))}
-              {filteredLibrary.length === 0 && <p className="text-sm text-on-surface-variant">No feeders. Build your feeder master first.</p>}
+              {filteredUnits.length === 0 && (
+                <p className="text-sm text-on-surface-variant">
+                  {availableUnits.length === 0 ? "No feeders waiting to be placed. Add feeders in BOM Builder." : "No matches."}
+                </p>
+              )}
             </div>
           </aside>
 
@@ -463,8 +457,8 @@ export function GaCanvas({
                   className="mb-2 flex items-center justify-center rounded-t-lg border border-b-0 border-amber-300/60 bg-amber-50 py-2 text-[11px] font-medium text-amber-800"
                   style={{ minWidth: bays.length * 220 }}
                 >
-                  Busbar Chamber{amps ? ` · ${amps}A` : ""}
-                  {ka ? ` · ${ka}kA` : ""} Cu Horizontal Busbar
+                  Busbar Chamber{sb.amps ? ` · ${sb.amps}A` : ""}
+                  {sb.ka ? ` · ${sb.ka}kA` : ""} Cu Horizontal Busbar
                 </div>
               )}
               <div className="flex gap-3" style={{ minWidth: bays.length * 220 }}>
@@ -477,9 +471,7 @@ export function GaCanvas({
                     onRename={(newName) => renameBay(v.id, newName)}
                     onDimChange={(field, val) => setBayDim(v.id, field, val)}
                     onDelete={() => deleteBay(v.id)}
-                    onQtyChange={(placedId, qty) => updatePlacedQty(v.id, placedId, qty)}
-                    onTierChange={(placedId, tier) => updatePlacedTier(v.id, placedId, tier)}
-                    onRemove={(placedId) => removePlaced(v.id, placedId)}
+                    onRemove={(placedId) => removeFromBay(v.id, placedId)}
                   />
                 ))}
                 {bays.length === 0 && (
@@ -497,12 +489,6 @@ export function GaCanvas({
                 </div>
               )}
             </div>
-
-            <div className="mt-3 flex items-center justify-between rounded-xl border border-surface-container-high bg-surface-container-lowest px-4 py-2.5 text-sm shadow-xs">
-              <span className="text-secondary">
-                Enclosure Cost: <span className="font-semibold text-on-surface">₹{enclosureCost.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
-              </span>
-            </div>
           </div>
         </div>
       </div>
@@ -511,7 +497,7 @@ export function GaCanvas({
         {draggingFeeder && (
           <div className="w-56 rounded-md border border-surface-container-high bg-surface-container-lowest px-3 py-2 text-sm shadow-lg">
             <p className="font-medium text-on-surface">{draggingFeeder.name}</p>
-            <p className="text-xs text-on-surface-variant">₹{draggingFeeder.cost.toLocaleString("en-IN")}</p>
+            <p className="text-xs text-on-surface-variant">{draggingFeeder.category || "—"}</p>
           </div>
         )}
       </DragOverlay>
@@ -528,40 +514,20 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function UnallocatedCard({ placed, disabled }: { placed: PlacedWithFeeder; disabled: boolean }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `unalloc-${placed.id}`,
-    disabled,
-  });
-  const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
-
+function ReadOnlyField({ label, value }: { label: string; value: string | null }) {
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...listeners}
-      {...attributes}
-      className={`rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-sm ${
-        disabled ? "opacity-60" : `cursor-grab active:cursor-grabbing ${isDragging ? "opacity-40" : "hover:border-amber-400"}`
-      }`}
-    >
-      <p className="truncate font-medium text-on-surface">{placed.feeder.name}</p>
-      <p className="text-xs text-on-surface-variant">₹{placed.feeder.cost.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</p>
-    </div>
+    <span className="flex items-center gap-1.5 text-secondary">
+      <span>{label}</span>
+      <span className="rounded border border-surface-container-high bg-surface-container-low px-1.5 py-1 text-on-surface-variant">
+        {value || "—"}
+      </span>
+    </span>
   );
 }
 
-function LibraryFeederCard({
-  feeder,
-  disabled = false,
-  onPromote,
-}: {
-  feeder: FeederWithCost;
-  disabled?: boolean;
-  onPromote?: () => void;
-}) {
+function AvailableFeederCard({ unit, disabled = false }: { unit: AvailableUnit; disabled?: boolean }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `lib-${feeder.id}`,
+    id: `unit-${unit.unitId}`,
     disabled,
   });
 
@@ -577,28 +543,8 @@ function LibraryFeederCard({
         disabled ? "opacity-60" : `cursor-grab active:cursor-grabbing ${isDragging ? "opacity-40" : "hover:border-primary/40"}`
       }`}
     >
-      <div className="flex items-center gap-1.5">
-        <p className="flex-1 truncate font-medium text-on-surface">{feeder.name}</p>
-        {!feeder.is_library && (
-          <span className="shrink-0 rounded border border-surface-container-high bg-surface-container-low px-1 py-0.5 text-[10px] text-secondary">
-            Board
-          </span>
-        )}
-      </div>
-      <div className="flex items-center justify-between text-xs text-on-surface-variant">
-        <span>{feeder.category || "—"}</span>
-        <span>₹{feeder.cost.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
-      </div>
-      {onPromote && (
-        <button
-          type="button"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={onPromote}
-          className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
-        >
-          <Icon name="upload" size={12} /> Save to Feeder Library
-        </button>
-      )}
+      <p className="truncate font-medium text-on-surface">{unit.feeder.name}</p>
+      <p className="text-xs text-on-surface-variant">{unit.feeder.category || "—"}</p>
     </div>
   );
 }
@@ -610,8 +556,6 @@ function BayColumn({
   onRename,
   onDimChange,
   onDelete,
-  onQtyChange,
-  onTierChange,
   onRemove,
 }: {
   vertical: VerticalWithFeeders;
@@ -620,8 +564,6 @@ function BayColumn({
   onRename: (name: string) => void;
   onDimChange: (field: "width_mm" | "depth_mm", value: string) => void;
   onDelete: () => void;
-  onQtyChange: (placedId: string, qty: number) => void;
-  onTierChange: (placedId: string, tier: number) => void;
   onRemove: (placedId: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `bay-${vertical.id}`, disabled: readOnly });
@@ -629,10 +571,8 @@ function BayColumn({
   const [localWidth, setLocalWidth] = useState(vertical.width_mm ? String(vertical.width_mm) : "");
   const [localDepth, setLocalDepth] = useState(vertical.depth_mm ? String(vertical.depth_mm) : "");
 
-  const subtotal = vertical.placed.reduce((sum, p) => sum + p.qty * p.feeder.cost, 0);
   const widthPct = totalWidth > 0 && vertical.width_mm ? Math.round((vertical.width_mm / totalWidth) * 100) : null;
-
-  const tiers = Array.from(new Set(vertical.placed.map((p) => p.tier_number))).sort((a, b) => a - b);
+  const placed = [...vertical.placed].sort((a, b) => a.sort_order - b.sort_order);
 
   return (
     <div className="flex w-56 shrink-0 flex-col rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-xs">
@@ -686,61 +626,21 @@ function BayColumn({
         )}
       </div>
 
-      <div ref={setNodeRef} className={`flex-1 space-y-3 p-2 ${isOver ? "bg-blue-50" : ""}`} style={{ minHeight: 220 }}>
-        {tiers.map((tier) => (
-          <div key={tier} className="rounded-lg border border-dashed border-surface-container-high p-1.5">
-            <p className="mb-1 px-0.5 text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant">Tier {tier}</p>
-            <div className="space-y-1.5">
-              {vertical.placed
-                .filter((p) => p.tier_number === tier)
-                .map((p) => (
-                  <div key={p.id} className="rounded-lg border border-surface-container-high bg-surface-container-low p-2 text-xs">
-                    <div className="flex items-start justify-between gap-1">
-                      <p className="font-medium text-on-surface">{p.feeder.name}</p>
-                      {!readOnly && (
-                        <button onClick={() => onRemove(p.id)} className="text-error hover:underline">
-                          ✕
-                        </button>
-                      )}
-                    </div>
-                    {p.feeder.rating_summary && <p className="text-[10px] text-on-surface-variant">{p.feeder.rating_summary}</p>}
-                    <div className="mt-1 flex items-center justify-between gap-1">
-                      <div className="flex items-center gap-1">
-                        <label className="text-secondary">Qty</label>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={p.qty}
-                          disabled={readOnly}
-                          onChange={(e) => onQtyChange(p.id, Number(e.target.value) || 1)}
-                          onKeyDown={numericKeyGuard()}
-                          className="w-10 rounded border border-surface-container-high px-1 py-0.5 disabled:bg-surface-container-low"
-                        />
-                        <label className="text-secondary">Tier</label>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={p.tier_number}
-                          disabled={readOnly}
-                          onChange={(e) => onTierChange(p.id, Number(e.target.value) || 1)}
-                          onKeyDown={numericKeyGuard()}
-                          className="w-10 rounded border border-surface-container-high px-1 py-0.5 disabled:bg-surface-container-low"
-                        />
-                      </div>
-                      <span className="tabular-nums text-secondary">
-                        ₹{(p.qty * p.feeder.cost).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+      <div ref={setNodeRef} className={`flex-1 space-y-1.5 p-2 ${isOver ? "bg-blue-50" : ""}`} style={{ minHeight: 220 }}>
+        {placed.map((p) => (
+          <div key={p.id} className="rounded-lg border border-surface-container-high bg-surface-container-low p-2 text-xs">
+            <div className="flex items-start justify-between gap-1">
+              <p className="font-medium text-on-surface">{p.feeder.name}</p>
+              {!readOnly && (
+                <button onClick={() => onRemove(p.id)} title="Move back to available feeders" className="text-error hover:underline">
+                  ✕
+                </button>
+              )}
             </div>
+            <p className="text-[10px] text-on-surface-variant">{p.feeder.rating_summary || p.feeder.category || "—"}</p>
           </div>
         ))}
-        {vertical.placed.length === 0 && <p className="pt-6 text-center text-xs text-on-surface-variant">Drop feeders here</p>}
-      </div>
-
-      <div className="border-t border-surface-container p-2 text-right text-xs font-medium text-on-surface-variant">
-        ₹{subtotal.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+        {placed.length === 0 && <p className="pt-6 text-center text-xs text-on-surface-variant">Drop feeders here</p>}
       </div>
     </div>
   );

@@ -175,6 +175,8 @@ export type Switchboard = {
   ka: number | null;
   ip_rating: string | null;
   poles: number | null;
+  cable_entry: "Top" | "Bottom" | null;
+  cable_exit: "Top" | "Bottom" | null;
   std: "ArTuK" | "61439" | "60439" | null;
   qty: number;
   sort_order: number;
@@ -211,7 +213,7 @@ export type SwitchboardEnclosureLine = {
   created_at: string;
 };
 
-export type BayType = "incomer" | "outgoing" | "riser" | "bus_coupler" | "spare" | "unassigned";
+export type BayType = "incomer" | "outgoing" | "riser" | "bus_coupler" | "spare" | "unassigned" | "bay" | "cable_alley" | "busbar_alley";
 
 // a "vertical" is one bay/column of a switchboard's GA
 export type Vertical = {

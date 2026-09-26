@@ -179,7 +179,6 @@ export function RevisionWorkspace({
             switchboardId={selectedSwitchboardId}
             currentUserId={currentUserId}
             revisionArchived={archived}
-            allItems={allItems}
           />
         )}
 
