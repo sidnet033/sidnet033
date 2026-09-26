@@ -5,10 +5,13 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  pointerWithin,
+  rectIntersection,
   useDraggable,
   useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
@@ -328,6 +331,19 @@ function collectAllUnits(verts: VerticalWithFeeders[]): Feeder[] {
   return units;
 }
 
+// Plain rect-intersection collision detection needs the DRAGGED card's
+// whole bounding box to overlap a droppable's box -- with bays now
+// rendered at their real (often narrow) mm width instead of a fixed
+// 224px card, a wide sidebar drag card can be wider than the bay itself,
+// so full-rect overlap frequently never registers. Falling back through
+// pointer-position collision (does the cursor sit inside the bay?) fixes
+// dropping onto any bay regardless of how narrow it is.
+const collisionDetection: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args);
+  if (pointerCollisions.length > 0) return pointerCollisions;
+  return rectIntersection(args);
+};
+
 export function GaCanvas({
   switchboardId,
   currentUserId,
@@ -361,6 +377,24 @@ export function GaCanvas({
   const [selectedBayId, setSelectedBayId] = useState<string | null>(null);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
   const [sizingLogicOpen, setSizingLogicOpen] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const fullscreenRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onFullscreenChange() {
+      setIsFullscreen(document.fullscreenElement === fullscreenRef.current);
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  function toggleFullscreen() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      fullscreenRef.current?.requestFullscreen();
+    }
+  }
 
   async function refreshGaData() {
     const data = await loadGaData(supabase, switchboardId);
@@ -869,7 +903,7 @@ export function GaCanvas({
   const busbarLabel = `BUSBAR CHAMBER${sb.amps ? ` · ${sb.amps}A` : ""}${sb.ka ? ` · ${sb.ka}kA` : ""} · ${sb.busbar ?? "Cu"}`;
 
   return (
-    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="flex h-full flex-col">
         <SavingOverlay show={saving} />
         <div className="flex flex-wrap items-center justify-between gap-space-md border-b border-surface-container-high bg-surface-container-lowest px-margin-lg py-space-md">
@@ -954,7 +988,14 @@ export function GaCanvas({
           </button>
         </div>
 
-        <div className="flex flex-1 gap-4 overflow-hidden p-4">
+        <div ref={fullscreenRef} className="relative flex flex-1 gap-4 overflow-hidden bg-surface p-4">
+          <button
+            onClick={toggleFullscreen}
+            title={isFullscreen ? "Exit fullscreen" : "Fullscreen canvas"}
+            className="absolute right-5 top-5 z-10 flex items-center gap-1 rounded-md border border-surface-container-high bg-surface-container-lowest px-2 py-1.5 text-on-surface-variant shadow-sm hover:bg-surface-container-low hover:text-on-surface"
+          >
+            <Icon name={isFullscreen ? "fullscreen_exit" : "fullscreen"} size={16} />
+          </button>
           <aside
             className={`shrink-0 overflow-y-auto rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-xs transition-[width] ${
               sidebarCollapsed ? "w-11 p-2" : "w-72 p-3"
