@@ -29,7 +29,6 @@ import {
   lookupAcbBaySpec,
   lookupFeederBoxHeight,
   suggestAcbFrame,
-  type AcbFrame,
   type BayFunction,
 } from "@/lib/artuk-sizing";
 
@@ -291,44 +290,15 @@ function makeVertical(
   };
 }
 
-function placeUnit(verticalId: string, feeder: Feeder, tierNumber: number, sortOrder: number): PlacedWithFeeder {
-  return {
-    id: newId(),
-    vertical_id: verticalId,
-    feeder_id: feeder.id,
-    label_override: null,
-    qty: 1,
-    sort_order: sortOrder,
-    tier_number: tierNumber,
-    created_at: new Date().toISOString(),
-    feeder,
-  };
-}
-
 // "Incomer"/"Sub-Incomer" -> incomer, "Outgoing" -> outgoing, "Bus Coupler"
 // -> bus_coupler. "APFC Capacitor Bank" and unclassified feeders have no
-// ArTuK sizing data at all, so they're left for auto-generation to skip.
+// ArTuK sizing data at all, so Auto-generate GA leaves those bays alone.
 function bayFunctionOf(feeder: Feeder): BayFunction | null {
   const cat = (feeder.category ?? "").toLowerCase();
   if (cat.includes("bus coupler")) return "bus_coupler";
   if (cat.includes("incomer")) return "incomer";
   if (cat.includes("outgoing")) return "outgoing";
   return null;
-}
-
-// One entry per physical unit across the whole board (every bay + the
-// unassigned bucket) -- Auto-generate GA rebuilds the layout from scratch
-// each time it runs, same one-card-per-unit model already used for
-// AvailableUnit. Alley bays are skipped since they never hold feeders.
-function collectAllUnits(verts: VerticalWithFeeders[]): Feeder[] {
-  const units: Feeder[] = [];
-  for (const v of verts) {
-    if (v.bay_type === "cable_alley" || v.bay_type === "busbar_alley") continue;
-    for (const p of v.placed) {
-      for (let i = 0; i < p.qty; i++) units.push(p.feeder);
-    }
-  }
-  return units;
 }
 
 // Plain rect-intersection collision detection needs the DRAGGED card's
@@ -375,6 +345,7 @@ export function GaCanvas({
   const [draggingFeeder, setDraggingFeeder] = useState<Feeder | null>(null);
   const [hover, setHover] = useState<HoverExtent>(null);
   const [selectedBayId, setSelectedBayId] = useState<string | null>(null);
+  const [selectedPlacedId, setSelectedPlacedId] = useState<string | null>(null);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
   const [sizingLogicOpen, setSizingLogicOpen] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -567,148 +538,83 @@ export function GaCanvas({
     setVerticals([...verticals, primary, paired]);
   }
 
-  // Rebuilds the whole bay layout from the BOM's feeders using ArTuK's
-  // standard sizing (see artuk-sizing.ts) -- ACB incomer/outgoing/bus-
-  // coupler units each get their own correctly-sized bay (pairing E1.2
-  // outgoing units two-at-a-time into the more space-efficient 2-tier
-  // combo), everything else with a device type set bin-packs by height
-  // into shared 720w rear-access MCC bays, and anything unclassified (or
-  // missing a rating) lands in the unassigned bucket instead of being
-  // guessed at. Cable Alley / Busbar Alley bays are never touched.
+  // Sizes every existing bay from the feeders the user has already placed
+  // into it by hand (drag-and-drop, or the +Incomer/+Outgoing/etc
+  // templates) -- it never creates, deletes, or moves a bay, and never
+  // moves a feeder between bays. A bay holding an ACB gets its width/depth
+  // from ArTuK's bay-spec table for that ACB's frame + function (falling
+  // back to the device's generic dimensions when no row covers that exact
+  // combination); a bay holding any other classified device gets ArTuK's
+  // standard outgoing module size. Alley bays, empty bays, and bays whose
+  // feeders have no Device Type set are left untouched.
   function autoGenerateGa() {
     if (!sb || readOnly) return;
-    if (bays.length > 0) {
-      const proceed = window.confirm(
-        "This replaces your current bay layout. Cable Alley / Busbar Alley bays you've added manually are kept. Continue?"
-      );
-      if (!proceed) return;
-    }
-
-    const keptAlleys = bays
-      .filter((v) => v.bay_type === "cable_alley" || v.bay_type === "busbar_alley")
-      .sort((a, b) => a.sort_order - b.sort_order);
-
-    const { unassigned } = withUnassigned(verticals, sb.id);
-    const allUnits = collectAllUnits(verticals);
-
-    const acbGroups = new Map<string, Feeder[]>();
-    const nonAcbUnits: Feeder[] = [];
-    const unplaced: Feeder[] = [];
-
-    for (const feeder of allUnits) {
-      if (feeder.device_type === "ACB") {
-        const fn = bayFunctionOf(feeder);
-        if (!fn || feeder.rated_current == null) {
-          unplaced.push(feeder);
-          continue;
+    setVerticals(
+      verticals.map((v) => {
+        if (v.bay_type === "cable_alley" || v.bay_type === "busbar_alley" || v.bay_type === "unassigned") return v;
+        const acbUnits = v.placed.filter((p) => p.feeder.device_type === "ACB");
+        if (acbUnits.length > 0) {
+          const p = acbUnits[0];
+          if (p.feeder.rated_current == null) return v;
+          const frame = suggestAcbFrame(p.feeder.rated_current);
+          const fn = bayFunctionOf(p.feeder) ?? "outgoing";
+          let spec = lookupAcbBaySpec(frame, fn);
+          if (!spec) {
+            // No dedicated ArTuK bay-spec row for this combination (only
+            // happens for E4.2/E6.2 bus-coupler, absent from the source's
+            // 11 sample rows) -- fall back to the device's own generic
+            // dimensions, using the same 1037mm depth as the rest of the board.
+            const bracket = ACB_SIZES.find((b) => b.frame === frame);
+            if (bracket) spec = { frame, function: fn, widthMm: bracket.width4P100, heightMm: 2231, depthMm: 1037, ipRating: 54, form: "4b", label: "" };
+          }
+          return spec ? { ...v, width_mm: spec.widthMm, depth_mm: spec.depthMm } : v;
         }
-        const frame = suggestAcbFrame(feeder.rated_current);
-        const key = `${frame}::${fn}`;
-        const arr = acbGroups.get(key) ?? [];
-        arr.push(feeder);
-        acbGroups.set(key, arr);
-      } else if (feeder.device_type && feeder.device_type !== "OTHER") {
-        if (lookupFeederBoxHeight(feeder) != null) nonAcbUnits.push(feeder);
-        else unplaced.push(feeder);
-      } else {
-        unplaced.push(feeder);
-      }
-    }
+        const hasOtherClassified = v.placed.some((p) => p.feeder.device_type && p.feeder.device_type !== "ACB" && p.feeder.device_type !== "OTHER");
+        if (hasOtherClassified) return { ...v, width_mm: OUTGOING_MCC_BAY.widthMm, depth_mm: OUTGOING_MCC_BAY.depthMm };
+        return v;
+      })
+    );
+  }
 
-    const generated: VerticalWithFeeders[] = [];
-    let sortOrder = keptAlleys.length;
+  // Swaps sort_order with the bay to the left/right -- how the left/right
+  // arrow overlay (and ArrowLeft/ArrowRight keys) reposition a selected bay.
+  function moveBay(bayId: string, direction: "left" | "right") {
+    const idx = bays.findIndex((v) => v.id === bayId);
+    const swapIdx = direction === "left" ? idx - 1 : idx + 1;
+    if (idx === -1 || swapIdx < 0 || swapIdx >= bays.length) return;
+    const a = bays[idx];
+    const b = bays[swapIdx];
+    setVerticals(verticals.map((v) => (v.id === a.id ? { ...v, sort_order: b.sort_order } : v.id === b.id ? { ...v, sort_order: a.sort_order } : v)));
+  }
 
-    // E1.2 outgoing ACBs pair up two-at-a-time into the 2-tier combo bay --
-    // any leftover odd unit falls back to the plain single-bay spec below.
-    const e12OutgoingKey = "E1.2::outgoing";
-    const e12Outgoing = acbGroups.get(e12OutgoingKey) ?? [];
-    acbGroups.delete(e12OutgoingKey);
-    let i = 0;
-    for (; i + 1 < e12Outgoing.length; i += 2) {
-      const primary = makeVertical(sb.id, `Outgoing ${sortOrder + 1}`, "outgoing", ACB_2TIER_OUTGOING_E12.primary.widthMm, ACB_2TIER_OUTGOING_E12.primary.depthMm, sortOrder++);
-      primary.placed = [placeUnit(primary.id, e12Outgoing[i], 1, 0)];
-      generated.push(primary);
-      const paired = makeVertical(sb.id, `Outgoing ${sortOrder + 1}`, "outgoing", ACB_2TIER_OUTGOING_E12.paired.widthMm, ACB_2TIER_OUTGOING_E12.paired.depthMm, sortOrder++);
-      paired.placed = [placeUnit(paired.id, e12Outgoing[i + 1], 1, 0)];
-      generated.push(paired);
-    }
-    if (i < e12Outgoing.length) {
-      acbGroups.set(e12OutgoingKey, [e12Outgoing[i]]);
-    }
-
-    for (const [key, feeders] of acbGroups) {
-      const [frame, fn] = key.split("::") as [AcbFrame, BayFunction];
-      let spec = lookupAcbBaySpec(frame, fn);
-      if (!spec) {
-        // No dedicated ArTuK bay-spec row for this combination (only
-        // happens for E4.2/E6.2 bus-coupler, absent from the source's 11
-        // sample rows) -- fall back to the device's own generic
-        // dimensions, using the same 1037mm depth as the rest of the board.
-        const bracket = ACB_SIZES.find((b) => b.frame === frame);
-        if (bracket) {
-          spec = { frame, function: fn, widthMm: bracket.width4P100, heightMm: 2231, depthMm: 1037, ipRating: 54, form: "4b", label: `${frame} ${fn} (generic -- no ArTuK bay-spec row for this combination)` };
-        }
-      }
-      if (!spec) {
-        unplaced.push(...feeders);
-        continue;
-      }
-      const namePrefix = fn === "incomer" ? "Incomer" : fn === "bus_coupler" ? "Bus Coupler" : "Outgoing";
-      const bayTypeMap: Record<BayFunction, BayType> = { incomer: "incomer", outgoing: "outgoing", bus_coupler: "bus_coupler" };
-      for (const feeder of feeders) {
-        const primary = makeVertical(sb.id, `${namePrefix} ${sortOrder + 1}`, bayTypeMap[fn], spec.widthMm, spec.depthMm, sortOrder++);
-        primary.placed = [placeUnit(primary.id, feeder, 1, 0)];
-        generated.push(primary);
-        if (spec.pairedWith) {
-          const paired = makeVertical(sb.id, spec.pairedWith.name ?? `${namePrefix} ${sortOrder + 1}`, spec.pairedWith.bayType, spec.pairedWith.widthMm, spec.depthMm, sortOrder++);
-          generated.push(paired);
-        }
-      }
-    }
-
-    // Bin-pack every non-ACB classified feeder (largest first) into shared
-    // 720w rear-access MCC bays, using the switchboard's panel height minus
-    // a flat 200mm top/bottom clearance allowance as the usable height.
-    const usableHeight = (panelHeight || 2231) - 200;
-    const sortedNonAcb = [...nonAcbUnits].sort((a, b) => (lookupFeederBoxHeight(b) ?? 0) - (lookupFeederBoxHeight(a) ?? 0));
-    let currentBay: VerticalWithFeeders | null = null;
-    let currentHeightUsed = 0;
-    let currentTier = 1;
-    for (const feeder of sortedNonAcb) {
-      const h = lookupFeederBoxHeight(feeder)!;
-      if (!currentBay || currentHeightUsed + h > usableHeight) {
-        currentBay = makeVertical(sb.id, `Outgoing ${sortOrder + 1}`, "outgoing", OUTGOING_MCC_BAY.widthMm, OUTGOING_MCC_BAY.depthMm, sortOrder++);
-        generated.push(currentBay);
-        currentHeightUsed = 0;
-        currentTier = 1;
-      }
-      currentBay.placed.push(placeUnit(currentBay.id, feeder, currentTier, currentBay.placed.length));
-      currentHeightUsed += h;
-      currentTier++;
-    }
-
-    const unplacedQtyByFeeder = new Map<string, { feeder: Feeder; qty: number }>();
-    for (const feeder of unplaced) {
-      const existing = unplacedQtyByFeeder.get(feeder.id);
-      if (existing) existing.qty += 1;
-      else unplacedQtyByFeeder.set(feeder.id, { feeder, qty: 1 });
-    }
-    const unassignedBay: VerticalWithFeeders = {
-      ...unassigned,
-      placed: Array.from(unplacedQtyByFeeder.values()).map((u, idx) => ({
-        id: newId(),
-        vertical_id: unassigned.id,
-        feeder_id: u.feeder.id,
-        label_override: null,
-        qty: u.qty,
-        sort_order: idx,
-        tier_number: 1,
-        created_at: new Date().toISOString(),
-        feeder: u.feeder,
-      })),
-    };
-
-    setVerticals([...keptAlleys, ...generated, unassignedBay]);
+  // Swaps tier_number (and sort_order) with the feeder stacked above/below
+  // it in the same bay -- how the up/down arrow overlay (and ArrowUp/
+  // ArrowDown keys) reorder a selected feeder within its bay.
+  function moveFeeder(bayId: string, placedId: string, direction: "up" | "down") {
+    const bay = verticals.find((v) => v.id === bayId);
+    if (!bay) return;
+    const sorted = [...bay.placed].sort((a, b) => a.tier_number - b.tier_number || a.sort_order - b.sort_order);
+    const idx = sorted.findIndex((p) => p.id === placedId);
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (idx === -1 || swapIdx < 0 || swapIdx >= sorted.length) return;
+    const a = sorted[idx];
+    const b = sorted[swapIdx];
+    setVerticals(
+      verticals.map((v) =>
+        v.id !== bayId
+          ? v
+          : {
+              ...v,
+              placed: v.placed.map((p) =>
+                p.id === a.id
+                  ? { ...p, tier_number: b.tier_number, sort_order: b.sort_order }
+                  : p.id === b.id
+                    ? { ...p, tier_number: a.tier_number, sort_order: a.sort_order }
+                    : p
+              ),
+            }
+      )
+    );
   }
 
   // A unit dropped from the available-feeders list moves exactly one unit
@@ -871,6 +777,34 @@ export function GaCanvas({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  // Arrow keys reposition whatever's selected: Left/Right moves the
+  // selected bay, Up/Down moves the selected feeder within its bay (same
+  // action as the overlay arrow buttons on the drawing). Ignored while
+  // typing in a text field, and while read-only.
+  const keyboardMoveRef = useRef({ readOnly, selectedBayId, selectedPlacedId, moveBay, moveFeeder });
+  useEffect(() => {
+    keyboardMoveRef.current = { readOnly, selectedBayId, selectedPlacedId, moveBay, moveFeeder };
+  });
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (!e.key.startsWith("Arrow")) return;
+      const tag = (document.activeElement?.tagName ?? "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      const { readOnly, selectedBayId, selectedPlacedId, moveBay, moveFeeder } = keyboardMoveRef.current;
+      if (readOnly || !selectedBayId) return;
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        e.preventDefault();
+        moveBay(selectedBayId, e.key === "ArrowLeft" ? "left" : "right");
+      } else if (selectedPlacedId && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+        e.preventDefault();
+        moveFeeder(selectedBayId, selectedPlacedId, e.key === "ArrowUp" ? "up" : "down");
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   function handleDragStart(event: DragStartEvent) {
     const id = String(event.active.id);
     if (id.startsWith("unit-")) {
@@ -988,14 +922,7 @@ export function GaCanvas({
           </button>
         </div>
 
-        <div ref={fullscreenRef} className="relative flex flex-1 gap-4 overflow-hidden bg-surface p-4">
-          <button
-            onClick={toggleFullscreen}
-            title={isFullscreen ? "Exit fullscreen" : "Fullscreen canvas"}
-            className="absolute right-5 top-5 z-10 flex items-center gap-1 rounded-md border border-surface-container-high bg-surface-container-lowest px-2 py-1.5 text-on-surface-variant shadow-sm hover:bg-surface-container-low hover:text-on-surface"
-          >
-            <Icon name={isFullscreen ? "fullscreen_exit" : "fullscreen"} size={16} />
-          </button>
+        <div ref={fullscreenRef} className="flex flex-1 gap-4 overflow-hidden bg-surface p-4">
           <aside
             className={`shrink-0 overflow-y-auto rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-xs transition-[width] ${
               sidebarCollapsed ? "w-11 p-2" : "w-72 p-3"
@@ -1054,6 +981,15 @@ export function GaCanvas({
           </aside>
 
           <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="mb-2 flex justify-end">
+              <button
+                onClick={toggleFullscreen}
+                title={isFullscreen ? "Exit fullscreen" : "Fullscreen canvas"}
+                className="flex items-center gap-1 rounded-md border border-surface-container-high bg-surface-container-lowest px-2 py-1.5 text-on-surface-variant shadow-sm hover:bg-surface-container-low hover:text-on-surface"
+              >
+                <Icon name={isFullscreen ? "fullscreen_exit" : "fullscreen"} size={16} />
+              </button>
+            </div>
             {!readOnly && sb?.std === "ArTuK" && (
               <div className="mb-3">
                 <button
@@ -1063,8 +999,9 @@ export function GaCanvas({
                   <Icon name="auto_awesome" size={14} className="mr-1 inline" /> Auto-generate GA
                 </button>
                 <p className="mt-1 text-[11px] text-on-surface-variant">
-                  Builds bays from the BOM&rsquo;s feeders using ArTuK standard sizing. Give each feeder a Device Type and rating in BOM Builder
-                  first -- see Dimensions Master for how sizes are worked out. You can still edit any bay afterward.
+                  Create your bays and drag feeders into them first (each feeder needs a Device Type and rating in BOM Builder), then click
+                  this to size every bay from what you&rsquo;ve placed, using ArTuK standard sizing -- see Dimensions Master for how sizes are
+                  worked out. It never creates, deletes, or moves bays or feeders.
                 </p>
               </div>
             )}
@@ -1138,7 +1075,17 @@ export function GaCanvas({
                           panelHeightMm={panelHeight}
                           bayLeftMm={bayOffsets[i]}
                           isSelected={selectedBayId === v.id}
-                          onSelect={() => setSelectedBayId(v.id)}
+                          selectedPlacedId={selectedBayId === v.id ? selectedPlacedId : null}
+                          onSelectBay={() => {
+                            setSelectedBayId(v.id);
+                            setSelectedPlacedId(null);
+                          }}
+                          onSelectFeeder={(placedId) => {
+                            setSelectedBayId(v.id);
+                            setSelectedPlacedId(placedId);
+                          }}
+                          onMoveBay={(direction) => moveBay(v.id, direction)}
+                          onMoveFeeder={(placedId, direction) => moveFeeder(v.id, placedId, direction)}
                           onHover={setHover}
                           onHoverEnd={() => setHover(null)}
                           onRemove={(placedId) => removeFromBay(v.id, placedId)}
@@ -1195,8 +1142,12 @@ export function GaCanvas({
                     if (!selectedBay) return;
                     deleteBay(selectedBay.id);
                     setSelectedBayId(null);
+                    setSelectedPlacedId(null);
                   }}
-                  onClose={() => setSelectedBayId(null)}
+                  onClose={() => {
+                    setSelectedBayId(null);
+                    setSelectedPlacedId(null);
+                  }}
                 />
 
                 <div className="mt-4 border-t border-surface-container-high pt-3">
@@ -1373,7 +1324,11 @@ function BayColumn({
   panelHeightMm,
   bayLeftMm,
   isSelected,
-  onSelect,
+  selectedPlacedId,
+  onSelectBay,
+  onSelectFeeder,
+  onMoveBay,
+  onMoveFeeder,
   onHover,
   onHoverEnd,
   onRemove,
@@ -1384,7 +1339,11 @@ function BayColumn({
   panelHeightMm: number;
   bayLeftMm: number;
   isSelected: boolean;
-  onSelect: () => void;
+  selectedPlacedId: string | null;
+  onSelectBay: () => void;
+  onSelectFeeder: (placedId: string) => void;
+  onMoveBay: (direction: "left" | "right") => void;
+  onMoveFeeder: (placedId: string, direction: "up" | "down") => void;
   onHover: (extent: HoverExtent) => void;
   onHoverEnd: () => void;
   onRemove: (placedId: string) => void;
@@ -1399,36 +1358,95 @@ function BayColumn({
   return (
     <div
       ref={setNodeRef}
-      onClick={onSelect}
+      onClick={onSelectBay}
       className={`relative shrink-0 cursor-pointer border bg-white ${isOver ? "border-primary" : isSelected ? "border-2 border-primary" : "border-black/70"}`}
       style={{ width: Math.max(widthPx, 2), height: Math.max(heightPx, 2) }}
     >
-      {compartments.map((c) => (
-        <div
-          key={c.id}
-          onMouseEnter={() => onHover({ topMm: c.topMm, heightMm: c.heightMm, bayLeftMm, bayWidthMm: widthMm, label: c.label })}
-          onMouseLeave={onHoverEnd}
-          title={`${c.label} — ${widthMm}mm × ${c.heightMm}mm`}
-          className={`group relative flex items-center justify-center overflow-hidden border-b border-black/40 px-1 text-center last:border-b-0 ${
-            c.isBlank ? "bg-surface-container-low/50" : "bg-white hover:bg-amber-50"
-          }`}
-          style={{ height: Math.max(c.heightMm * pxPerMm, 1) }}
-        >
-          <span className="truncate font-telemetry-md text-[9px] uppercase tracking-wide text-black">{c.label}</span>
-          {!c.isBlank && !readOnly && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onRemove(c.id);
-              }}
-              title="Move back to available feeders"
-              className="absolute right-0.5 top-0.5 text-error opacity-0 group-hover:opacity-100"
-            >
-              <Icon name="close" size={10} />
-            </button>
-          )}
-        </div>
-      ))}
+      {isSelected && !readOnly && (
+        <>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveBay("left");
+            }}
+            title="Move bay left"
+            className="absolute -left-3.5 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-primary bg-surface-container-lowest text-primary shadow-sm hover:bg-primary/10"
+          >
+            <Icon name="chevron_left" size={16} />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveBay("right");
+            }}
+            title="Move bay right"
+            className="absolute -right-3.5 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-primary bg-surface-container-lowest text-primary shadow-sm hover:bg-primary/10"
+          >
+            <Icon name="chevron_right" size={16} />
+          </button>
+        </>
+      )}
+      {compartments.map((c) => {
+        const isFeederSelected = !c.isBlank && c.id === selectedPlacedId;
+        return (
+          <div
+            key={c.id}
+            onClick={
+              c.isBlank
+                ? undefined
+                : (e) => {
+                    e.stopPropagation();
+                    onSelectFeeder(c.id);
+                  }
+            }
+            onMouseEnter={() => onHover({ topMm: c.topMm, heightMm: c.heightMm, bayLeftMm, bayWidthMm: widthMm, label: c.label })}
+            onMouseLeave={onHoverEnd}
+            title={`${c.label} — ${widthMm}mm × ${c.heightMm}mm`}
+            className={`group relative flex items-center justify-center overflow-hidden border-b px-1 text-center last:border-b-0 ${
+              isFeederSelected ? "border-2 border-primary" : "border-black/40"
+            } ${c.isBlank ? "bg-surface-container-low/50" : "bg-white hover:bg-amber-50"}`}
+            style={{ height: Math.max(c.heightMm * pxPerMm, 1) }}
+          >
+            <span className="truncate font-telemetry-md text-[9px] uppercase tracking-wide text-black">{c.label}</span>
+            {!c.isBlank && !readOnly && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove(c.id);
+                }}
+                title="Move back to available feeders"
+                className="absolute right-0.5 top-0.5 text-error opacity-0 group-hover:opacity-100"
+              >
+                <Icon name="close" size={10} />
+              </button>
+            )}
+            {isFeederSelected && !readOnly && (
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMoveFeeder(c.id, "up");
+                  }}
+                  title="Move feeder up"
+                  className="absolute -top-3 left-1/2 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-primary bg-surface-container-lowest text-primary shadow-sm hover:bg-primary/10"
+                >
+                  <Icon name="keyboard_arrow_up" size={16} />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMoveFeeder(c.id, "down");
+                  }}
+                  title="Move feeder down"
+                  className="absolute -bottom-3 left-1/2 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-primary bg-surface-container-lowest text-primary shadow-sm hover:bg-primary/10"
+                >
+                  <Icon name="keyboard_arrow_down" size={16} />
+                </button>
+              </>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1456,7 +1474,12 @@ function BayDetailsPanel({
   const [localDepth, setLocalDepth] = useState(vertical?.depth_mm ? String(vertical.depth_mm) : "");
 
   if (!vertical) {
-    return <p className="font-body-sm text-body-sm text-on-surface-variant">Click a bay in the drawing to edit its name, type, and dimensions here.</p>;
+    return (
+      <p className="font-body-sm text-body-sm text-on-surface-variant">
+        Click a bay in the drawing to edit its name, type, and dimensions here, and to reposition it (drag arrows appear on the bay, or use the
+        Left/Right arrow keys). Click a feeder within a bay to reorder it (Up/Down arrow keys).
+      </p>
+    );
   }
 
   return (
