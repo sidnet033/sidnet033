@@ -9,7 +9,9 @@ import { XlsUpload } from "@/components/xls-upload";
 import { SheetSyncButton } from "@/components/sheet-sync-button";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
+import { CreateItemDialog } from "@/components/create-item-dialog";
 import { numericKeyGuard } from "@/lib/numeric-input";
+import type { ItemSource } from "@/types/database";
 
 const EMPTY_DRAFT = {
   sku: "",
@@ -17,6 +19,7 @@ const EMPTY_DRAFT = {
   description: "",
   make: "",
   category: "",
+  source: "Estimation" as ItemSource,
   status: "active" as ItemStatus,
   amps: "",
   ka: "",
@@ -37,6 +40,7 @@ const CSV_FIELDS: (keyof ItemMaster)[] = [
   "description",
   "make",
   "category",
+  "source",
   "status",
   "amps",
   "ka",
@@ -71,6 +75,7 @@ type ColumnKey =
   | "description"
   | "category"
   | "make"
+  | "source"
   | "uom"
   | "unit_cost"
   | "list_price"
@@ -86,6 +91,7 @@ const ALL_COLUMNS: ColumnKey[] = [
   "description",
   "category",
   "make",
+  "source",
   "uom",
   "unit_cost",
   "list_price",
@@ -102,6 +108,7 @@ const COLUMN_LABELS: Record<ColumnKey, string> = {
   description: "Description",
   category: "Category",
   make: "Make",
+  source: "Source",
   uom: "UOM",
   unit_cost: "Unit Cost",
   list_price: "List Price",
@@ -118,6 +125,7 @@ const COLUMN_ALIGN: Record<ColumnKey, "left" | "right" | "center"> = {
   description: "left",
   category: "left",
   make: "left",
+  source: "left",
   uom: "center",
   unit_cost: "right",
   list_price: "right",
@@ -134,6 +142,7 @@ const CELL_CLASS: Record<ColumnKey, string> = {
   description: "max-w-[420px] whitespace-normal break-words px-2 py-1.5 align-top text-on-surface",
   category: "px-2",
   make: "px-2",
+  source: "px-2",
   uom: "px-2 text-center font-display text-secondary",
   unit_cost: "px-2 text-right font-display font-bold tabular-nums text-on-surface",
   list_price: "px-2 text-right font-display tabular-nums text-secondary line-through",
@@ -214,6 +223,7 @@ function draftToRow(d: Draft) {
     description: d.description.trim(),
     make: d.make.trim() || null,
     category: d.category.trim() || null,
+    source: d.source,
     status: d.status,
     amps: d.amps.trim() ? Number(d.amps) : null,
     ka: d.ka.trim() ? Number(d.ka) : null,
@@ -315,8 +325,7 @@ export function ItemMasterTable({
 
   const [page, setPage] = useState(1);
 
-  const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<Draft>(EMPTY_DRAFT);
   const [error, setError] = useState<string | null>(null);
@@ -537,27 +546,6 @@ export function ItemMasterTable({
     setItems(await fetchAllItemMaster(supabase));
   }
 
-  async function handleAdd(e: React.FormEvent) {
-    e.preventDefault();
-    const validationError = validateDraft(draft);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-    setError(null);
-    setSaving(true);
-    const { error } = await supabase.from("item_master").insert(draftToRow(draft));
-    if (error) {
-      setError(error.message);
-      setSaving(false);
-      return;
-    }
-    setDraft(EMPTY_DRAFT);
-    setAdding(false);
-    await refresh();
-    setSaving(false);
-  }
-
   function startEdit(item: ItemMaster) {
     setEditingId(item.id);
     setEditDraft({
@@ -566,6 +554,7 @@ export function ItemMasterTable({
       description: item.description,
       make: item.make ?? "",
       category: item.category ?? "",
+      source: item.source,
       status: item.status,
       amps: item.amps === null ? "" : String(item.amps),
       ka: item.ka === null ? "" : String(item.ka),
@@ -685,6 +674,8 @@ export function ItemMasterTable({
         ) : (
           <span className="text-outline-variant">—</span>
         );
+      case "source":
+        return <span className="rounded bg-surface-container-high px-1.5 py-0.5 text-[10px] font-bold text-on-surface-variant">{item.source}</span>;
       case "uom":
         return item.uom;
       case "unit_cost":
@@ -720,6 +711,17 @@ export function ItemMasterTable({
         return <input className="w-24 rounded border px-1 py-0.5" value={editDraft.category} onChange={(e) => setEditDraft({ ...editDraft, category: e.target.value })} />;
       case "make":
         return <input className="w-24 rounded border px-1 py-0.5" value={editDraft.make} onChange={(e) => setEditDraft({ ...editDraft, make: e.target.value })} />;
+      case "source":
+        return (
+          <select
+            className="rounded border px-1 py-0.5"
+            value={editDraft.source}
+            onChange={(e) => setEditDraft({ ...editDraft, source: e.target.value as ItemSource })}
+          >
+            <option value="Design">Design</option>
+            <option value="Estimation">Estimation</option>
+          </select>
+        );
       case "uom":
         return <input className="w-16 rounded border px-1 py-0.5" value={editDraft.uom} onChange={(e) => setEditDraft({ ...editDraft, uom: e.target.value })} />;
       case "unit_cost":
@@ -908,10 +910,10 @@ export function ItemMasterTable({
               <>
                 <SheetSyncButton onDone={refresh} currentUserName={currentUserName} />
                 <button
-                  onClick={() => setAdding((v) => !v)}
+                  onClick={() => setAddDialogOpen(true)}
                   className="flex h-8 items-center gap-1.5 rounded-[4px] bg-primary px-3 text-xs font-medium text-on-primary shadow-sm hover:bg-primary-container"
                 >
-                  <Icon name="add" size={14} /> {adding ? "Cancel" : "Add item"}
+                  <Icon name="add" size={14} /> Add item
                 </button>
               </>
             )}
@@ -936,31 +938,14 @@ export function ItemMasterTable({
 
       {error && <p className="text-sm text-error">{error}</p>}
 
-      {adding && (
-        <form onSubmit={handleAdd} className="grid grid-cols-2 gap-3 rounded-[8px] bg-surface-container-lowest p-4 shadow-sm sm:grid-cols-4">
-          <Field label="SKU" value={draft.sku} onChange={(v) => setDraft({ ...draft, sku: v })} />
-          <Field label="Vendor Cat" value={draft.vendor_cat} onChange={(v) => setDraft({ ...draft, vendor_cat: v })} />
-          <Field label="Description" value={draft.description} onChange={(v) => setDraft({ ...draft, description: v })} required className="sm:col-span-2" />
-          <Field label="Make" value={draft.make} onChange={(v) => setDraft({ ...draft, make: v })} />
-          <Field label="Category" value={draft.category} onChange={(v) => setDraft({ ...draft, category: v })} />
-          <StatusField value={draft.status} onChange={(v) => setDraft({ ...draft, status: v })} />
-          <Field label="Amps" value={draft.amps} onChange={(v) => setDraft({ ...draft, amps: v })} type="number" />
-          <Field label="kA" value={draft.ka} onChange={(v) => setDraft({ ...draft, ka: v })} type="number" />
-          <Field label="Poles" value={draft.poles} onChange={(v) => setDraft({ ...draft, poles: v })} type="number" />
-          <Field label="UOM" value={draft.uom} onChange={(v) => setDraft({ ...draft, uom: v })} />
-          <Field label="Unit cost" value={draft.unit_cost} onChange={(v) => setDraft({ ...draft, unit_cost: v })} type="number" />
-          <Field label="List price" value={draft.list_price} onChange={(v) => setDraft({ ...draft, list_price: v })} type="number" />
-          <Field label="Discount %" value={draft.discount_pct} onChange={(v) => setDraft({ ...draft, discount_pct: v })} type="number" />
-          <Field label="Supplier" value={draft.supplier} onChange={(v) => setDraft({ ...draft, supplier: v })} />
-          <Field label="Notes" value={draft.notes} onChange={(v) => setDraft({ ...draft, notes: v })} className="sm:col-span-2" />
-          <p className="text-xs text-secondary sm:col-span-4">Either SKU or Vendor Cat is required (both are fine too).</p>
-          <div className="sm:col-span-4">
-            <button type="submit" className="rounded-[4px] bg-primary px-4 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-container">
-              Save item
-            </button>
-          </div>
-        </form>
-      )}
+      <CreateItemDialog
+        open={addDialogOpen}
+        onClose={() => setAddDialogOpen(false)}
+        onCreated={() => {
+          setAddDialogOpen(false);
+          refresh();
+        }}
+      />
 
       {isAdmin && selectedIds.size > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-[8px] bg-inverse-surface px-4 py-2.5 text-inverse-on-surface shadow-md">
@@ -1284,51 +1269,3 @@ function StatusBadge({ status }: { status: ItemStatus }) {
   );
 }
 
-function StatusField({ value, onChange }: { value: ItemStatus; onChange: (v: ItemStatus) => void }) {
-  return (
-    <div>
-      <label className="mb-1 block text-xs font-medium text-on-surface-variant">Status</label>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value as ItemStatus)}
-        className="w-full rounded-[4px] border border-outline-variant/60 px-2 py-1.5 text-sm"
-      >
-        <option value="active">{STATUS_LABELS.active}</option>
-        <option value="inactive">{STATUS_LABELS.inactive}</option>
-        <option value="discontinued">{STATUS_LABELS.discontinued}</option>
-      </select>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  type = "text",
-  required = false,
-  className = "",
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  type?: string;
-  required?: boolean;
-  className?: string;
-}) {
-  const isNumeric = type === "number";
-  return (
-    <div className={className}>
-      <label className="mb-1 block text-xs font-medium text-on-surface-variant">{label}</label>
-      <input
-        type={isNumeric ? "text" : type}
-        inputMode={isNumeric ? "decimal" : undefined}
-        onKeyDown={isNumeric ? numericKeyGuard() : undefined}
-        required={required}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-[4px] border border-outline-variant/60 px-2 py-1.5 text-sm"
-      />
-    </div>
-  );
-}

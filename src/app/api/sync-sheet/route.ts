@@ -4,11 +4,11 @@ import { createClient } from "@/lib/supabase/server";
 import { importItemRows, type ParsedItemRow } from "@/lib/item-import";
 
 // Reads item master rows from a Google Sheet and imports them into
-// item_master. The sheet's first row must be a header with description,
-// plus sku and/or vendor_cat (every row needs at least one of those two).
-// make / category / status / amps / ka / poles / uom / unit_cost /
-// list_price / discount_pct / supplier / notes are optional. Columns can
-// be in any order.
+// item_master. The sheet's first row must be a header with description and
+// source (Design or Estimation), plus sku and/or vendor_cat (every row
+// needs at least one of those two). make / category / status / amps / ka /
+// poles / uom / unit_cost / list_price / discount_pct / supplier / notes
+// are optional. Columns can be in any order.
 export async function POST() {
   const supabase = await createClient();
   const {
@@ -20,7 +20,7 @@ export async function POST() {
 
   const { GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY, GOOGLE_SHEET_ID } =
     process.env;
-  const range = process.env.GOOGLE_SHEET_RANGE || "Item Master!A:O";
+  const range = process.env.GOOGLE_SHEET_RANGE || "Item Master!A:P";
 
   if (!GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || !GOOGLE_SHEET_ID) {
     return NextResponse.json(
@@ -53,6 +53,7 @@ export async function POST() {
     const header = values[0].map((h) => String(h).trim().toLowerCase().replace(/\s+/g, "_"));
     const missing: string[] = [];
     if (!header.includes("description")) missing.push("description");
+    if (!header.includes("source")) missing.push("source");
     if (!header.includes("sku") && !header.includes("vendor_cat")) missing.push("sku or vendor_cat");
     if (missing.length > 0) {
       return NextResponse.json(
@@ -77,6 +78,7 @@ export async function POST() {
           description: get("description"),
           make: get("make") || null,
           category: get("category") || null,
+          source: get("source"),
           status: get("status").toLowerCase() || "active",
           amps: get("amps") ? Number(get("amps")) : null,
           ka: get("ka") ? Number(get("ka")) : null,

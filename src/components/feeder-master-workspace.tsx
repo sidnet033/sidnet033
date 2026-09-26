@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
+import { CreateItemDialog } from "@/components/create-item-dialog";
 import { itemCode } from "@/lib/item-display";
 import { numericKeyGuard } from "@/lib/numeric-input";
 import { effectiveNetRate } from "@/lib/feeder-cost";
@@ -68,6 +69,7 @@ export function FeederMasterWorkspace({
 
   const [feeders, setFeeders] = useState(initialFeeders);
   const [linesByFeeder, setLinesByFeeder] = useState(initialLinesByFeeder);
+  const [items, setItems] = useState(allItems);
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -80,6 +82,7 @@ export function FeederMasterWorkspace({
   const [itemSearch, setItemSearch] = useState("");
   const [selectedItem, setSelectedItem] = useState<ItemMaster | null>(null);
   const [categoryChip, setCategoryChip] = useState<string | null>(null);
+  const [createItemOpen, setCreateItemOpen] = useState(false);
 
   const selectedFeeder = feeders.find((f) => f.id === selectedId) ?? null;
   const selectedLines = selectedId ? linesByFeeder[selectedId] ?? [] : [];
@@ -89,10 +92,10 @@ export function FeederMasterWorkspace({
   const typeOptions = Array.from(new Set(feeders.map((f) => f.category).filter((c): c is string => !!c))).sort();
   const filteredFeeders = typeFilter === "ALL" ? feeders : feeders.filter((f) => f.category === typeFilter);
 
-  const itemCategories = Array.from(new Set(allItems.map((i) => i.category).filter((c): c is string => !!c))).sort().slice(0, 6);
+  const itemCategories = Array.from(new Set(items.map((i) => i.category).filter((c): c is string => !!c))).sort().slice(0, 6);
 
   const itemMatches = itemSearch.trim()
-    ? allItems
+    ? items
         .filter((i) => {
           if (categoryChip && i.category !== categoryChip) return false;
           const q = itemSearch.toLowerCase();
@@ -229,12 +232,12 @@ export function FeederMasterWorkspace({
     setSavedForm(form);
   }
 
-  async function addSelectedItem() {
-    if (!selectedId || !selectedItem) return;
+  async function addItemToFeeder(item: ItemMaster) {
+    if (!selectedId) return;
     const sortOrder = (linesByFeeder[selectedId] ?? []).length;
     const { data, error } = await supabase
       .from("feeder_items")
-      .insert({ feeder_id: selectedId, item_id: selectedItem.id, qty: 1, sort_order: sortOrder })
+      .insert({ feeder_id: selectedId, item_id: item.id, qty: 1, sort_order: sortOrder })
       .select("*")
       .single();
     if (error) {
@@ -243,10 +246,25 @@ export function FeederMasterWorkspace({
     }
     setLinesByFeeder((prev) => ({
       ...prev,
-      [selectedId]: [...(prev[selectedId] ?? []), { ...(data as FeederItemWithDetails), item: selectedItem }],
+      [selectedId]: [...(prev[selectedId] ?? []), { ...(data as FeederItemWithDetails), item }],
     }));
     setItemSearch("");
     setSelectedItem(null);
+  }
+
+  async function addSelectedItem() {
+    if (!selectedItem) return;
+    await addItemToFeeder(selectedItem);
+  }
+
+  // Creating a new item from within Feeder Master both saves it to the
+  // Item Master catalog and immediately adds it to the feeder being
+  // edited -- the whole reason to reach for "create new item" here is
+  // that the item doesn't exist yet and is needed in this feeder now.
+  function handleItemCreated(item: ItemMaster) {
+    setItems((prev) => [...prev, item]);
+    setCreateItemOpen(false);
+    addItemToFeeder(item);
   }
 
   async function updateLineQty(lineId: string, qty: number) {
@@ -281,6 +299,7 @@ export function FeederMasterWorkspace({
   return (
     <div className="w-full bg-surface px-gutter-lg py-gutter">
       <SavingOverlay show={saving} />
+      <CreateItemDialog open={createItemOpen} onClose={() => setCreateItemOpen(false)} onCreated={handleItemCreated} />
       <div className="flex flex-col gap-space-lg pb-space-2xl">
         {/* Top context & actions bar */}
         <div className="flex flex-col justify-between gap-space-md md:flex-row md:items-center">
@@ -672,6 +691,13 @@ export function FeederMasterWorkspace({
                     className="flex h-9 shrink-0 items-center gap-space-xs rounded bg-primary px-space-md font-body-sm text-body-sm font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-container disabled:opacity-50"
                   >
                     <Icon name="add" size={16} /> Add to Feeder
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCreateItemOpen(true)}
+                    className="flex h-9 shrink-0 items-center gap-space-xs rounded border border-outline-variant bg-surface-container-lowest px-space-md font-body-sm text-body-sm font-medium text-on-surface shadow-sm transition-colors hover:bg-surface-container-low"
+                  >
+                    <Icon name="add_circle" size={16} /> Create New Item in Master
                   </button>
                 </div>
                 <div className="flex items-center gap-space-xs overflow-x-auto pt-space-2xs font-label-sm text-label-sm">

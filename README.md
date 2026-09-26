@@ -104,7 +104,7 @@ upload `.xlsx` files:
    - `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` (paste the key including the
      `BEGIN/END PRIVATE KEY` lines)
    - `GOOGLE_SHEET_ID` (the long ID in the sheet's URL)
-   - `GOOGLE_SHEET_RANGE` (defaults to `Item Master!A:G` — change the
+   - `GOOGLE_SHEET_RANGE` (defaults to `Item Master!A:P` — change the
      tab name if yours differs)
 5. Redeploy. A "Sync Google Sheet" button will now work on the Item
    Master page for admins.
@@ -112,11 +112,14 @@ upload `.xlsx` files:
 If you skip this, the `.xlsx` upload still works with no setup at all
 — just export your sheet as `.xlsx` and upload it.
 
-**Sheet/xlsx column format** (header row, any order): `item_code`,
-`description`, `category`, `uom`, `unit_cost`, `supplier`, `notes`.
-Only `item_code` and `description` are required. Uploading/syncing
-updates existing items by `item_code` and adds new ones — it never
-deletes rows you've removed from the sheet.
+**Sheet/xlsx column format** (header row, any order): `sku`,
+`vendor_cat`, `description`, `make`, `category`, `source`, `status`,
+`amps`, `ka`, `poles`, `uom`, `unit_cost`, `list_price`, `discount_pct`,
+`supplier`, `notes`. Every row needs a `sku` or a `vendor_cat` (or
+both), a `description`, and a `source` of exactly `Design` or
+`Estimation` — everything else is optional. Uploading/syncing updates
+existing items (matched by `sku` first, then `vendor_cat`) and adds new
+ones — it never deletes rows you've removed from the sheet.
 
 ---
 

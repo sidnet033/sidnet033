@@ -50,6 +50,8 @@ export type ImportLog = {
   created_at: string;
 };
 
+export type ItemSource = "Design" | "Estimation";
+
 export type ItemMaster = {
   id: string;
   sku: string | null;
@@ -57,6 +59,7 @@ export type ItemMaster = {
   description: string;
   category: string | null;
   make: string | null;
+  source: ItemSource;
   status: ItemStatus;
   amps: number | null;
   ka: number | null;

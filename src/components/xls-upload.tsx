@@ -7,11 +7,12 @@ import { importItemRows, logImport, type ImportSummary, type ParsedItemRow } fro
 import { Icon } from "@/components/icon";
 
 // Expected columns in the sheet's header row (any order, case-insensitive):
-// sku, vendor_cat, description, make, category, status, amps, ka, poles,
-// uom, unit_cost, list_price, discount_pct, supplier, notes. Every row
-// needs a sku or a vendor_cat (or both) plus a description — everything
-// else is optional.
+// sku, vendor_cat, description, make, category, source, status, amps, ka,
+// poles, uom, unit_cost, list_price, discount_pct, supplier, notes. Every
+// row needs a sku or a vendor_cat (or both), a description, and a Source
+// (Design or Estimation) — everything else is optional.
 const REQUIRED_DESCRIPTION = "description";
+const REQUIRED_SOURCE = "source";
 
 type Stage = "idle" | "reading" | "importing" | "done" | "error";
 
@@ -46,6 +47,7 @@ export function XlsUpload({ onDone, currentUserName }: { onDone: () => void; cur
 
       const missing: string[] = [];
       if (!(REQUIRED_DESCRIPTION in columnIndex)) missing.push("description");
+      if (!(REQUIRED_SOURCE in columnIndex)) missing.push("source");
       if (!("sku" in columnIndex) && !("vendor_cat" in columnIndex)) missing.push("sku or vendor_cat");
       if (missing.length > 0) {
         setErrorText(`Sheet is missing required column(s): ${missing.join(", ")}`);
@@ -75,6 +77,7 @@ export function XlsUpload({ onDone, currentUserName }: { onDone: () => void; cur
             description: cellText("description").trim(),
             make: cellText("make").trim() || null,
             category: cellText("category").trim() || null,
+            source: cellText("source").trim(),
             status: cellText("status").trim().toLowerCase() || "active",
             amps: cellText("amps") ? Number(cellText("amps")) : null,
             ka: cellText("ka") ? Number(cellText("ka")) : null,

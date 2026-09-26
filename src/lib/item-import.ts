@@ -9,6 +9,7 @@ export type ParsedItemRow = {
   description: string;
   make: string | null;
   category: string | null;
+  source: string;
   status: string;
   amps: number | null;
   ka: number | null;
@@ -58,7 +59,19 @@ export async function importItemRows(
       summary.skipped.push({ row: row.rowNumber, reason: "Missing description" });
       continue;
     }
-    validRows.push(row);
+    // Every item must record where it came from -- accept either value
+    // case-insensitively but normalize to the canonical casing the app
+    // and the item_master check constraint expect.
+    const normalizedSource = row.data.source.trim().toLowerCase();
+    const source = normalizedSource === "design" ? "Design" : normalizedSource === "estimation" ? "Estimation" : null;
+    if (!source) {
+      summary.skipped.push({
+        row: row.rowNumber,
+        reason: `Source must be "Design" or "Estimation" (got "${row.data.source.trim() || "blank"}")`,
+      });
+      continue;
+    }
+    validRows.push({ ...row, data: { ...row.data, source } });
   }
   onProgress?.(rows.length - validRows.length, rows.length);
 
