@@ -374,12 +374,14 @@ export function ItemMasterTable({
     [items]
   );
 
-  // Items sharing a SKU, Vendor Cat, or Description (case/whitespace
-  // insensitive) with another item — candidates for cleanup.
+  // Items sharing a SKU or Vendor Cat with another item are duplicates
+  // outright; items sharing a Description are duplicates only if they also
+  // share a Make (same description with a different make is a legitimate
+  // distinct item, e.g. the same-rated MCCB from two different brands).
   const duplicateIds = useMemo(() => {
     const bySku = new Map<string, string[]>();
     const byVendorCat = new Map<string, string[]>();
-    const byDescription = new Map<string, string[]>();
+    const byDescriptionMake = new Map<string, string[]>();
     for (const item of items) {
       if (item.sku) {
         const k = item.sku.trim().toLowerCase();
@@ -390,10 +392,11 @@ export function ItemMasterTable({
         byVendorCat.set(k, [...(byVendorCat.get(k) ?? []), item.id]);
       }
       const dk = item.description.trim().toLowerCase();
-      if (dk) byDescription.set(dk, [...(byDescription.get(dk) ?? []), item.id]);
+      const mk = item.make?.trim().toLowerCase();
+      if (dk && mk) byDescriptionMake.set(`${dk}|${mk}`, [...(byDescriptionMake.get(`${dk}|${mk}`) ?? []), item.id]);
     }
     const dupIds = new Set<string>();
-    for (const map of [bySku, byVendorCat, byDescription]) {
+    for (const map of [bySku, byVendorCat, byDescriptionMake]) {
       for (const ids of map.values()) {
         if (ids.length > 1) ids.forEach((id) => dupIds.add(id));
       }
@@ -938,7 +941,7 @@ export function ItemMasterTable({
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-[8px] border border-error/30 bg-error-container px-4 py-2.5 text-sm text-on-error-container">
           <span className="flex items-center gap-2">
             <Icon name="warning" size={16} />
-            {duplicateIds.size} item(s) look like duplicates (matching SKU, Vendor Cat, or Description). Review and clean these up.
+            {duplicateIds.size} item(s) look like duplicates (matching SKU, Vendor Cat, or same Description + Make). Review and clean these up.
           </span>
           <button
             onClick={() => setDuplicatesOnly((v) => !v)}
