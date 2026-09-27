@@ -93,35 +93,41 @@ function blankCompartmentLabel(bayType: BayType | null): string {
 // place tier_number actually drives visual order), each sized by its real
 // ArTuK height when the feeder has a device_type set, else a flat fallback
 // slot so something always renders. Unused height becomes a labeled blank
-// ("DUMMY"/alley) compartment -- vertical.dummy_slot says which row it sits
-// above (0..sorted.length, where sorted.length means "after everything,"
-// the historical default), so the user can move that gap to sit between
-// two feeders instead of always trailing at the bottom.
+// ("DUMMY"/alley) compartment -- vertical.dummy_slot is a flat UNIT index
+// (0..totalUnits, counting every individual unit of every row, not just
+// rows), so the gap can sit anywhere, including between two units of the
+// very same multi-qty row (four merged MCCBs, say), not just between two
+// different rows. totalUnits means "after everything," the default.
 function computeCompartments(vertical: VerticalWithFeeders, panelHeightMm: number): Compartment[] {
   const sorted = [...vertical.placed].sort((a, b) => a.tier_number - b.tier_number || a.sort_order - b.sort_order);
   const usedByRows = sorted.reduce((sum, p) => sum + (lookupFeederBoxHeight(p.feeder) ?? DEFAULT_COMPARTMENT_HEIGHT_MM) * p.qty, 0);
   const dummyHeight = panelHeightMm - usedByRows;
-  const dummySlot = Math.min(vertical.dummy_slot ?? sorted.length, sorted.length);
+  const totalUnits = sorted.reduce((sum, p) => sum + p.qty, 0);
+  const dummySlot = Math.min(Math.max(vertical.dummy_slot ?? totalUnits, 0), totalUnits);
   const dummyId = `${vertical.id}::dummy`;
 
   const compartments: Compartment[] = [];
   let used = 0;
-  for (let i = 0; i <= sorted.length; i++) {
-    if (i === dummySlot && dummyHeight > 0) {
+  let unitIndex = 0;
+  const maybePushDummy = () => {
+    if (unitIndex === dummySlot && dummyHeight > 0) {
       compartments.push({ id: dummyId, placedId: dummyId, label: blankCompartmentLabel(vertical.bay_type), heightMm: dummyHeight, topMm: used, isBlank: true });
       used += dummyHeight;
     }
-    if (i === sorted.length) break;
-    const p = sorted[i];
+  };
+  for (const p of sorted) {
     const heightMm = lookupFeederBoxHeight(p.feeder) ?? DEFAULT_COMPARTMENT_HEIGHT_MM;
     // A placed_feeders row with qty > 1 (several units of the same feeder
     // merged into one bay) is that many separate physical devices -- each
     // gets its own compartment, not one compartment for the whole row.
     for (let u = 0; u < p.qty; u++) {
+      maybePushDummy();
       compartments.push({ id: `${p.id}::${u}`, placedId: p.id, label: p.feeder.name, heightMm, topMm: used, isBlank: false });
       used += heightMm;
+      unitIndex++;
     }
   }
+  maybePushDummy();
   return compartments;
 }
 
@@ -391,11 +397,15 @@ export function GaCanvas({
   }
 
   // Rasterizes the front+side view drawing (drawingRef) client-side --
-  // html2canvas/jsPDF are dynamically imported so they never load into the
-  // SSR bundle, only when the user actually exports.
+  // html2canvas-pro/jsPDF are dynamically imported so they never load into
+  // the SSR bundle, only when the user actually exports. Using the "-pro"
+  // fork specifically: Tailwind v4's `/NN` opacity utilities (border-black/70,
+  // bg-surface-container-low/50, etc., used all over this drawing) compile to
+  // CSS `color-mix()`, which the original html2canvas's color parser doesn't
+  // understand and throws on -- html2canvas-pro adds that support.
   async function captureDrawing() {
     if (!drawingRef.current) return null;
-    const { default: html2canvas } = await import("html2canvas");
+    const { default: html2canvas } = await import("html2canvas-pro");
     return html2canvas(drawingRef.current, { backgroundColor: "#ffffff", scale: 2 });
   }
 
@@ -413,8 +423,8 @@ export function GaCanvas({
       link.download = downloadFileName("png");
       link.href = canvas.toDataURL("image/png");
       link.click();
-    } catch {
-      alert("Could not export the GA drawing as PNG.");
+    } catch (e) {
+      alert(`Could not export the GA drawing as PNG.${e instanceof Error ? ` (${e.message})` : ""}`);
     } finally {
       setExporting(false);
     }
@@ -430,8 +440,8 @@ export function GaCanvas({
       const pdf = new jsPDF({ orientation, unit: "pt", format: [canvas.width, canvas.height] });
       pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, canvas.width, canvas.height);
       pdf.save(downloadFileName("pdf"));
-    } catch {
-      alert("Could not export the GA drawing as PDF.");
+    } catch (e) {
+      alert(`Could not export the GA drawing as PDF.${e instanceof Error ? ` (${e.message})` : ""}`);
     } finally {
       setExporting(false);
     }
@@ -674,45 +684,75 @@ export function GaCanvas({
   // Swaps tier_number (and sort_order) with the feeder stacked above/below
   // it in the same bay -- how the up/down arrow overlay (and ArrowUp/
   // ArrowDown keys) reorder a selected feeder within its bay. The blank/
-  // DUMMY gap is a pseudo-entry (id `${bayId}::dummy`) spliced into this
-  // same ordered list at its own dummy_slot -- moving it (or moving a real
-  // feeder past it) only ever shifts dummy_slot by one, since the gap has
-  // no tier_number of its own; the real rows on either side never change.
+  // DUMMY gap moves independently, at UNIT granularity (dummy_slot is a
+  // flat count of individual units, not rows) -- so it can land between
+  // two units of the very same multi-qty row (four merged MCCBs, say), not
+  // only between two different rows. A row is still one row: moving it
+  // still swaps its tier_number/sort_order with one adjacent row, but if
+  // the dummy is nested inside the moved row or the row it swaps with, the
+  // dummy's own unit index shifts along with whichever half of that pair
+  // it's nested in, so it stays visually in the same place relative to the
+  // units around it instead of jumping.
   function moveFeeder(bayId: string, placedId: string, direction: "up" | "down") {
     const bay = verticals.find((v) => v.id === bayId);
     if (!bay) return;
     const sorted = [...bay.placed].sort((a, b) => a.tier_number - b.tier_number || a.sort_order - b.sort_order);
     const dummyId = `${bayId}::dummy`;
-    const dummySlot = Math.min(bay.dummy_slot ?? sorted.length, sorted.length);
+    const totalUnits = sorted.reduce((sum, p) => sum + p.qty, 0);
+    const dummyIndex = Math.min(Math.max(bay.dummy_slot ?? totalUnits, 0), totalUnits);
 
-    const entries: { id: string; isDummy: boolean }[] = sorted.map((p) => ({ id: p.id, isDummy: false }));
-    entries.splice(dummySlot, 0, { id: dummyId, isDummy: true });
-
-    const idx = entries.findIndex((e) => e.id === placedId);
-    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-    if (idx === -1 || swapIdx < 0 || swapIdx >= entries.length) return;
-    const a = entries[idx];
-    const b = entries[swapIdx];
-
-    if (a.isDummy || b.isDummy) {
-      const newSlot = a.isDummy ? swapIdx : idx;
-      setVerticals(verticals.map((v) => (v.id === bayId ? { ...v, dummy_slot: newSlot } : v)));
+    if (placedId === dummyId) {
+      const next = direction === "up" ? dummyIndex - 1 : dummyIndex + 1;
+      if (next < 0 || next > totalUnits) return;
+      setVerticals(verticals.map((v) => (v.id === bayId ? { ...v, dummy_slot: next } : v)));
       return;
     }
 
-    const rowA = sorted.find((p) => p.id === a.id)!;
-    const rowB = sorted.find((p) => p.id === b.id)!;
+    const rowIdx = sorted.findIndex((p) => p.id === placedId);
+    if (rowIdx === -1) return;
+    const row = sorted[rowIdx];
+    let start = 0;
+    for (let i = 0; i < rowIdx; i++) start += sorted[i].qty;
+    const end = start + row.qty;
+
+    // The dummy sitting exactly at this row's near edge just steps to its
+    // far edge -- the row itself doesn't need to move for that.
+    if (direction === "up" && dummyIndex === start) {
+      setVerticals(verticals.map((v) => (v.id === bayId ? { ...v, dummy_slot: end } : v)));
+      return;
+    }
+    if (direction === "down" && dummyIndex === end) {
+      setVerticals(verticals.map((v) => (v.id === bayId ? { ...v, dummy_slot: start } : v)));
+      return;
+    }
+
+    const otherIdx = direction === "up" ? rowIdx - 1 : rowIdx + 1;
+    if (otherIdx < 0 || otherIdx >= sorted.length) return;
+    const other = sorted[otherIdx];
+
+    let newDummyIndex: number | null = null;
+    if (dummyIndex > start && dummyIndex < end) {
+      // Nested inside the row being moved -- travels with it.
+      newDummyIndex = dummyIndex + (direction === "up" ? -other.qty : other.qty);
+    } else if (direction === "up" && dummyIndex > start - other.qty && dummyIndex < start) {
+      // Nested inside the row it's swapping with.
+      newDummyIndex = dummyIndex + row.qty;
+    } else if (direction === "down" && dummyIndex > end && dummyIndex < end + other.qty) {
+      newDummyIndex = dummyIndex - row.qty;
+    }
+
     setVerticals(
       verticals.map((v) =>
         v.id !== bayId
           ? v
           : {
               ...v,
+              dummy_slot: newDummyIndex ?? v.dummy_slot,
               placed: v.placed.map((p) =>
-                p.id === rowA.id
-                  ? { ...p, tier_number: rowB.tier_number, sort_order: rowB.sort_order }
-                  : p.id === rowB.id
-                    ? { ...p, tier_number: rowA.tier_number, sort_order: rowA.sort_order }
+                p.id === row.id
+                  ? { ...p, tier_number: other.tier_number, sort_order: other.sort_order }
+                  : p.id === other.id
+                    ? { ...p, tier_number: row.tier_number, sort_order: row.sort_order }
                     : p
               ),
             }
