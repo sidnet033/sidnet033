@@ -960,6 +960,24 @@ export function GaCanvas({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  // "F" toggles fullscreen (ignored while typing in a field); Escape exits
+  // it -- browsers already bind Escape to exit native fullscreen on their
+  // own, but this makes it explicit and doesn't hurt.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const tag = (document.activeElement?.tagName ?? "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      if (e.key.toLowerCase() === "f" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        toggleFullscreen();
+      } else if (e.key === "Escape" && document.fullscreenElement) {
+        document.exitFullscreen();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   function handleDragStart(event: DragStartEvent) {
     const id = String(event.active.id);
     if (id.startsWith("unit-")) {
@@ -995,27 +1013,6 @@ export function GaCanvas({
     <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="flex h-full flex-col">
         <SavingOverlay show={saving} />
-        <div className="flex flex-wrap items-center justify-between gap-space-md border-b border-surface-container-high bg-surface-container-lowest px-margin-lg py-space-md">
-          <h1 className="font-display text-headline-lg text-on-surface">
-            GA Builder — {sb.tag}
-            {sb.title ? `: ${sb.title}` : ""}
-          </h1>
-          <div className="flex items-center gap-space-sm">
-            {!readOnly && dirty && <span className="font-body-sm text-body-sm text-amber-600">Unsaved changes</span>}
-            {!readOnly && !dirty && <span className="font-body-sm text-body-sm text-tertiary">Saved</span>}
-            {!readOnly && (
-              <>
-                <button onClick={handleCancel} disabled={!dirty || saving} className="btn btn-outline">
-                  Cancel
-                </button>
-                <button onClick={handleSave} disabled={!dirty || saving} className="btn btn-primary">
-                  <Icon name="save" size={16} />
-                  {saving ? "Saving..." : "Save Changes"}
-                </button>
-              </>
-            )}
-          </div>
-        </div>
 
         {readOnly && (
           <div className="flex items-center gap-2 border-b border-amber-200/80 bg-amber-50/60 px-4 py-2 text-xs text-amber-800">
@@ -1061,22 +1058,6 @@ export function GaCanvas({
           <ReadOnlyField label="kA" value={sb.ka != null ? `${sb.ka}kA` : null} />
           <ReadOnlyField label="Cable Entry" value={sb.cable_entry} />
           <ReadOnlyField label="Cable Exit" value={sb.cable_exit} />
-          <button
-            onClick={exportPng}
-            disabled={exporting || bays.length === 0}
-            title="Export the GA drawing as a PNG image"
-            className="ml-auto flex items-center gap-1 rounded-md border border-surface-container-high bg-surface-container-lowest px-2.5 py-1.5 font-medium text-on-surface hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Icon name="download" size={14} /> {exporting ? "Exporting..." : "Export PNG"}
-          </button>
-          <button
-            onClick={exportPdf}
-            disabled={exporting || bays.length === 0}
-            title="Export the GA drawing as a PDF"
-            className="flex items-center gap-1 rounded-md border border-surface-container-high bg-surface-container-lowest px-2.5 py-1.5 font-medium text-on-surface hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Icon name="download" size={14} /> {exporting ? "Exporting..." : "Export PDF"}
-          </button>
         </div>
 
         <div ref={fullscreenRef} className="flex flex-1 gap-4 overflow-hidden bg-surface p-4">
@@ -1147,23 +1128,51 @@ export function GaCanvas({
                 <Icon name={isFullscreen ? "fullscreen_exit" : "fullscreen"} size={16} />
               </button>
             </div>
-            {!readOnly && sb?.std === "ArTuK" && (
-              <div className="mb-3">
-                <button
-                  onClick={autoGenerateGa}
-                  className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary shadow-sm hover:bg-primary-container"
-                >
-                  <Icon name="auto_awesome" size={14} className="mr-1 inline" /> Update GA
+            <div className="mb-1 flex flex-wrap items-center gap-2">
+              {!readOnly && sb?.std === "ArTuK" && (
+                <button onClick={autoGenerateGa} className="btn btn-primary btn-sm">
+                  <Icon name="auto_awesome" size={14} /> Update GA
                 </button>
-                <p className="mt-1 text-[11px] text-on-surface-variant">
-                  Create your bays and drag feeders into them first (each feeder needs a Device Type and rating in BOM Builder), then click
-                  this to size every bay from what you&rsquo;ve placed, using ArTuK standard sizing -- see{" "}
-                  <a href="/dimensions-master" target="_blank" rel="noopener noreferrer" className="text-primary underline hover:no-underline">
-                    Dimensions Master
-                  </a>{" "}
-                  for how sizes are worked out. It never creates, deletes, or moves bays or feeders.
-                </p>
-              </div>
+              )}
+              {!readOnly && (
+                <>
+                  <button onClick={handleCancel} disabled={!dirty || saving} className="btn btn-outline btn-sm">
+                    Cancel
+                  </button>
+                  <button onClick={handleSave} disabled={!dirty || saving} className="btn btn-primary btn-sm">
+                    <Icon name="save" size={14} />
+                    {saving ? "Saving..." : "Save Changes"}
+                  </button>
+                </>
+              )}
+              <button
+                onClick={exportPng}
+                disabled={exporting || bays.length === 0}
+                title="Export the GA drawing as a PNG image"
+                className="btn btn-outline btn-sm"
+              >
+                <Icon name="download" size={14} /> {exporting ? "Exporting..." : "Export PNG"}
+              </button>
+              <button
+                onClick={exportPdf}
+                disabled={exporting || bays.length === 0}
+                title="Export the GA drawing as a PDF"
+                className="btn btn-outline btn-sm"
+              >
+                <Icon name="download" size={14} /> {exporting ? "Exporting..." : "Export PDF"}
+              </button>
+              {!readOnly && dirty && <span className="font-body-sm text-body-sm text-amber-600">Unsaved changes</span>}
+              {!readOnly && !dirty && <span className="font-body-sm text-body-sm text-tertiary">Saved</span>}
+            </div>
+            {!readOnly && sb?.std === "ArTuK" && (
+              <p className="mb-3 text-[11px] text-on-surface-variant">
+                Create your bays and drag feeders into them first (each feeder needs a Device Type and rating in BOM Builder), then click
+                Update GA to size every bay from what you&rsquo;ve placed, using ArTuK standard sizing -- see{" "}
+                <a href="/dimensions-master" target="_blank" rel="noopener noreferrer" className="text-primary underline hover:no-underline">
+                  Dimensions Master
+                </a>{" "}
+                for how sizes are worked out. It never creates, deletes, or moves bays or feeders.
+              </p>
             )}
             {!readOnly && (
               <div className="mb-3 flex flex-wrap gap-2">

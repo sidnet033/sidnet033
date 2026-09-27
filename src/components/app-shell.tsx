@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 
@@ -36,6 +36,19 @@ export function AppShell({
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("sidebar-collapsed") === "1";
   });
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+    function onClickOutside(e: MouseEvent) {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setProfileMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [profileMenuOpen]);
 
   function toggleCollapsed() {
     setCollapsed((prev) => {
@@ -59,7 +72,6 @@ export function AppShell({
 
   const sidebarWidth = collapsed ? "w-16" : "w-72";
   const contentOffset = collapsed ? "pl-16" : "pl-72";
-  const headerOffset = collapsed ? "left-16" : "left-72";
 
   return (
     <div className="min-h-screen bg-surface">
@@ -97,6 +109,33 @@ export function AppShell({
           </div>
         </div>
         <div className="flex flex-col gap-space-xs bg-surface-container-lowest p-space-md">
+          <div ref={profileMenuRef} className="relative">
+            {profileMenuOpen && (
+              <div className="absolute bottom-full left-0 z-10 mb-2 w-56 rounded-lg border border-surface-container-high bg-surface-container-lowest p-2 shadow-lg">
+                <p className="truncate px-space-xs pt-space-2xs font-body-md text-body-md font-medium text-on-surface">{displayName}</p>
+                {email && <p className="truncate px-space-xs pb-space-xs font-body-sm text-[11px] text-on-surface-variant">{email}</p>}
+                <button
+                  onClick={signOut}
+                  className="flex w-full items-center gap-space-xs rounded-md px-space-xs py-space-xs text-left font-body-md text-body-md text-on-surface hover:bg-surface-container-high"
+                >
+                  <Icon name="logout" size={16} />
+                  Sign out
+                </button>
+              </div>
+            )}
+            <button
+              onClick={() => setProfileMenuOpen((v) => !v)}
+              title={displayName}
+              className={`flex w-full items-center gap-space-sm rounded-lg px-space-sm py-space-xs text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface ${
+                collapsed ? "justify-center" : ""
+              }`}
+            >
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary font-telemetry-md text-[12px] font-bold text-on-primary">
+                {initials(displayName)}
+              </div>
+              {!collapsed && <span className="truncate font-body-md text-body-md text-on-surface">{displayName}</span>}
+            </button>
+          </div>
           <button
             onClick={toggleCollapsed}
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -108,35 +147,7 @@ export function AppShell({
         </div>
       </aside>
 
-      <header className={`fixed right-0 top-0 z-40 flex h-16 items-center justify-end gap-space-sm bg-surface-container-lowest/90 px-space-lg shadow-[0_1px_8px_rgba(0,0,0,0.04)] backdrop-blur-xl transition-all ${headerOffset}`}>
-        <button
-          onClick={signOut}
-          className="flex h-8 items-center gap-space-xs rounded-lg bg-surface-container-low px-space-sm font-body-md text-body-md font-medium text-on-surface transition-colors hover:bg-surface-container-high"
-        >
-          <Icon name="logout" size={16} />
-          Sign out
-        </button>
-        <div className="mx-space-xs h-6 w-px bg-surface-container-high" />
-        <button
-          disabled
-          title="Notifications coming soon"
-          className="rounded-lg p-space-xs text-secondary transition-colors hover:bg-surface-container-low hover:text-on-surface disabled:cursor-not-allowed"
-        >
-          <Icon name="notifications" size={20} />
-        </button>
-        <button
-          disabled
-          title="Dark mode coming soon"
-          className="rounded-lg p-space-xs text-secondary transition-colors hover:bg-surface-container-low hover:text-on-surface disabled:cursor-not-allowed"
-        >
-          <Icon name="light_mode" size={20} />
-        </button>
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary font-telemetry-md text-[12px] font-bold text-on-primary" title={displayName}>
-          {initials(displayName)}
-        </div>
-      </header>
-
-      <main className={`min-h-screen ${contentOffset} pt-16 transition-all`}>{children}</main>
+      <main className={`min-h-screen ${contentOffset} transition-all`}>{children}</main>
     </div>
   );
 }

@@ -62,7 +62,7 @@ export function RevisionWorkspace({
   const activeTabLabel = TABS.find((t) => t.id === activeTab)?.label ?? "";
 
   return (
-    <div className="flex h-[calc(100vh-56px)] flex-col overflow-hidden">
+    <div className="flex h-screen flex-col overflow-hidden">
       <div className="space-y-space-md border-b border-surface-container-high bg-surface-container-lowest px-space-lg py-space-md">
         <div className="flex flex-wrap items-center justify-between gap-space-md">
           <div className="flex flex-wrap items-center gap-space-xs font-body-sm text-body-sm text-secondary">
@@ -83,10 +83,12 @@ export function RevisionWorkspace({
               <>
                 <span>Switchboards</span>
                 <Icon name="chevron_right" size={14} />
-                <span className="font-medium text-on-surface">
+                <span>
                   {selectedSwitchboard.switchboard.tag}
                   {selectedSwitchboard.switchboard.title ? `: ${selectedSwitchboard.switchboard.title}` : ""}
                 </span>
+                <Icon name="chevron_right" size={14} />
+                <span className="font-medium uppercase text-on-surface">{activeTabLabel}</span>
               </>
             ) : (
               <span className="font-medium text-on-surface">{activeTabLabel}</span>
