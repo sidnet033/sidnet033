@@ -513,6 +513,11 @@ export function GaCanvas({
   }
 
   const totalHeightMm = busbarHeight + panelHeight + plinthHeight;
+  // The ArTuK bay's own height (what the vertical dimension arrow shows) runs
+  // from just above the plinth to just below the red strip -- busbar chamber
+  // + panel, excluding the plinth (a separate structural base, not part of
+  // the bay housing itself).
+  const bayHeightMm = busbarHeight + panelHeight;
   const pxPerMm = computePxPerMm(totalHeightMm);
   const selectedBay = bays.find((v) => v.id === selectedBayId) ?? null;
 
@@ -1134,17 +1139,6 @@ export function GaCanvas({
                   <Icon name="auto_awesome" size={14} /> Update GA
                 </button>
               )}
-              {!readOnly && (
-                <>
-                  <button onClick={handleCancel} disabled={!dirty || saving} className="btn btn-outline btn-sm">
-                    Cancel
-                  </button>
-                  <button onClick={handleSave} disabled={!dirty || saving} className="btn btn-primary btn-sm">
-                    <Icon name="save" size={14} />
-                    {saving ? "Saving..." : "Save Changes"}
-                  </button>
-                </>
-              )}
               <button
                 onClick={exportPng}
                 disabled={exporting || bays.length === 0}
@@ -1161,8 +1155,18 @@ export function GaCanvas({
               >
                 <Icon name="download" size={14} /> {exporting ? "Exporting..." : "Export PDF"}
               </button>
-              {!readOnly && dirty && <span className="font-body-sm text-body-sm text-amber-600">Unsaved changes</span>}
-              {!readOnly && !dirty && <span className="font-body-sm text-body-sm text-tertiary">Saved</span>}
+              {!readOnly && dirty && (
+                <>
+                  <button onClick={handleCancel} disabled={saving} className="btn btn-outline btn-sm">
+                    Cancel
+                  </button>
+                  <button onClick={handleSave} disabled={saving} className="btn btn-primary btn-sm">
+                    <Icon name="save" size={14} />
+                    {saving ? "Saving..." : "Save Changes"}
+                  </button>
+                  <span className="font-body-sm text-body-sm text-amber-600">Unsaved changes</span>
+                </>
+              )}
             </div>
             {!readOnly && sb?.std === "ArTuK" && (
               <p className="mb-3 text-[11px] text-on-surface-variant">
@@ -1233,12 +1237,13 @@ export function GaCanvas({
                       </div>
                     )}
 
-                    {/* Everything below is exactly totalHeightMm tall (busbar + panel +
-                        plinth) -- the vertical dimension line lives alongside just this
-                        part, not the title/ArTuK-strip rows above, so its arrowed span
-                        lines up with the drawing instead of starting above it. */}
+                    {/* An ArTuK bay's own height runs from just above the plinth to just
+                        below the red strip -- busbar chamber + panel, not the plinth (a
+                        separate structural base). The vertical dimension line spans
+                        exactly that, alongside just [busbar/bays/busbar], not the
+                        title/ArTuK-strip rows above or the plinth row below. */}
                     <div className="flex items-start">
-                      <VerticalDimension heightPx={totalHeightMm * pxPerMm} label={`${totalHeightMm}mm`} />
+                      <VerticalDimension heightPx={bayHeightMm * pxPerMm} label={`${bayHeightMm}mm`} />
                       <div className="inline-block">
                       {busbarPosition === "top" && (
                         <div className="flex">
@@ -1317,31 +1322,32 @@ export function GaCanvas({
                         </div>
                       )}
 
-                      <div className="flex">
-                        <div style={{ width: RULER_WIDTH_PX }} />
-                        <DrawingBar label={`PLINTH · ${plinthHeight}mm`} heightPx={plinthHeight * pxPerMm} widthPx={totalWidth * pxPerMm} />
                       </div>
+                    </div>
 
-                      <div className="flex">
-                        <div style={{ width: RULER_WIDTH_PX }} />
-                        <HorizontalRuler bayOffsets={bayOffsets} totalWidth={totalWidth} pxPerMm={pxPerMm} hover={hover} />
-                      </div>
+                    <div className="flex">
+                      <div style={{ width: RULER_WIDTH_PX + VERTICAL_DIM_WIDTH_PX }} />
+                      <DrawingBar label={`PLINTH · ${plinthHeight}mm`} heightPx={plinthHeight * pxPerMm} widthPx={totalWidth * pxPerMm} />
+                    </div>
 
-                      {/* Per-bay width dimensions, then one overall dimension beneath --
-                          same nesting convention as a real elevation drawing. */}
+                    <div className="flex">
+                      <div style={{ width: RULER_WIDTH_PX + VERTICAL_DIM_WIDTH_PX }} />
+                      <HorizontalRuler bayOffsets={bayOffsets} totalWidth={totalWidth} pxPerMm={pxPerMm} hover={hover} />
+                    </div>
+
+                    {/* Per-bay width dimensions, then one overall dimension beneath --
+                        same nesting convention as a real elevation drawing. */}
+                    <div className="flex">
+                      <div style={{ width: RULER_WIDTH_PX + VERTICAL_DIM_WIDTH_PX }} />
                       <div className="flex">
-                        <div style={{ width: RULER_WIDTH_PX }} />
-                        <div className="flex">
-                          {bays.map((v) => (
-                            <HorizontalDimension key={v.id} widthPx={(v.width_mm ?? 0) * pxPerMm} label={`${v.width_mm ?? 0}`} />
-                          ))}
-                        </div>
+                        {bays.map((v) => (
+                          <HorizontalDimension key={v.id} widthPx={(v.width_mm ?? 0) * pxPerMm} label={`${v.width_mm ?? 0}`} />
+                        ))}
                       </div>
-                      <div className="flex">
-                        <div style={{ width: RULER_WIDTH_PX }} />
-                        <HorizontalDimension widthPx={totalWidth * pxPerMm} label={`${totalWidth}mm`} />
-                      </div>
-                      </div>
+                    </div>
+                    <div className="flex">
+                      <div style={{ width: RULER_WIDTH_PX + VERTICAL_DIM_WIDTH_PX }} />
+                      <HorizontalDimension widthPx={totalWidth * pxPerMm} label={`${totalWidth}mm`} />
                     </div>
                   </div>
 
