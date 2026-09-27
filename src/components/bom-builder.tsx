@@ -11,7 +11,7 @@ import { ensureUnassignedVertical } from "@/lib/switchboard-bom";
 import { effectiveNetRate } from "@/lib/feeder-cost";
 import { computeFeederTag } from "@/lib/feeder-tag";
 import { DEVICE_TYPE_LABELS, MOTOR_STARTER_TYPES } from "@/lib/artuk-sizing";
-import { itemCode } from "@/lib/item-display";
+import { itemCode, itemRowClass } from "@/lib/item-display";
 import { numericKeyGuard } from "@/lib/numeric-input";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
@@ -1260,7 +1260,7 @@ function FeederModuleCard({
                 return (
                   <tr
                     key={line.id}
-                    className={`border-t border-surface-container ${line.item.source === "Estimation" ? "source-estimation" : ""}`}
+                    className={`border-t border-surface-container ${itemRowClass(line.item)}`}
                   >
                     <td className="px-2 py-1.5 text-on-surface-variant">{i + 1}</td>
                     <td className="px-2 py-1.5 font-mono">{line.item.sku || "—"}</td>
@@ -1438,9 +1438,7 @@ function FeederModuleCard({
                       type="button"
                       key={m.id}
                       onClick={() => addItem(m)}
-                      className={`flex w-full items-start gap-2 px-2 py-1.5 text-left text-xs hover:bg-surface-container-low ${i === 0 ? "bg-primary/5" : ""} ${
-                        m.source === "Estimation" ? "source-estimation" : ""
-                      }`}
+                      className={`flex w-full items-start gap-2 px-2 py-1.5 text-left text-xs hover:bg-surface-container-low ${i === 0 ? "bg-primary/5" : ""} ${itemRowClass(m)}`}
                     >
                       <span className="w-24 shrink-0 truncate font-mono text-secondary">{itemCode(m)}</span>
                       <span className="w-24 shrink-0 truncate font-mono text-secondary">{m.vendor_cat || "—"}</span>

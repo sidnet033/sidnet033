@@ -6,6 +6,20 @@ export function itemCode(item: Pick<ItemMaster, "sku" | "vendor_cat">): string {
   return item.sku ?? item.vendor_cat ?? "—";
 }
 
+// The CSS class flagging an item row/button's text color, everywhere items
+// are listed -- Item Master, Feeder Master's item lines and item picker,
+// BOM Builder's item lines and item picker, ad-hoc feeder panel's item
+// picker. Archived (status "discontinued") takes priority over an
+// Estimation source, since "don't use this item" outranks "double-check
+// this cost" -- an item is only ever given one of the two classes, never
+// both, so the .item-archived/.source-estimation !important rules in
+// globals.css never have to resolve a cascade conflict between them.
+export function itemRowClass(item: Pick<ItemMaster, "status" | "source">): string {
+  if (item.status === "discontinued") return "item-archived";
+  if (item.source === "Estimation") return "source-estimation";
+  return "";
+}
+
 // ACB/MCCB/MCB items carry their own electrical rating (distinct from
 // whatever feeder they end up in) -- Amps/Poles/kA become compulsory for
 // them specifically, everything else only needs the base fields below.

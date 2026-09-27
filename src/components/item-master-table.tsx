@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase/client";
-import { fetchAllItemMaster } from "@/lib/item-display";
+import { fetchAllItemMaster, itemRowClass } from "@/lib/item-display";
 import type { ItemMaster, ItemStatus } from "@/types/database";
 import { XlsUpload } from "@/components/xls-upload";
 import { SheetSyncButton } from "@/components/sheet-sync-button";
@@ -302,7 +302,11 @@ export function ItemMasterTable({
     () => (loadSavedView().statusFilter as "all" | ItemStatus) || "all"
   );
   const [makeFilter, setMakeFilter] = useState(() => loadSavedView().makeFilter || "");
-  const [categoryFilter, setCategoryFilter] = useState(() => loadSavedView().categoryFilter || "");
+  // Always opens on "All categories" -- unlike the other filters, category
+  // isn't restored from the saved view, since landing back on whatever
+  // category was last picked (e.g. Spares) hides everything else by
+  // surprise.
+  const [categoryFilter, setCategoryFilter] = useState("");
   const [ampsFilter, setAmpsFilter] = useState(() => loadSavedView().ampsFilter || "");
   const [polesFilter, setPolesFilter] = useState(() => loadSavedView().polesFilter || "");
   const [kaFilter, setKaFilter] = useState(() => loadSavedView().kaFilter || "");
@@ -378,11 +382,15 @@ export function ItemMasterTable({
   // outright; items sharing a Description are duplicates only if they also
   // share a Make (same description with a different make is a legitimate
   // distinct item, e.g. the same-rated MCCB from two different brands).
+  // Archived items are left out of the comparison entirely -- an active
+  // item that merely happens to share its description/SKU with something
+  // that was already archived isn't a live duplicate worth flagging.
   const duplicateIds = useMemo(() => {
     const bySku = new Map<string, string[]>();
     const byVendorCat = new Map<string, string[]>();
     const byDescriptionMake = new Map<string, string[]>();
     for (const item of items) {
+      if (item.status !== "active") continue;
       if (item.sku) {
         const k = item.sku.trim().toLowerCase();
         bySku.set(k, [...(bySku.get(k) ?? []), item.id]);
@@ -1071,7 +1079,7 @@ export function ItemMasterTable({
                 ) : (
                   <tr
                     key={item.id}
-                    className={`group h-8 hover:bg-surface-container-low ${item.source === "Estimation" ? "source-estimation" : ""}`}
+                    className={`group h-8 hover:bg-surface-container-low ${itemRowClass(item)}`}
                   >
                     {isAdmin && (
                       <td className="px-2 text-center">

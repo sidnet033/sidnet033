@@ -247,3 +247,13 @@ input[type="number"]::-webkit-inner-spin-button {
 .source-estimation * {
   color: #c2185b !important;
 }
+
+/* Same mechanism as .source-estimation, for an item whose status is
+   "discontinued" (Archived): light grey text everywhere items are listed.
+   Takes priority over .source-estimation when both apply -- callers put
+   this class on the element instead of source-estimation for an archived
+   item, never both, so there's no cascade-order ambiguity to resolve. */
+.item-archived,
+.item-archived * {
+  color: #9aa3ad !important;
+}

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { itemCode } from "@/lib/item-display";
+import { itemCode, itemRowClass } from "@/lib/item-display";
 import { numericKeyGuard } from "@/lib/numeric-input";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
@@ -215,9 +215,7 @@ export function AdHocFeederPanel({
                   setSelectedItemId(m.id);
                   setItemSearch(`${itemCode(m)} — ${m.description}`);
                 }}
-                className={`flex w-full items-center gap-2 px-2 py-1 text-left text-xs hover:bg-surface-container-low ${
-                  m.source === "Estimation" ? "source-estimation" : ""
-                }`}
+                className={`flex w-full items-center gap-2 px-2 py-1 text-left text-xs hover:bg-surface-container-low ${itemRowClass(m)}`}
               >
                 <span className="w-24 shrink-0 truncate font-mono text-secondary">{itemCode(m)}</span>
                 <span className="w-24 shrink-0 truncate font-mono text-secondary">{m.vendor_cat || "—"}</span>
