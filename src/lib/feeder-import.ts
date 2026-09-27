@@ -1,11 +1,17 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { DEVICE_TYPE_LABELS } from "@/lib/artuk-sizing";
 import { FEEDER_TYPES, computeFeederTag } from "@/lib/feeder-tag";
+import { validateNewItemFields } from "@/lib/item-display";
 import type { DeviceType, Feeder, ItemMaster, ItemSource } from "@/types/database";
 
 // Template columns, in the order the generated .xlsx uses -- shared by the
 // parser (reading these keys out of the header row) and the failed-rows
-// re-export (writing a workbook back out with the same columns).
+// re-export (writing a workbook back out with the same columns). The
+// item_name/item_make/item_category columns only matter when the item they
+// describe doesn't exist yet -- they pre-fill the missing-item review table
+// instead of the user having to type them there (Item Master's own
+// compulsory-field rule -- see validateNewItemFields -- requires them to
+// create the item either way).
 export const TEMPLATE_COLUMNS = [
   "feeder_name",
   "feeder_type",
@@ -16,6 +22,9 @@ export const TEMPLATE_COLUMNS = [
   "breaking_capacity",
   "item_sku",
   "item_vendor_cat",
+  "item_name",
+  "item_make",
+  "item_category",
   "item_qty",
 ] as const;
 
@@ -33,6 +42,9 @@ export type ParsedFeederLine = {
   breakingCapacity: string | null;
   itemSku: string | null;
   itemVendorCat: string | null;
+  itemName: string | null;
+  itemMake: string | null;
+  itemCategory: string | null;
   qty: number;
   raw: Record<string, string>;
 };
@@ -104,6 +116,9 @@ export function parseFeederSheet(sheet: SheetLike): { lines: ParsedFeederLine[];
       breakingCapacity: raw.breaking_capacity || null,
       itemSku: raw.item_sku || null,
       itemVendorCat: raw.item_vendor_cat || null,
+      itemName: raw.item_name || null,
+      itemMake: raw.item_make || null,
+      itemCategory: raw.item_category || null,
       qty,
       raw,
     });
@@ -174,7 +189,14 @@ function resolveItemForLine(line: ParsedFeederLine, index: ItemIndex): ItemMaste
   return null;
 }
 
-export type MissingItemRef = { sku: string | null; vendorCat: string | null; lineCount: number };
+export type MissingItemRef = {
+  sku: string | null;
+  vendorCat: string | null;
+  itemName: string | null;
+  itemMake: string | null;
+  itemCategory: string | null;
+  lineCount: number;
+};
 
 export function findMissingItems(groups: ClassifiedGroup[], index: ItemIndex): MissingItemRef[] {
   const byKey = new Map<string, MissingItemRef>();
@@ -183,8 +205,20 @@ export function findMissingItems(groups: ClassifiedGroup[], index: ItemIndex): M
       if (resolveItemForLine(line, index)) continue;
       const key = `${line.itemSku ?? ""}|${line.itemVendorCat ?? ""}`;
       const existing = byKey.get(key);
-      if (existing) existing.lineCount += 1;
-      else byKey.set(key, { sku: line.itemSku, vendorCat: line.itemVendorCat, lineCount: 1 });
+      if (existing) {
+        existing.lineCount += 1;
+        continue;
+      }
+      // First line referencing this missing item wins for pre-fill values,
+      // same "first row wins" convention as feeder-level fields.
+      byKey.set(key, {
+        sku: line.itemSku,
+        vendorCat: line.itemVendorCat,
+        itemName: line.itemName,
+        itemMake: line.itemMake,
+        itemCategory: line.itemCategory,
+        lineCount: 1,
+      });
     }
   }
   return Array.from(byKey.values());
@@ -198,7 +232,11 @@ export type MissingItemDraft = {
   vendorCat: string;
   description: string;
   make: string;
+  category: string;
   source: ItemSource | "";
+  amps: string;
+  poles: string;
+  ka: string;
   unitCost: string;
   create: boolean;
 };
@@ -208,21 +246,32 @@ export function buildMissingItemDrafts(missing: MissingItemRef[]): MissingItemDr
     key: `${m.sku ?? ""}|${m.vendorCat ?? ""}`,
     sku: m.sku ?? "",
     vendorCat: m.vendorCat ?? "",
-    description: "",
-    make: "",
+    description: m.itemName ?? "",
+    make: m.itemMake ?? "",
+    category: m.itemCategory ?? "",
     source: m.sku ? "" : "Estimation",
+    amps: "",
+    poles: "",
+    ka: "",
     unitCost: "0",
     create: true,
   }));
 }
 
-// Same required-field rule as CreateItemDialog: (SKU or Vendor Cat) +
-// Description + Source.
+// Same compulsory-field rule as CreateItemDialog and the item xlsx/Google
+// Sheet import -- see validateNewItemFields.
 export function validateMissingDraft(d: MissingItemDraft): string | null {
-  if (!d.sku.trim() && !d.vendorCat.trim()) return "SKU or Vendor Cat is required.";
-  if (!d.description.trim()) return "Description is required.";
-  if (!d.source) return "Source is required.";
-  return null;
+  return validateNewItemFields({
+    sku: d.sku,
+    vendorCat: d.vendorCat,
+    description: d.description,
+    make: d.make,
+    category: d.category,
+    source: d.source,
+    amps: d.amps.trim() ? Number(d.amps) : null,
+    poles: d.poles.trim() ? Number(d.poles) : null,
+    ka: d.ka.trim() ? Number(d.ka) : null,
+  });
 }
 
 function draftToItemRow(d: MissingItemDraft) {
@@ -231,13 +280,13 @@ function draftToItemRow(d: MissingItemDraft) {
     vendor_cat: d.vendorCat.trim() || null,
     description: d.description.trim(),
     make: d.make.trim() || null,
-    category: null,
+    category: d.category.trim() || null,
     source: d.source as ItemSource,
     status: "active" as const,
-    amps: null,
+    amps: d.amps.trim() ? Number(d.amps) : null,
     frame: null,
-    ka: null,
-    poles: null,
+    ka: d.ka.trim() ? Number(d.ka) : null,
+    poles: d.poles.trim() ? Number(d.poles) : null,
     uom: "nos",
     unit_cost: Number(d.unitCost) || 0,
     list_price: null,

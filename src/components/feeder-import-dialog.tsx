@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { numericKeyGuard } from "@/lib/numeric-input";
+import { isBreakerCategory } from "@/lib/item-display";
 import {
   TEMPLATE_COLUMNS,
   buildItemIndex,
@@ -200,7 +201,7 @@ export function FeederImportDialog({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse-surface/40 p-4 backdrop-blur-sm" onClick={stage === "landing" || stage === "error" ? reset : undefined}>
           <SavingOverlay show={stage === "creating" || stage === "importing"} label={stage === "creating" ? "Creating items..." : "Importing feeders..."} />
           <div
-            className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-[8px] bg-surface-container-lowest shadow-md"
+            className="flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-[8px] bg-surface-container-lowest shadow-md"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-outline-variant/30 p-4">
@@ -264,20 +265,25 @@ export function FeederImportDialog({
                     from Item Master.
                   </div>
                   <p className="text-sm text-on-surface-variant">
-                    Fill in the details for the missing items you want to create. Unchecked items won&rsquo;t be created — any feeder line
-                    that needs one of them will be skipped (a brand-new feeder needing one is skipped entirely; an existing feeder just won&rsquo;t
-                    get that line).
+                    Fill in the details for the missing items you want to create. Description, Make, Category, and Source are always
+                    required; for ACB, MCCB, and MCB items, Amps, Poles, and kA are required too. Unchecked items won&rsquo;t be created — any
+                    feeder line that needs one of them will be skipped (a brand-new feeder needing one is skipped entirely; an existing feeder
+                    just won&rsquo;t get that line).
                   </p>
                   <div className="overflow-x-auto rounded-[4px] border border-outline-variant/40">
-                    <table className="w-full min-w-[720px] text-left text-xs">
+                    <table className="w-full min-w-[980px] text-left text-xs">
                       <thead className="bg-surface-container text-[10px] font-semibold uppercase tracking-wide text-secondary">
                         <tr className="h-8">
                           <th className="w-8 px-2"></th>
                           <th className="px-2">SKU</th>
                           <th className="px-2">Vendor Cat</th>
                           <th className="px-2">Description *</th>
-                          <th className="px-2">Make</th>
+                          <th className="px-2">Make *</th>
+                          <th className="px-2">Category *</th>
                           <th className="px-2">Source *</th>
+                          <th className="px-2">Amps</th>
+                          <th className="px-2">Poles</th>
+                          <th className="px-2">kA</th>
                           <th className="px-2">Unit Cost</th>
                         </tr>
                       </thead>
@@ -424,6 +430,7 @@ function ConfirmStep({
 
 function MissingItemRow({ draft, onChange }: { draft: MissingItemDraft; onChange: (p: Partial<MissingItemDraft>) => void }) {
   const effectiveSource: ItemSource | "" = draft.source || (draft.sku.trim() ? "" : "Estimation");
+  const breaker = isBreakerCategory(draft.category);
   return (
     <tr className="h-9">
       <td className="px-2">
@@ -459,6 +466,17 @@ function MissingItemRow({ draft, onChange }: { draft: MissingItemDraft; onChange
           value={draft.make}
           onChange={(e) => onChange({ make: e.target.value })}
           disabled={!draft.create}
+          placeholder="Required"
+          className="w-24 rounded border border-outline-variant/60 px-1.5 py-1 text-xs disabled:opacity-40"
+        />
+      </td>
+      <td className="px-2">
+        <input
+          value={draft.category}
+          onChange={(e) => onChange({ category: e.target.value })}
+          disabled={!draft.create}
+          placeholder="Required"
+          title="ACB, MCCB, or MCB requires Amps/Poles/kA too"
           className="w-24 rounded border border-outline-variant/60 px-1.5 py-1 text-xs disabled:opacity-40"
         />
       </td>
@@ -475,6 +493,42 @@ function MissingItemRow({ draft, onChange }: { draft: MissingItemDraft; onChange
           <option value="Design">Design</option>
           <option value="Estimation">Estimation</option>
         </select>
+      </td>
+      <td className="px-2">
+        <input
+          type="text"
+          inputMode="decimal"
+          value={draft.amps}
+          onChange={(e) => onChange({ amps: e.target.value })}
+          onKeyDown={numericKeyGuard()}
+          disabled={!draft.create}
+          placeholder={breaker ? "Required" : ""}
+          className="w-16 rounded border border-outline-variant/60 px-1.5 py-1 text-xs disabled:opacity-40"
+        />
+      </td>
+      <td className="px-2">
+        <input
+          type="text"
+          inputMode="decimal"
+          value={draft.poles}
+          onChange={(e) => onChange({ poles: e.target.value })}
+          onKeyDown={numericKeyGuard()}
+          disabled={!draft.create}
+          placeholder={breaker ? "Required" : ""}
+          className="w-14 rounded border border-outline-variant/60 px-1.5 py-1 text-xs disabled:opacity-40"
+        />
+      </td>
+      <td className="px-2">
+        <input
+          type="text"
+          inputMode="decimal"
+          value={draft.ka}
+          onChange={(e) => onChange({ ka: e.target.value })}
+          onKeyDown={numericKeyGuard()}
+          disabled={!draft.create}
+          placeholder={breaker ? "Required" : ""}
+          className="w-16 rounded border border-outline-variant/60 px-1.5 py-1 text-xs disabled:opacity-40"
+        />
       </td>
       <td className="px-2">
         <input

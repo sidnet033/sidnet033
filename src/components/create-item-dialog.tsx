@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { numericKeyGuard } from "@/lib/numeric-input";
-import { itemCode, findDuplicateItem } from "@/lib/item-display";
+import { itemCode, findDuplicateItem, isBreakerCategory, validateNewItemFields } from "@/lib/item-display";
 import type { ItemMaster, ItemSource, ItemStatus } from "@/types/database";
 
 const EMPTY_DRAFT = {
@@ -31,10 +31,17 @@ const EMPTY_DRAFT = {
 type Draft = typeof EMPTY_DRAFT;
 
 function validateDraft(d: Draft): string | null {
-  if (!d.sku.trim() && !d.vendor_cat.trim()) return "Either SKU or Vendor Cat is required.";
-  if (!d.description.trim()) return "Description is required.";
-  if (!d.source) return "Source is required.";
-  return null;
+  return validateNewItemFields({
+    sku: d.sku,
+    vendorCat: d.vendor_cat,
+    description: d.description,
+    make: d.make,
+    category: d.category,
+    source: d.source,
+    amps: d.amps.trim() ? Number(d.amps) : null,
+    poles: d.poles.trim() ? Number(d.poles) : null,
+    ka: d.ka.trim() ? Number(d.ka) : null,
+  });
 }
 
 function draftToRow(d: Draft) {
@@ -85,6 +92,7 @@ export function CreateItemDialog({
   // Estimation whenever the SKU is blank, unless the user has actively
   // picked a source themselves.
   const effectiveSource: ItemSource | "" = draft.source || (draft.sku.trim() ? "" : "Estimation");
+  const isBreaker = isBreakerCategory(draft.category);
 
   function handleClose() {
     setDraft(EMPTY_DRAFT);
@@ -142,15 +150,15 @@ export function CreateItemDialog({
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Field label="SKU" value={draft.sku} onChange={(v) => patch({ sku: v })} />
             <Field label="Vendor Cat" value={draft.vendor_cat} onChange={(v) => patch({ vendor_cat: v })} />
-            <Field label="Description" value={draft.description} onChange={(v) => patch({ description: v })} required className="sm:col-span-2" />
-            <Field label="Make" value={draft.make} onChange={(v) => patch({ make: v })} />
-            <Field label="Category" value={draft.category} onChange={(v) => patch({ category: v })} />
+            <Field label="Description (item name)" value={draft.description} onChange={(v) => patch({ description: v })} required className="sm:col-span-2" />
+            <Field label="Make" value={draft.make} onChange={(v) => patch({ make: v })} required />
+            <Field label="Category" value={draft.category} onChange={(v) => patch({ category: v })} required />
             <SourceField value={effectiveSource} onChange={(v) => patch({ source: v })} />
             <StatusField value={draft.status} onChange={(v) => patch({ status: v })} />
-            <Field label="Amps" value={draft.amps} onChange={(v) => patch({ amps: v })} numeric />
+            <Field label="Amps" value={draft.amps} onChange={(v) => patch({ amps: v })} numeric required={isBreaker} />
             <Field label="Frame (ACB/MCCB/MCB)" value={draft.frame} onChange={(v) => patch({ frame: v })} />
-            <Field label="kA" value={draft.ka} onChange={(v) => patch({ ka: v })} numeric />
-            <Field label="Poles" value={draft.poles} onChange={(v) => patch({ poles: v })} numeric />
+            <Field label="kA" value={draft.ka} onChange={(v) => patch({ ka: v })} numeric required={isBreaker} />
+            <Field label="Poles" value={draft.poles} onChange={(v) => patch({ poles: v })} numeric required={isBreaker} />
             <Field label="UOM" value={draft.uom} onChange={(v) => patch({ uom: v })} />
             <Field label="Unit cost" value={draft.unit_cost} onChange={(v) => patch({ unit_cost: v })} numeric />
             <Field label="List price" value={draft.list_price} onChange={(v) => patch({ list_price: v })} numeric />
@@ -158,7 +166,10 @@ export function CreateItemDialog({
             <Field label="Supplier" value={draft.supplier} onChange={(v) => patch({ supplier: v })} />
             <Field label="Notes" value={draft.notes} onChange={(v) => patch({ notes: v })} className="sm:col-span-2" />
           </div>
-          <p className="mt-3 text-xs text-secondary">Either SKU or Vendor Cat is required (both are fine too). Source is required.</p>
+          <p className="mt-3 text-xs text-secondary">
+            Either SKU or Vendor Cat is required (both are fine too). Description, Make, Category, and Source are always required. For ACB,
+            MCCB, and MCB items, Amps, Poles, and kA are required too.
+          </p>
           {error && <p className="mt-2 text-sm text-error">{error}</p>}
           <div className="mt-4 flex items-center justify-end gap-2 border-t border-outline-variant/30 pt-3">
             <button type="button" onClick={handleClose} className="rounded-[4px] px-3 py-1.5 text-sm font-medium text-secondary hover:bg-surface-container-low">
@@ -230,7 +241,9 @@ function Field({
 }) {
   return (
     <div className={className}>
-      <label className="mb-1 block text-xs font-medium text-on-surface-variant">{label}</label>
+      <label className="mb-1 block text-xs font-medium text-on-surface-variant">
+        {label} {required && <span className="text-error">*</span>}
+      </label>
       <input
         type={numeric ? "text" : "text"}
         inputMode={numeric ? "decimal" : undefined}

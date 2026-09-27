@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { validateNewItemFields } from "@/lib/item-display";
 
 // Shared between the .xlsx upload (browser) and the Google Sheet sync
 // (server) — both parse rows into this shape, then hand off to
@@ -125,14 +126,39 @@ export async function importItemRows(
     byId.set(id, { rowNumber, id, data, isNew: newIds.has(id) });
   }
 
+  // The fuller compulsory-field rule (Make, Category, and -- for ACB/MCCB/MCB
+  // -- Amps/Poles/kA) only applies to rows that create a brand-new item.
+  // A row that updates an existing catalog entry keeps the lighter rule
+  // above: legacy rows that predate this policy shouldn't suddenly fail to
+  // update over a price/uom change just because they've never had a Make
+  // or Category filled in.
   const toInsert: Resolved[] = [];
   const toUpdate: Resolved[] = [];
   for (const id of order) {
     const resolved = byId.get(id)!;
-    (resolved.isNew ? toInsert : toUpdate).push(resolved);
+    if (!resolved.isNew) {
+      toUpdate.push(resolved);
+      continue;
+    }
+    const fieldError = validateNewItemFields({
+      sku: resolved.data.sku,
+      vendorCat: resolved.data.vendor_cat,
+      description: resolved.data.description,
+      make: resolved.data.make,
+      category: resolved.data.category,
+      source: resolved.data.source,
+      amps: resolved.data.amps,
+      poles: resolved.data.poles,
+      ka: resolved.data.ka,
+    });
+    if (fieldError) {
+      summary.skipped.push({ row: resolved.rowNumber, reason: fieldError });
+      continue;
+    }
+    toInsert.push(resolved);
   }
 
-  let done = rows.length - validRows.length;
+  let done = summary.skipped.length;
   const total = rows.length;
 
   async function writeChunked(items: Resolved[], mode: "insert" | "update") {
