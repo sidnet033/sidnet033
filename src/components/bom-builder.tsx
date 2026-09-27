@@ -1258,7 +1258,10 @@ function FeederModuleCard({
                 const discountPct = line.discount_pct_override ?? line.item.discount_pct;
                 const netRate = effectiveNetRate(line.item, line.list_price_override, line.discount_pct_override);
                 return (
-                  <tr key={line.id} className="border-t border-surface-container">
+                  <tr
+                    key={line.id}
+                    className={`border-t border-surface-container ${line.item.source === "Estimation" ? "source-estimation" : ""}`}
+                  >
                     <td className="px-2 py-1.5 text-on-surface-variant">{i + 1}</td>
                     <td className="px-2 py-1.5 font-mono">{line.item.sku || "—"}</td>
                     <td className="px-2 py-1.5 font-mono text-secondary">{line.item.vendor_cat || "—"}</td>
@@ -1435,7 +1438,9 @@ function FeederModuleCard({
                       type="button"
                       key={m.id}
                       onClick={() => addItem(m)}
-                      className={`flex w-full items-start gap-2 px-2 py-1.5 text-left text-xs hover:bg-surface-container-low ${i === 0 ? "bg-primary/5" : ""}`}
+                      className={`flex w-full items-start gap-2 px-2 py-1.5 text-left text-xs hover:bg-surface-container-low ${i === 0 ? "bg-primary/5" : ""} ${
+                        m.source === "Estimation" ? "source-estimation" : ""
+                      }`}
                     >
                       <span className="w-24 shrink-0 truncate font-mono text-secondary">{itemCode(m)}</span>
                       <span className="w-24 shrink-0 truncate font-mono text-secondary">{m.vendor_cat || "—"}</span>

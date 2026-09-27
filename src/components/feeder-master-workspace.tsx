@@ -487,7 +487,10 @@ export function FeederMasterWorkspace({
                           </thead>
                           <tbody className="font-body-sm text-body-sm text-on-surface">
                             {lines.map((line) => (
-                              <tr key={line.id} className="border-t border-surface-container">
+                              <tr
+                                key={line.id}
+                                className={`border-t border-surface-container ${line.item.source === "Estimation" ? "source-estimation" : ""}`}
+                              >
                                 <td className="py-space-xs pl-space-lg pr-space-xs font-telemetry-md font-bold text-primary">{line.item.sku || "—"}</td>
                                 <td className="px-space-sm py-space-xs text-on-surface-variant">{line.item.vendor_cat || "—"}</td>
                                 <td className="px-space-sm py-space-xs text-on-surface-variant">{line.item.make || "—"}</td>
@@ -736,7 +739,9 @@ export function FeederMasterWorkspace({
                               setSelectedItem(item);
                               setItemSearch(`${itemCode(item)} — ${item.description}`);
                             }}
-                            className="flex w-full items-center justify-between gap-space-sm border-b border-surface-container px-space-sm py-1.5 text-left last:border-b-0 hover:bg-surface-container-low"
+                            className={`flex w-full items-center justify-between gap-space-sm border-b border-surface-container px-space-sm py-1.5 text-left last:border-b-0 hover:bg-surface-container-low ${
+                              item.source === "Estimation" ? "source-estimation" : ""
+                            }`}
                           >
                             <span className="min-w-0">
                               <span className="font-mono text-xs font-semibold text-primary">{itemCode(item)}</span>{" "}
@@ -807,7 +812,12 @@ export function FeederMasterWorkspace({
                   </thead>
                   <tbody className="font-body-sm text-body-sm text-on-surface">
                     {selectedLines.map((line, i) => (
-                      <tr key={line.id} className={`group transition-colors hover:bg-surface-container-low/60 ${i % 2 === 1 ? "bg-surface-container-low/20" : ""}`}>
+                      <tr
+                        key={line.id}
+                        className={`group transition-colors hover:bg-surface-container-low/60 ${i % 2 === 1 ? "bg-surface-container-low/20" : ""} ${
+                          line.item.source === "Estimation" ? "source-estimation" : ""
+                        }`}
+                      >
                         <td className="py-space-sm pl-space-lg pr-space-xs text-center font-telemetry-md text-on-surface-variant">{i + 1}</td>
                         <td className="px-space-sm py-space-sm font-telemetry-md text-telemetry-md font-bold text-primary">{line.item.sku || "—"}</td>
                         <td className="px-space-sm py-space-sm font-label-md text-label-md text-on-surface-variant">{line.item.vendor_cat || "—"}</td>

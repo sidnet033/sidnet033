@@ -1066,7 +1066,10 @@ export function ItemMasterTable({
                     </td>
                   </tr>
                 ) : (
-                  <tr key={item.id} className="group h-8 hover:bg-surface-container-low">
+                  <tr
+                    key={item.id}
+                    className={`group h-8 hover:bg-surface-container-low ${item.source === "Estimation" ? "source-estimation" : ""}`}
+                  >
                     {isAdmin && (
                       <td className="px-2 text-center">
                         <input

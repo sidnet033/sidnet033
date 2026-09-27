@@ -236,3 +236,14 @@ input[type="number"]::-webkit-inner-spin-button {
     @apply bg-error text-on-error hover:opacity-90;
   }
 }
+
+/* Flags an item-master row (or item-line row derived from one) whose
+   source is "Estimation" with magenta text, everywhere items are listed --
+   Item Master, Feeder Master's item lines and item picker, BOM Builder's
+   item lines and item picker. Applied to the row/button; `*` makes it win
+   over whatever color a specific cell/span would otherwise use, since a
+   child's own color class always beats an inherited value. */
+.source-estimation,
+.source-estimation * {
+  color: #c2185b !important;
+}
