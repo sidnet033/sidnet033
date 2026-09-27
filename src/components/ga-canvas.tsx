@@ -444,6 +444,12 @@ export function GaCanvas({
   const pxPerMm = computePxPerMm(totalHeightMm);
   const selectedBay = bays.find((v) => v.id === selectedBayId) ?? null;
 
+  // Side view has no bay-by-bay breakdown (all bays share one front-view
+  // face) -- it's one profile using the deepest bay's depth, so the drawing
+  // never understates how far the enclosure actually projects.
+  const sideViewDepthMm = Math.max(0, ...bays.map((v) => v.depth_mm ?? 0)) || 600;
+  const sideViewWidthPx = Math.max(sideViewDepthMm * pxPerMm, 1);
+
   // Physically, the busbar chamber sits away from wherever cables enter the
   // panel (more room to route cable near the entry side); the base plinth
   // is always the floor support, so it stays at the very bottom regardless.
@@ -931,7 +937,6 @@ export function GaCanvas({
           <ReadOnlyField label="kA" value={sb.ka != null ? `${sb.ka}kA` : null} />
           <ReadOnlyField label="Cable Entry" value={sb.cable_entry} />
           <ReadOnlyField label="Cable Exit" value={sb.cable_exit} />
-          <span className="text-[10px] text-on-surface-variant">Set in Project Detail →</span>
           <button
             onClick={() => alert("Export (DXF / DWG / PDF) is coming in a later phase.")}
             className="ml-auto flex items-center gap-1 rounded-md border border-surface-container-high bg-surface-container-lowest px-2.5 py-1.5 font-medium text-on-surface hover:bg-surface-container-low"
@@ -1014,7 +1019,7 @@ export function GaCanvas({
                   onClick={autoGenerateGa}
                   className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary shadow-sm hover:bg-primary-container"
                 >
-                  <Icon name="auto_awesome" size={14} className="mr-1 inline" /> Auto-generate GA
+                  <Icon name="auto_awesome" size={14} className="mr-1 inline" /> Update GA
                 </button>
                 <p className="mt-1 text-[11px] text-on-surface-variant">
                   Create your bays and drag feeders into them first (each feeder needs a Device Type and rating in BOM Builder), then click
@@ -1061,104 +1066,148 @@ export function GaCanvas({
                   No bays yet — add one from the Modular Bay Templates above.
                 </p>
               ) : (
-                <div className="inline-block">
-                  {sb.std === "ArTuK" && (
-                    <div className="flex">
-                      <div style={{ width: RULER_WIDTH_PX }} />
+                <div className="flex items-start gap-10">
+                  <div className="flex items-start">
+                    <VerticalDimension heightPx={totalHeightMm * pxPerMm} label={`${totalHeightMm}mm`} />
+                    <div className="inline-block">
+                      <div className="flex">
+                        <div style={{ width: RULER_WIDTH_PX }} />
+                        <div style={{ width: Math.max(totalWidth * pxPerMm, 1) }}>
+                          <ViewLabel>Front View</ViewLabel>
+                        </div>
+                      </div>
+
+                      {sb.std === "ArTuK" && (
+                        <div className="flex">
+                          <div style={{ width: RULER_WIDTH_PX }} />
+                          <div
+                            className="flex items-center justify-center bg-red-600 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-white"
+                            style={{ width: totalWidth * pxPerMm }}
+                          >
+                            ArTuK
+                          </div>
+                        </div>
+                      )}
+
+                      {busbarPosition === "top" && (
+                        <div className="flex">
+                          <div style={{ width: RULER_WIDTH_PX }} />
+                          <DrawingBar
+                            label={busbarLabel}
+                            heightPx={busbarHeight * pxPerMm}
+                            widthPx={totalWidth * pxPerMm}
+                            isSelected={busbarSelected}
+                            onClick={
+                              readOnly
+                                ? undefined
+                                : () => {
+                                    setBusbarSelected(true);
+                                    setSelectedBayId(null);
+                                    setSelectedPlacedId(null);
+                                  }
+                            }
+                          />
+                        </div>
+                      )}
+
+                      <div className="flex">
+                        <VerticalRuler totalHeightMm={panelHeight} pxPerMm={pxPerMm} hover={hover} />
+                        <div className="flex">
+                          {bays.map((v, i) => (
+                            <BayColumn
+                              key={`${v.id}-${resetKey}`}
+                              vertical={v}
+                              readOnly={readOnly}
+                              pxPerMm={pxPerMm}
+                              panelHeightMm={panelHeight}
+                              bayLeftMm={bayOffsets[i]}
+                              isSelected={selectedBayId === v.id}
+                              selectedPlacedId={selectedBayId === v.id ? selectedPlacedId : null}
+                              cableEntry={sb.cable_entry}
+                              cableExit={sb.cable_exit}
+                              onSelectBay={() => {
+                                setSelectedBayId(v.id);
+                                setSelectedPlacedId(null);
+                                setBusbarSelected(false);
+                              }}
+                              onSelectFeeder={(placedId) => {
+                                setSelectedBayId(v.id);
+                                setSelectedPlacedId(placedId);
+                                setBusbarSelected(false);
+                              }}
+                              onMoveBay={(direction) => moveBay(v.id, direction)}
+                              onMoveFeeder={(placedId, direction) => moveFeeder(v.id, placedId, direction)}
+                              onHover={setHover}
+                              onHoverEnd={() => setHover(null)}
+                              onRemove={(placedId) => removeFromBay(v.id, placedId)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+
+                      {busbarPosition === "bottom" && (
+                        <div className="flex">
+                          <div style={{ width: RULER_WIDTH_PX }} />
+                          <DrawingBar
+                            label={busbarLabel}
+                            heightPx={busbarHeight * pxPerMm}
+                            widthPx={totalWidth * pxPerMm}
+                            isSelected={busbarSelected}
+                            onClick={
+                              readOnly
+                                ? undefined
+                                : () => {
+                                    setBusbarSelected(true);
+                                    setSelectedBayId(null);
+                                    setSelectedPlacedId(null);
+                                  }
+                            }
+                          />
+                        </div>
+                      )}
+
+                      <div className="flex">
+                        <div style={{ width: RULER_WIDTH_PX }} />
+                        <DrawingBar label={`PLINTH · ${plinthHeight}mm`} heightPx={plinthHeight * pxPerMm} widthPx={totalWidth * pxPerMm} />
+                      </div>
+
+                      <div className="flex">
+                        <div style={{ width: RULER_WIDTH_PX }} />
+                        <HorizontalRuler bayOffsets={bayOffsets} totalWidth={totalWidth} pxPerMm={pxPerMm} hover={hover} />
+                      </div>
+
+                      {/* Per-bay width dimensions, then one overall dimension beneath --
+                          same nesting convention as a real elevation drawing. */}
+                      <div className="flex">
+                        <div style={{ width: RULER_WIDTH_PX }} />
+                        <div className="flex">
+                          {bays.map((v) => (
+                            <HorizontalDimension key={v.id} widthPx={(v.width_mm ?? 0) * pxPerMm} label={`${v.width_mm ?? 0}`} />
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex">
+                        <div style={{ width: RULER_WIDTH_PX }} />
+                        <HorizontalDimension widthPx={totalWidth * pxPerMm} label={`${totalWidth}mm`} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="inline-block">
+                    <ViewLabel>Side View</ViewLabel>
+                    {sb.std === "ArTuK" && (
                       <div
                         className="flex items-center justify-center bg-red-600 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-white"
-                        style={{ width: totalWidth * pxPerMm }}
+                        style={{ width: sideViewWidthPx }}
                       >
                         ArTuK
                       </div>
-                    </div>
-                  )}
-
-                  {busbarPosition === "top" && (
-                    <div className="flex">
-                      <div style={{ width: RULER_WIDTH_PX }} />
-                      <DrawingBar
-                        label={busbarLabel}
-                        heightPx={busbarHeight * pxPerMm}
-                        widthPx={totalWidth * pxPerMm}
-                        isSelected={busbarSelected}
-                        onClick={
-                          readOnly
-                            ? undefined
-                            : () => {
-                                setBusbarSelected(true);
-                                setSelectedBayId(null);
-                                setSelectedPlacedId(null);
-                              }
-                        }
-                      />
-                    </div>
-                  )}
-
-                  <div className="flex">
-                    <VerticalRuler totalHeightMm={panelHeight} pxPerMm={pxPerMm} hover={hover} />
-                    <div className="flex">
-                      {bays.map((v, i) => (
-                        <BayColumn
-                          key={`${v.id}-${resetKey}`}
-                          vertical={v}
-                          readOnly={readOnly}
-                          pxPerMm={pxPerMm}
-                          panelHeightMm={panelHeight}
-                          bayLeftMm={bayOffsets[i]}
-                          isSelected={selectedBayId === v.id}
-                          selectedPlacedId={selectedBayId === v.id ? selectedPlacedId : null}
-                          cableEntry={sb.cable_entry}
-                          cableExit={sb.cable_exit}
-                          onSelectBay={() => {
-                            setSelectedBayId(v.id);
-                            setSelectedPlacedId(null);
-                            setBusbarSelected(false);
-                          }}
-                          onSelectFeeder={(placedId) => {
-                            setSelectedBayId(v.id);
-                            setSelectedPlacedId(placedId);
-                            setBusbarSelected(false);
-                          }}
-                          onMoveBay={(direction) => moveBay(v.id, direction)}
-                          onMoveFeeder={(placedId, direction) => moveFeeder(v.id, placedId, direction)}
-                          onHover={setHover}
-                          onHoverEnd={() => setHover(null)}
-                          onRemove={(placedId) => removeFromBay(v.id, placedId)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-
-                  {busbarPosition === "bottom" && (
-                    <div className="flex">
-                      <div style={{ width: RULER_WIDTH_PX }} />
-                      <DrawingBar
-                        label={busbarLabel}
-                        heightPx={busbarHeight * pxPerMm}
-                        widthPx={totalWidth * pxPerMm}
-                        isSelected={busbarSelected}
-                        onClick={
-                          readOnly
-                            ? undefined
-                            : () => {
-                                setBusbarSelected(true);
-                                setSelectedBayId(null);
-                                setSelectedPlacedId(null);
-                              }
-                        }
-                      />
-                    </div>
-                  )}
-
-                  <div className="flex">
-                    <div style={{ width: RULER_WIDTH_PX }} />
-                    <DrawingBar label={`PLINTH · ${plinthHeight}mm`} heightPx={plinthHeight * pxPerMm} widthPx={totalWidth * pxPerMm} />
-                  </div>
-
-                  <div className="flex">
-                    <div style={{ width: RULER_WIDTH_PX }} />
-                    <HorizontalRuler bayOffsets={bayOffsets} totalWidth={totalWidth} pxPerMm={pxPerMm} hover={hover} />
+                    )}
+                    {busbarPosition === "top" && <DrawingBar label={busbarLabel} heightPx={busbarHeight * pxPerMm} widthPx={sideViewWidthPx} />}
+                    <div className="border border-black/70 bg-white" style={{ width: sideViewWidthPx, height: Math.max(panelHeight * pxPerMm, 2) }} />
+                    {busbarPosition === "bottom" && <DrawingBar label={busbarLabel} heightPx={busbarHeight * pxPerMm} widthPx={sideViewWidthPx} />}
+                    <DrawingBar label={`PLINTH · ${plinthHeight}mm`} heightPx={plinthHeight * pxPerMm} widthPx={sideViewWidthPx} />
+                    <HorizontalDimension widthPx={sideViewWidthPx} label={`${sideViewDepthMm}mm`} />
                   </div>
                 </div>
               )}
@@ -1330,6 +1379,71 @@ function DrawingBar({
   );
 }
 
+// Bold, underlined view caption ("FRONT VIEW" / "SIDE VIEW"), matching
+// the reference AutoCAD drawing's title style above each projection.
+function ViewLabel({ children }: { children: React.ReactNode }) {
+  return <p className="mb-1 text-center font-telemetry-md text-[11px] font-bold uppercase tracking-wide text-black underline">{children}</p>;
+}
+
+// Small solid CSS-triangle arrowhead for dimension lines -- plain line art
+// (no icon font glyph reads as a real drafting arrowhead at 9-11px).
+function ArrowHead({ dir }: { dir: "left" | "right" | "up" | "down" }) {
+  const style: React.CSSProperties =
+    dir === "left"
+      ? { borderTop: "3px solid transparent", borderBottom: "3px solid transparent", borderRight: "5px solid black" }
+      : dir === "right"
+        ? { borderTop: "3px solid transparent", borderBottom: "3px solid transparent", borderLeft: "5px solid black" }
+        : dir === "up"
+          ? { borderLeft: "3px solid transparent", borderRight: "3px solid transparent", borderBottom: "5px solid black" }
+          : { borderLeft: "3px solid transparent", borderRight: "3px solid transparent", borderTop: "5px solid black" };
+  return <span className="block h-0 w-0 shrink-0" style={style} />;
+}
+
+// AutoCAD-style dimension line: extension ticks at each end, an arrowed
+// line spanning between them, and the mm value centered above -- used to
+// call out a bay's width, the switchboard's total width, and the side
+// view's depth (the reference image's "920" dimension under FRONT VIEW).
+function HorizontalDimension({ widthPx, label }: { widthPx: number; label: string }) {
+  const w = Math.max(widthPx, 1);
+  return (
+    <div className="relative shrink-0" style={{ width: w, height: 20 }}>
+      <span className="absolute left-0 top-0 h-2 w-px bg-black/70" />
+      <span className="absolute right-0 top-0 h-2 w-px bg-black/70" />
+      <div className="absolute left-0 top-1.5 flex items-center" style={{ width: w }}>
+        <ArrowHead dir="left" />
+        <span className="h-px flex-1 bg-black/70" />
+        <ArrowHead dir="right" />
+      </div>
+      <span className="absolute left-1/2 top-0 -translate-x-1/2 whitespace-nowrap bg-white px-1 font-mono text-[9px] leading-none text-black">
+        {label}
+      </span>
+    </div>
+  );
+}
+
+// Vertical counterpart of HorizontalDimension -- used for the switchboard's
+// total height, run alongside the existing mm-scale VerticalRuler.
+function VerticalDimension({ heightPx, label }: { heightPx: number; label: string }) {
+  const h = Math.max(heightPx, 1);
+  return (
+    <div className="relative shrink-0" style={{ width: 20, height: h }}>
+      <span className="absolute left-1 top-0 h-px w-2 bg-black/70" />
+      <span className="absolute bottom-0 left-1 h-px w-2 bg-black/70" />
+      <div className="absolute left-2 top-0 flex flex-col items-center" style={{ height: h }}>
+        <ArrowHead dir="up" />
+        <span className="w-px flex-1 bg-black/70" />
+        <ArrowHead dir="down" />
+      </div>
+      <span
+        className="absolute left-2 top-1/2 whitespace-nowrap bg-white px-1 font-mono text-[9px] leading-none text-black"
+        style={{ transform: "translate(-50%, -50%) rotate(-90deg)" }}
+      >
+        {label}
+      </span>
+    </div>
+  );
+}
+
 // Left-edge mm scale for the bays' shared panel height, measured bottom-up
 // (0 at the base of the bays) to match a real elevation drawing.
 function VerticalRuler({ totalHeightMm, pxPerMm, hover }: { totalHeightMm: number; pxPerMm: number; hover: HoverExtent }) {
@@ -1483,7 +1597,7 @@ function BayColumn({
             onMouseEnter={() => onHover({ topMm: c.topMm, heightMm: c.heightMm, bayLeftMm, bayWidthMm: widthMm, label: c.label })}
             onMouseLeave={onHoverEnd}
             title={`${c.label} — ${widthMm}mm × ${c.heightMm}mm`}
-            className={`group relative flex items-center justify-center overflow-hidden border-b px-1 text-center last:border-b-0 ${
+            className={`group relative flex items-center justify-center border-b px-1 text-center last:border-b-0 ${
               isFeederSelected ? "border-2 border-primary" : "border-black/40"
             } ${c.isBlank ? "bg-surface-container-low/50" : "bg-white hover:bg-amber-50"}`}
             style={{ height: Math.max(c.heightMm * pxPerMm, 1) }}
