@@ -5,14 +5,14 @@ import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { CreateItemDialog } from "@/components/create-item-dialog";
-import { itemCode } from "@/lib/item-display";
+import { itemCode, fetchAllItemMaster } from "@/lib/item-display";
 import { numericKeyGuard } from "@/lib/numeric-input";
 import { effectiveNetRate } from "@/lib/feeder-cost";
-import { computeFeederTag } from "@/lib/feeder-tag";
+import { FEEDER_TYPES, computeFeederTag } from "@/lib/feeder-tag";
 import { DEVICE_TYPE_LABELS, MOTOR_STARTER_TYPES } from "@/lib/artuk-sizing";
+import { FeederImportDialog } from "@/components/feeder-import-dialog";
 import type { DeviceType, Feeder, FeederItemWithDetails, ItemMaster } from "@/types/database";
 
-const FEEDER_TYPES = ["Incomer", "Outgoing", "Bus Coupler", "Sub-Incomer", "APFC Capacitor Bank"];
 const POLE_CONFIGS = ["3-Pole (3P)", "4-Pole (4P)", "3P + N", "2-Pole (2P)"];
 const BREAKING_CAPACITIES = ["65 kA (1s)", "50 kA (1s)", "36 kA (1s)", "25 kA (1s)", "100 kA (1s)"];
 const DEVICE_TYPES = Object.keys(DEVICE_TYPE_LABELS) as DeviceType[];
@@ -65,11 +65,13 @@ export function FeederMasterWorkspace({
   initialLinesByFeeder,
   allItems,
   isAdmin,
+  currentUserName,
 }: {
   initialFeeders: Feeder[];
   initialLinesByFeeder: Record<string, FeederItemWithDetails[]>;
   allItems: ItemMaster[];
   isAdmin: boolean;
+  currentUserName?: string;
 }) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -119,6 +121,29 @@ export function FeederMasterWorkspace({
 
   function toggleExpand(id: string) {
     setExpandedId((prev) => (prev === id ? null : id));
+  }
+
+  // Re-fetches everything from Supabase -- used after a bulk import, since
+  // reconciling many new/extended feeders and new items into local state
+  // by hand isn't worth it next to a plain refetch (same approach Item
+  // Master's xlsx import uses).
+  async function refreshAll() {
+    const [freshItems, { data: freshFeeders }] = await Promise.all([
+      fetchAllItemMaster(supabase),
+      supabase.from("feeders").select("*").eq("is_library", true).order("name"),
+    ]);
+    setItems(freshItems);
+    const feederList = (freshFeeders ?? []) as Feeder[];
+    setFeeders(feederList);
+    const feederIds = feederList.map((f) => f.id);
+    const { data: lines } = feederIds.length
+      ? await supabase.from("feeder_items").select("*, item:item_master(*)").in("feeder_id", feederIds).order("sort_order")
+      : { data: [] };
+    const nextLinesByFeeder: Record<string, FeederItemWithDetails[]> = {};
+    for (const line of (lines ?? []) as unknown as FeederItemWithDetails[]) {
+      (nextLinesByFeeder[line.feeder_id] ??= []).push(line);
+    }
+    setLinesByFeeder(nextLinesByFeeder);
   }
 
   async function handleCreate() {
@@ -323,13 +348,7 @@ export function FeederMasterWorkspace({
           </div>
           {isAdmin && (
             <div className="flex shrink-0 items-center gap-space-sm self-start md:self-auto">
-              <button
-                disabled
-                title="Import coming soon"
-                className="flex cursor-not-allowed items-center gap-space-xs rounded bg-surface-container-lowest px-space-md py-space-sm font-body-md text-body-md text-on-surface shadow-sm"
-              >
-                <Icon name="input" size={18} /> Import Feeder XLS
-              </button>
+              <FeederImportDialog feeders={feeders} items={items} currentUserName={currentUserName} onDone={refreshAll} />
               <button
                 disabled
                 title="Export coming soon"

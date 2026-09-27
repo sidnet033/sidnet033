@@ -39,7 +39,7 @@ export type ItemStatus = "active" | "inactive" | "discontinued";
 
 export type ImportLog = {
   id: string;
-  source: "xlsx_upload" | "google_sheet_sync";
+  source: "xlsx_upload" | "google_sheet_sync" | "feeder_xlsx_upload";
   file_name: string | null;
   created_count: number;
   updated_count: number;
@@ -48,6 +48,7 @@ export type ImportLog = {
   imported_by: string | null;
   imported_by_name: string | null;
   created_at: string;
+  details: { feeders_extended?: number; lines_added?: number };
 };
 
 export type ItemSource = "Design" | "Estimation";

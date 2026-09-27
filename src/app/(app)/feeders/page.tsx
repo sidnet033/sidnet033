@@ -32,6 +32,7 @@ export default async function FeedersPage() {
       initialLinesByFeeder={linesByFeeder}
       allItems={allItems}
       isAdmin={isAdmin}
+      currentUserName={current?.profile?.full_name ?? current?.email ?? "you"}
     />
   );
 }

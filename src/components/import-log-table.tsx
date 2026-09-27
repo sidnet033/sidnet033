@@ -7,6 +7,7 @@ import { Icon } from "@/components/icon";
 const SOURCE_LABELS: Record<ImportLog["source"], string> = {
   xlsx_upload: "CSV / Excel upload",
   google_sheet_sync: "Google Sheet sync",
+  feeder_xlsx_upload: "Feeder XLS upload",
 };
 
 export function ImportLogTable({ logs }: { logs: ImportLog[] }) {
@@ -44,52 +45,67 @@ export function ImportLogTable({ logs }: { logs: ImportLog[] }) {
           </tr>
         </thead>
         <tbody className="divide-y divide-surface-container">
-          {logs.map((log) => (
-            <Fragment key={log.id}>
-              <tr
-                className={`h-9 ${log.failed_count > 0 ? "cursor-pointer hover:bg-surface-container-low" : ""}`}
-                onClick={() => log.failed_count > 0 && toggle(log.id)}
-              >
-                <td className="px-3 font-display text-on-surface">
-                  {new Date(log.created_at).toLocaleString("en-IN", {
-                    day: "2-digit",
-                    month: "short",
-                    year: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </td>
-                <td className="px-3 text-on-surface-variant">{SOURCE_LABELS[log.source]}</td>
-                <td className="px-3 text-secondary">{log.file_name || "—"}</td>
-                <td className="px-3 text-right font-display font-bold text-tertiary">{log.created_count}</td>
-                <td className="px-3 text-right font-display font-bold text-on-surface">{log.updated_count}</td>
-                <td className="px-3 text-right">
-                  {log.failed_count > 0 ? (
-                    <span className="inline-flex items-center gap-1 font-display font-bold text-error">
-                      {log.failed_count}
-                      <Icon name={expanded.has(log.id) ? "expand_less" : "expand_more"} size={14} />
-                    </span>
-                  ) : (
-                    <span className="text-secondary">0</span>
-                  )}
-                </td>
-                <td className="px-3 text-on-surface-variant">{log.imported_by_name || "—"}</td>
-              </tr>
-              {expanded.has(log.id) && log.failed_count > 0 && (
-                <tr className="bg-error-container/30">
-                  <td colSpan={7} className="px-3 py-2">
-                    <div className="space-y-1">
-                      {log.failures.map((f, i) => (
-                        <p key={i} className="text-[11px] text-on-error-container">
-                          <span className="font-semibold">Row {f.row}:</span> {f.reason}
-                        </p>
-                      ))}
-                    </div>
+          {logs.map((log) => {
+            const isFeederImport = log.source === "feeder_xlsx_upload";
+            const feedersExtended = log.details?.feeders_extended ?? 0;
+            const linesAdded = log.details?.lines_added ?? 0;
+            const expandable = log.failed_count > 0 || (isFeederImport && feedersExtended > 0);
+            return (
+              <Fragment key={log.id}>
+                <tr className={`h-9 ${expandable ? "cursor-pointer hover:bg-surface-container-low" : ""}`} onClick={() => expandable && toggle(log.id)}>
+                  <td className="px-3 font-display text-on-surface">
+                    {new Date(log.created_at).toLocaleString("en-IN", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
                   </td>
+                  <td className="px-3 text-on-surface-variant">{SOURCE_LABELS[log.source]}</td>
+                  <td className="px-3 text-secondary">{log.file_name || "—"}</td>
+                  <td className="px-3 text-right font-display font-bold text-tertiary">
+                    {log.created_count}
+                    {isFeederImport && <div className="text-[9px] font-normal normal-case text-secondary">feeders</div>}
+                  </td>
+                  <td className="px-3 text-right font-display font-bold text-on-surface">
+                    {log.updated_count}
+                    {isFeederImport && <div className="text-[9px] font-normal normal-case text-secondary">items</div>}
+                  </td>
+                  <td className="px-3 text-right">
+                    {expandable ? (
+                      <span className="inline-flex items-center gap-1 font-display font-bold text-error">
+                        {log.failed_count}
+                        <Icon name={expanded.has(log.id) ? "expand_less" : "expand_more"} size={14} />
+                      </span>
+                    ) : (
+                      <span className="text-secondary">{log.failed_count}</span>
+                    )}
+                  </td>
+                  <td className="px-3 text-on-surface-variant">{log.imported_by_name || "—"}</td>
                 </tr>
-              )}
-            </Fragment>
-          ))}
+                {expanded.has(log.id) && expandable && (
+                  <tr className={feedersExtended > 0 || log.failed_count === 0 ? "bg-secondary-container/20" : "bg-error-container/30"}>
+                    <td colSpan={7} className="px-3 py-2">
+                      <div className="space-y-1">
+                        {isFeederImport && feedersExtended > 0 && (
+                          <p className="text-[11px] text-on-surface-variant">
+                            <span className="font-semibold">{feedersExtended}</span> existing feeder(s) extended with{" "}
+                            <span className="font-semibold">{linesAdded}</span> new line(s).
+                          </p>
+                        )}
+                        {log.failures.map((f, i) => (
+                          <p key={i} className="text-[11px] text-on-error-container">
+                            <span className="font-semibold">{f.row > 0 ? `Row ${f.row}:` : ""}</span> {f.reason}
+                          </p>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>

@@ -7,9 +7,9 @@ import { numericKeyGuard } from "@/lib/numeric-input";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { DEVICE_TYPE_LABELS, MOTOR_STARTER_TYPES } from "@/lib/artuk-sizing";
+import { FEEDER_TYPES } from "@/lib/feeder-tag";
 import type { DeviceType, Feeder, ItemMaster } from "@/types/database";
 
-const FEEDER_TYPES = ["Incomer", "Outgoing", "Bus Coupler", "Sub-Incomer", "APFC Capacitor Bank"];
 const DEVICE_TYPES = Object.keys(DEVICE_TYPE_LABELS) as DeviceType[];
 
 type NewFeederLine = { item: ItemMaster; qty: number };
