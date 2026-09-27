@@ -65,6 +65,7 @@ const DRAWING_TARGET_HEIGHT_PX = 520;
 const MIN_PX_PER_MM = 0.12;
 const MAX_PX_PER_MM = 0.6;
 const RULER_WIDTH_PX = 44;
+const VERTICAL_DIM_WIDTH_PX = 20;
 
 function computePxPerMm(totalHeightMm: number): number {
   if (totalHeightMm <= 0) return MIN_PX_PER_MM;
@@ -91,25 +92,35 @@ function blankCompartmentLabel(bayType: BayType | null): string {
 // Placed feeders stack top-to-bottom by tier_number (this is the first
 // place tier_number actually drives visual order), each sized by its real
 // ArTuK height when the feeder has a device_type set, else a flat fallback
-// slot so something always renders. Unused height at the bottom of the bay
-// becomes a labeled blank compartment instead of stretching the last one.
+// slot so something always renders. Unused height becomes a labeled blank
+// ("DUMMY"/alley) compartment -- vertical.dummy_slot says which row it sits
+// above (0..sorted.length, where sorted.length means "after everything,"
+// the historical default), so the user can move that gap to sit between
+// two feeders instead of always trailing at the bottom.
 function computeCompartments(vertical: VerticalWithFeeders, panelHeightMm: number): Compartment[] {
   const sorted = [...vertical.placed].sort((a, b) => a.tier_number - b.tier_number || a.sort_order - b.sort_order);
+  const usedByRows = sorted.reduce((sum, p) => sum + (lookupFeederBoxHeight(p.feeder) ?? DEFAULT_COMPARTMENT_HEIGHT_MM) * p.qty, 0);
+  const dummyHeight = panelHeightMm - usedByRows;
+  const dummySlot = Math.min(vertical.dummy_slot ?? sorted.length, sorted.length);
+  const dummyId = `${vertical.id}::dummy`;
+
   const compartments: Compartment[] = [];
   let used = 0;
-  for (const p of sorted) {
+  for (let i = 0; i <= sorted.length; i++) {
+    if (i === dummySlot && dummyHeight > 0) {
+      compartments.push({ id: dummyId, placedId: dummyId, label: blankCompartmentLabel(vertical.bay_type), heightMm: dummyHeight, topMm: used, isBlank: true });
+      used += dummyHeight;
+    }
+    if (i === sorted.length) break;
+    const p = sorted[i];
     const heightMm = lookupFeederBoxHeight(p.feeder) ?? DEFAULT_COMPARTMENT_HEIGHT_MM;
     // A placed_feeders row with qty > 1 (several units of the same feeder
     // merged into one bay) is that many separate physical devices -- each
     // gets its own compartment, not one compartment for the whole row.
-    for (let i = 0; i < p.qty; i++) {
-      compartments.push({ id: `${p.id}::${i}`, placedId: p.id, label: p.feeder.name, heightMm, topMm: used, isBlank: false });
+    for (let u = 0; u < p.qty; u++) {
+      compartments.push({ id: `${p.id}::${u}`, placedId: p.id, label: p.feeder.name, heightMm, topMm: used, isBlank: false });
       used += heightMm;
     }
-  }
-  const remaining = panelHeightMm - used;
-  if (remaining > 0) {
-    compartments.push({ id: `${vertical.id}-blank`, label: blankCompartmentLabel(vertical.bay_type), heightMm: remaining, topMm: used, isBlank: true });
   }
   return compartments;
 }
@@ -231,6 +242,7 @@ function withUnassigned(verts: VerticalWithFeeders[], switchboardId: string): { 
     bay_type: "unassigned",
     sort_order: -1,
     created_at: new Date().toISOString(),
+    dummy_slot: null,
     placed: [],
   };
   return { unassigned: created, verts: [...verts, created] };
@@ -291,6 +303,7 @@ function makeVertical(
     bay_type: bayType,
     sort_order: sortOrder,
     created_at: new Date().toISOString(),
+    dummy_slot: null,
     placed: [],
   };
 }
@@ -358,6 +371,8 @@ export function GaCanvas({
   const [sizingLogicOpen, setSizingLogicOpen] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const fullscreenRef = useRef<HTMLDivElement>(null);
+  const drawingRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     function onFullscreenChange() {
@@ -372,6 +387,53 @@ export function GaCanvas({
       document.exitFullscreen();
     } else {
       fullscreenRef.current?.requestFullscreen();
+    }
+  }
+
+  // Rasterizes the front+side view drawing (drawingRef) client-side --
+  // html2canvas/jsPDF are dynamically imported so they never load into the
+  // SSR bundle, only when the user actually exports.
+  async function captureDrawing() {
+    if (!drawingRef.current) return null;
+    const { default: html2canvas } = await import("html2canvas");
+    return html2canvas(drawingRef.current, { backgroundColor: "#ffffff", scale: 2 });
+  }
+
+  function downloadFileName(ext: string) {
+    return `${(sb?.tag || "switchboard").replace(/[^a-z0-9-]+/gi, "-")}-GA.${ext}`;
+  }
+
+  async function exportPng() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const canvas = await captureDrawing();
+      if (!canvas) return;
+      const link = document.createElement("a");
+      link.download = downloadFileName("png");
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    } catch {
+      alert("Could not export the GA drawing as PNG.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function exportPdf() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const [canvas, { jsPDF }] = await Promise.all([captureDrawing(), import("jspdf")]);
+      if (!canvas) return;
+      const orientation = canvas.width >= canvas.height ? "landscape" : "portrait";
+      const pdf = new jsPDF({ orientation, unit: "pt", format: [canvas.width, canvas.height] });
+      pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, canvas.width, canvas.height);
+      pdf.save(downloadFileName("pdf"));
+    } catch {
+      alert("Could not export the GA drawing as PDF.");
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -486,6 +548,7 @@ export function GaCanvas({
       depth_mm: null,
       sort_order: bays.length,
       created_at: new Date().toISOString(),
+      dummy_slot: null,
       placed: [],
     };
     setVerticals([...verticals, created]);
@@ -610,16 +673,35 @@ export function GaCanvas({
 
   // Swaps tier_number (and sort_order) with the feeder stacked above/below
   // it in the same bay -- how the up/down arrow overlay (and ArrowUp/
-  // ArrowDown keys) reorder a selected feeder within its bay.
+  // ArrowDown keys) reorder a selected feeder within its bay. The blank/
+  // DUMMY gap is a pseudo-entry (id `${bayId}::dummy`) spliced into this
+  // same ordered list at its own dummy_slot -- moving it (or moving a real
+  // feeder past it) only ever shifts dummy_slot by one, since the gap has
+  // no tier_number of its own; the real rows on either side never change.
   function moveFeeder(bayId: string, placedId: string, direction: "up" | "down") {
     const bay = verticals.find((v) => v.id === bayId);
     if (!bay) return;
     const sorted = [...bay.placed].sort((a, b) => a.tier_number - b.tier_number || a.sort_order - b.sort_order);
-    const idx = sorted.findIndex((p) => p.id === placedId);
+    const dummyId = `${bayId}::dummy`;
+    const dummySlot = Math.min(bay.dummy_slot ?? sorted.length, sorted.length);
+
+    const entries: { id: string; isDummy: boolean }[] = sorted.map((p) => ({ id: p.id, isDummy: false }));
+    entries.splice(dummySlot, 0, { id: dummyId, isDummy: true });
+
+    const idx = entries.findIndex((e) => e.id === placedId);
     const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-    if (idx === -1 || swapIdx < 0 || swapIdx >= sorted.length) return;
-    const a = sorted[idx];
-    const b = sorted[swapIdx];
+    if (idx === -1 || swapIdx < 0 || swapIdx >= entries.length) return;
+    const a = entries[idx];
+    const b = entries[swapIdx];
+
+    if (a.isDummy || b.isDummy) {
+      const newSlot = a.isDummy ? swapIdx : idx;
+      setVerticals(verticals.map((v) => (v.id === bayId ? { ...v, dummy_slot: newSlot } : v)));
+      return;
+    }
+
+    const rowA = sorted.find((p) => p.id === a.id)!;
+    const rowB = sorted.find((p) => p.id === b.id)!;
     setVerticals(
       verticals.map((v) =>
         v.id !== bayId
@@ -627,10 +709,10 @@ export function GaCanvas({
           : {
               ...v,
               placed: v.placed.map((p) =>
-                p.id === a.id
-                  ? { ...p, tier_number: b.tier_number, sort_order: b.sort_order }
-                  : p.id === b.id
-                    ? { ...p, tier_number: a.tier_number, sort_order: a.sort_order }
+                p.id === rowA.id
+                  ? { ...p, tier_number: rowB.tier_number, sort_order: rowB.sort_order }
+                  : p.id === rowB.id
+                    ? { ...p, tier_number: rowA.tier_number, sort_order: rowA.sort_order }
                     : p
               ),
             }
@@ -687,7 +769,15 @@ export function GaCanvas({
         if (!v.id.startsWith("new-")) continue;
         const { data, error } = await supabase
           .from("verticals")
-          .insert({ switchboard_id: sb.id, name: v.name, bay_type: v.bay_type, width_mm: v.width_mm, depth_mm: v.depth_mm, sort_order: v.sort_order })
+          .insert({
+            switchboard_id: sb.id,
+            name: v.name,
+            bay_type: v.bay_type,
+            width_mm: v.width_mm,
+            depth_mm: v.depth_mm,
+            sort_order: v.sort_order,
+            dummy_slot: v.dummy_slot,
+          })
           .select("id")
           .single();
         if (error || !data) throw new Error(error?.message ?? "Could not create bay.");
@@ -702,6 +792,7 @@ export function GaCanvas({
         if (v.name !== prev.name) fieldPatch.name = v.name;
         if (v.width_mm !== prev.width_mm) fieldPatch.width_mm = v.width_mm;
         if (v.depth_mm !== prev.depth_mm) fieldPatch.depth_mm = v.depth_mm;
+        if (v.dummy_slot !== prev.dummy_slot) fieldPatch.dummy_slot = v.dummy_slot;
         if (Object.keys(fieldPatch).length === 0) continue;
         const { error } = await supabase.from("verticals").update(fieldPatch).eq("id", v.id);
         if (error) throw new Error(error.message);
@@ -872,13 +963,6 @@ export function GaCanvas({
           <div className="flex items-center gap-space-sm">
             {!readOnly && dirty && <span className="font-body-sm text-body-sm text-amber-600">Unsaved changes</span>}
             {!readOnly && !dirty && <span className="font-body-sm text-body-sm text-tertiary">Saved</span>}
-            <button
-              disabled
-              title="Export coming soon"
-              className="flex items-center gap-1 rounded bg-surface-container-low px-space-md py-space-sm font-label-md text-label-md text-on-surface-variant opacity-60"
-            >
-              <Icon name="ios_share" size={16} /> Export GA (DXF/DWG/PDF)
-            </button>
             {!readOnly && (
               <>
                 <button onClick={handleCancel} disabled={!dirty || saving} className="btn btn-outline">
@@ -938,10 +1022,20 @@ export function GaCanvas({
           <ReadOnlyField label="Cable Entry" value={sb.cable_entry} />
           <ReadOnlyField label="Cable Exit" value={sb.cable_exit} />
           <button
-            onClick={() => alert("Export (DXF / DWG / PDF) is coming in a later phase.")}
-            className="ml-auto flex items-center gap-1 rounded-md border border-surface-container-high bg-surface-container-lowest px-2.5 py-1.5 font-medium text-on-surface hover:bg-surface-container-low"
+            onClick={exportPng}
+            disabled={exporting || bays.length === 0}
+            title="Export the GA drawing as a PNG image"
+            className="ml-auto flex items-center gap-1 rounded-md border border-surface-container-high bg-surface-container-lowest px-2.5 py-1.5 font-medium text-on-surface hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Icon name="download" size={14} /> Export GA
+            <Icon name="download" size={14} /> {exporting ? "Exporting..." : "Export PNG"}
+          </button>
+          <button
+            onClick={exportPdf}
+            disabled={exporting || bays.length === 0}
+            title="Export the GA drawing as a PDF"
+            className="flex items-center gap-1 rounded-md border border-surface-container-high bg-surface-container-lowest px-2.5 py-1.5 font-medium text-on-surface hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Icon name="download" size={14} /> {exporting ? "Exporting..." : "Export PDF"}
           </button>
         </div>
 
@@ -1023,8 +1117,11 @@ export function GaCanvas({
                 </button>
                 <p className="mt-1 text-[11px] text-on-surface-variant">
                   Create your bays and drag feeders into them first (each feeder needs a Device Type and rating in BOM Builder), then click
-                  this to size every bay from what you&rsquo;ve placed, using ArTuK standard sizing -- see Dimensions Master for how sizes are
-                  worked out. It never creates, deletes, or moves bays or feeders.
+                  this to size every bay from what you&rsquo;ve placed, using ArTuK standard sizing -- see{" "}
+                  <a href="/dimensions-master" target="_blank" rel="noopener noreferrer" className="text-primary underline hover:no-underline">
+                    Dimensions Master
+                  </a>{" "}
+                  for how sizes are worked out. It never creates, deletes, or moves bays or feeders.
                 </p>
               </div>
             )}
@@ -1066,29 +1163,34 @@ export function GaCanvas({
                   No bays yet — add one from the Modular Bay Templates above.
                 </p>
               ) : (
-                <div className="flex items-start gap-10">
-                  <div className="flex items-start">
-                    <VerticalDimension heightPx={totalHeightMm * pxPerMm} label={`${totalHeightMm}mm`} />
-                    <div className="inline-block">
+                <div ref={drawingRef} className="flex items-start gap-10">
+                  <div className="inline-block">
+                    <div className="flex">
+                      <div style={{ width: RULER_WIDTH_PX + VERTICAL_DIM_WIDTH_PX }} />
+                      <div style={{ width: Math.max(totalWidth * pxPerMm, 1) }}>
+                        <ViewLabel>Front View</ViewLabel>
+                      </div>
+                    </div>
+
+                    {sb.std === "ArTuK" && (
                       <div className="flex">
-                        <div style={{ width: RULER_WIDTH_PX }} />
-                        <div style={{ width: Math.max(totalWidth * pxPerMm, 1) }}>
-                          <ViewLabel>Front View</ViewLabel>
+                        <div style={{ width: RULER_WIDTH_PX + VERTICAL_DIM_WIDTH_PX }} />
+                        <div
+                          className="flex items-center justify-center bg-red-600 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-white"
+                          style={{ width: totalWidth * pxPerMm }}
+                        >
+                          ArTuK
                         </div>
                       </div>
+                    )}
 
-                      {sb.std === "ArTuK" && (
-                        <div className="flex">
-                          <div style={{ width: RULER_WIDTH_PX }} />
-                          <div
-                            className="flex items-center justify-center bg-red-600 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-white"
-                            style={{ width: totalWidth * pxPerMm }}
-                          >
-                            ArTuK
-                          </div>
-                        </div>
-                      )}
-
+                    {/* Everything below is exactly totalHeightMm tall (busbar + panel +
+                        plinth) -- the vertical dimension line lives alongside just this
+                        part, not the title/ArTuK-strip rows above, so its arrowed span
+                        lines up with the drawing instead of starting above it. */}
+                    <div className="flex items-start">
+                      <VerticalDimension heightPx={totalHeightMm * pxPerMm} label={`${totalHeightMm}mm`} />
+                      <div className="inline-block">
                       {busbarPosition === "top" && (
                         <div className="flex">
                           <div style={{ width: RULER_WIDTH_PX }} />
@@ -1189,6 +1291,7 @@ export function GaCanvas({
                       <div className="flex">
                         <div style={{ width: RULER_WIDTH_PX }} />
                         <HorizontalDimension widthPx={totalWidth * pxPerMm} label={`${totalWidth}mm`} />
+                      </div>
                       </div>
                     </div>
                   </div>
@@ -1426,7 +1529,7 @@ function HorizontalDimension({ widthPx, label }: { widthPx: number; label: strin
 function VerticalDimension({ heightPx, label }: { heightPx: number; label: string }) {
   const h = Math.max(heightPx, 1);
   return (
-    <div className="relative shrink-0" style={{ width: 20, height: h }}>
+    <div className="relative shrink-0" style={{ width: VERTICAL_DIM_WIDTH_PX, height: h }}>
       <span className="absolute left-1 top-0 h-px w-2 bg-black/70" />
       <span className="absolute bottom-0 left-1 h-px w-2 bg-black/70" />
       <div className="absolute left-2 top-0 flex flex-col items-center" style={{ height: h }}>
@@ -1582,18 +1685,14 @@ function BayColumn({
         </>
       )}
       {compartments.map((c) => {
-        const isFeederSelected = !c.isBlank && c.placedId === selectedPlacedId;
+        const isFeederSelected = c.placedId === selectedPlacedId;
         return (
           <div
             key={c.id}
-            onClick={
-              c.isBlank
-                ? undefined
-                : (e) => {
-                    e.stopPropagation();
-                    onSelectFeeder(c.placedId!);
-                  }
-            }
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectFeeder(c.placedId!);
+            }}
             onMouseEnter={() => onHover({ topMm: c.topMm, heightMm: c.heightMm, bayLeftMm, bayWidthMm: widthMm, label: c.label })}
             onMouseLeave={onHoverEnd}
             title={`${c.label} — ${widthMm}mm × ${c.heightMm}mm`}

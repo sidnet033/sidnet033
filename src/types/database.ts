@@ -235,6 +235,7 @@ export type Vertical = {
   bay_type: BayType | null;
   sort_order: number;
   created_at: string;
+  dummy_slot: number | null;
 };
 
 // a feeder placed inside a bay, stacked into a tier
