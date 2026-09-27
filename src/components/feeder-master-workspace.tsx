@@ -476,6 +476,7 @@ export function FeederMasterWorkspace({
                           <thead>
                             <tr className="bg-surface-container-low font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">
                               <th className="py-space-xs pl-space-lg pr-space-xs">SKU</th>
+                              <th className="px-space-sm py-space-xs">Vendor Cat</th>
                               <th className="px-space-sm py-space-xs">Make</th>
                               <th className="px-space-sm py-space-xs">Category</th>
                               <th className="px-space-sm py-space-xs">Description</th>
@@ -487,7 +488,8 @@ export function FeederMasterWorkspace({
                           <tbody className="font-body-sm text-body-sm text-on-surface">
                             {lines.map((line) => (
                               <tr key={line.id} className="border-t border-surface-container">
-                                <td className="py-space-xs pl-space-lg pr-space-xs font-telemetry-md font-bold text-primary">{itemCode(line.item)}</td>
+                                <td className="py-space-xs pl-space-lg pr-space-xs font-telemetry-md font-bold text-primary">{line.item.sku || "—"}</td>
+                                <td className="px-space-sm py-space-xs text-on-surface-variant">{line.item.vendor_cat || "—"}</td>
                                 <td className="px-space-sm py-space-xs text-on-surface-variant">{line.item.make || "—"}</td>
                                 <td className="px-space-sm py-space-xs text-on-surface-variant">{line.item.category || "—"}</td>
                                 <td className="px-space-sm py-space-xs">{line.item.description}</td>
@@ -807,8 +809,8 @@ export function FeederMasterWorkspace({
                     {selectedLines.map((line, i) => (
                       <tr key={line.id} className={`group transition-colors hover:bg-surface-container-low/60 ${i % 2 === 1 ? "bg-surface-container-low/20" : ""}`}>
                         <td className="py-space-sm pl-space-lg pr-space-xs text-center font-telemetry-md text-on-surface-variant">{i + 1}</td>
-                        <td className="px-space-sm py-space-sm font-telemetry-md text-telemetry-md font-bold text-primary">{itemCode(line.item)}</td>
-                        <td className="px-space-sm py-space-sm font-label-md text-label-md text-on-surface-variant">{line.item.supplier || "—"}</td>
+                        <td className="px-space-sm py-space-sm font-telemetry-md text-telemetry-md font-bold text-primary">{line.item.sku || "—"}</td>
+                        <td className="px-space-sm py-space-sm font-label-md text-label-md text-on-surface-variant">{line.item.vendor_cat || "—"}</td>
                         <td className="px-space-sm py-space-sm text-on-surface-variant">{line.item.make || "—"}</td>
                         <td className="px-space-sm py-space-sm text-on-surface-variant">{line.item.category || "—"}</td>
                         <td className="px-space-sm py-space-sm font-medium text-on-surface">{line.item.description}</td>
