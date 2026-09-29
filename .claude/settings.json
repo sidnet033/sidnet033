@@ -15,6 +15,7 @@
       "mcp__Supabase__query_logs",
       "mcp__Supabase__search_docs",
       "mcp__Supabase__execute_sql",
+      "mcp__Supabase__apply_migration",
 
       "mcp__Vercel__list_projects",
       "mcp__Vercel__get_project",
