@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
 import { createClient } from "@/lib/supabase/server";
-import { importItemRows, parseBooleanCell, type ParsedItemRow } from "@/lib/item-import";
+import { importItemRows, parseBooleanCell, parseMrpOrLpCell, type ParsedItemRow } from "@/lib/item-import";
 
 // Reads item master rows from a Google Sheet and imports them into
 // item_master. The sheet's first row must be a header with description and
@@ -92,7 +92,7 @@ export async function POST() {
           supplier: get("supplier") || null,
           notes: get("notes") || null,
           pricelisted: parseBooleanCell(get("pricelisted")),
-          mrp_or_lp: get("mrp_or_lp") ? Number(get("mrp_or_lp")) : null,
+          mrp_or_lp: parseMrpOrLpCell(get("mrp_or_lp")),
           hsn_code: get("hsn_code") || null,
           vendor_description: get("vendor_description") || null,
         };

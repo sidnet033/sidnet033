@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase/client";
-import { importItemRows, logImport, parseBooleanCell, type ImportSummary, type ParsedItemRow } from "@/lib/item-import";
+import { importItemRows, logImport, parseBooleanCell, parseMrpOrLpCell, type ImportSummary, type ParsedItemRow } from "@/lib/item-import";
 import { Icon } from "@/components/icon";
 
 // Expected columns in the sheet's header row (any order, case-insensitive):
@@ -14,7 +14,8 @@ import { Icon } from "@/components/icon";
 // (Design or Estimation) — everything else is optional. frame only means
 // anything for ACB/MCCB/MCB items, but it's a plain optional column like
 // the rest. pricelisted accepts yes/y/true/1 (case-insensitive) for true,
-// anything else (including blank) for false.
+// anything else (including blank) for false. mrp_or_lp only accepts "MRP"
+// or "LP" (case-insensitive) -- anything else is left blank.
 const REQUIRED_DESCRIPTION = "description";
 const REQUIRED_SOURCE = "source";
 
@@ -94,7 +95,7 @@ export function XlsUpload({ onDone, currentUserName }: { onDone: () => void; cur
             supplier: cellText("supplier").trim() || null,
             notes: cellText("notes").trim() || null,
             pricelisted: parseBooleanCell(cellText("pricelisted")),
-            mrp_or_lp: cellText("mrp_or_lp") ? Number(cellText("mrp_or_lp")) : null,
+            mrp_or_lp: parseMrpOrLpCell(cellText("mrp_or_lp")),
             hsn_code: cellText("hsn_code").trim() || null,
             vendor_description: cellText("vendor_description").trim() || null,
           },

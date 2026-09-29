@@ -23,7 +23,7 @@ export type ParsedItemRow = {
   supplier: string | null;
   notes: string | null;
   pricelisted: boolean;
-  mrp_or_lp: number | null;
+  mrp_or_lp: "MRP" | "LP" | null;
   hsn_code: string | null;
   vendor_description: string | null;
 };
@@ -33,6 +33,14 @@ export type ParsedItemRow = {
 // would actually type in a spreadsheet cell.
 export function parseBooleanCell(v: string): boolean {
   return ["yes", "y", "true", "1"].includes(v.trim().toLowerCase());
+}
+
+// mrp_or_lp only ever holds one of two values -- anything else typed in
+// the cell (blank, a typo, a stray price) is treated as not set rather
+// than rejecting the whole row over one optional column.
+export function parseMrpOrLpCell(v: string): "MRP" | "LP" | null {
+  const normalized = v.trim().toUpperCase();
+  return normalized === "MRP" || normalized === "LP" ? normalized : null;
 }
 
 export type ImportSummary = {

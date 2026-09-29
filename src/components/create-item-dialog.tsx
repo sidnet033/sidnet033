@@ -27,7 +27,7 @@ const EMPTY_DRAFT = {
   supplier: "",
   notes: "",
   pricelisted: false,
-  mrp_or_lp: "",
+  mrp_or_lp: "" as "" | "MRP" | "LP",
   hsn_code: "",
   vendor_description: "",
 };
@@ -68,7 +68,7 @@ function draftToRow(d: Draft) {
     supplier: d.supplier.trim() || null,
     notes: d.notes.trim() || null,
     pricelisted: d.pricelisted,
-    mrp_or_lp: d.mrp_or_lp.trim() ? Number(d.mrp_or_lp) : null,
+    mrp_or_lp: d.mrp_or_lp || null,
     hsn_code: d.hsn_code.trim() || null,
     vendor_description: d.vendor_description.trim() || null,
   };
@@ -174,7 +174,18 @@ export function CreateItemDialog({
             <Field label="Supplier" value={draft.supplier} onChange={(v) => patch({ supplier: v })} />
             <Field label="Notes" value={draft.notes} onChange={(v) => patch({ notes: v })} className="sm:col-span-2" />
             <Field label="HSN Code" value={draft.hsn_code} onChange={(v) => patch({ hsn_code: v })} />
-            <Field label="MRP or LP" value={draft.mrp_or_lp} onChange={(v) => patch({ mrp_or_lp: v })} numeric />
+            <div>
+              <label className="mb-1 block text-xs font-medium text-on-surface-variant">MRP or LP</label>
+              <select
+                value={draft.mrp_or_lp}
+                onChange={(e) => patch({ mrp_or_lp: e.target.value as "" | "MRP" | "LP" })}
+                className="w-full rounded-[4px] border border-outline-variant/60 px-2 py-1.5 text-sm"
+              >
+                <option value="">—</option>
+                <option value="MRP">MRP</option>
+                <option value="LP">LP</option>
+              </select>
+            </div>
             <Field label="Vendor Description" value={draft.vendor_description} onChange={(v) => patch({ vendor_description: v })} className="sm:col-span-2" />
             <div className="flex items-end pb-1.5">
               <label className="flex items-center gap-1.5 text-xs font-medium text-on-surface-variant">

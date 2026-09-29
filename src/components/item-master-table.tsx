@@ -32,7 +32,7 @@ const EMPTY_DRAFT = {
   supplier: "",
   notes: "",
   pricelisted: false,
-  mrp_or_lp: "",
+  mrp_or_lp: "" as "" | "MRP" | "LP",
   hsn_code: "",
   vendor_description: "",
 };
@@ -161,7 +161,7 @@ const COLUMN_ALIGN: Record<ColumnKey, "left" | "right" | "center"> = {
   ka: "right",
   status: "left",
   pricelisted: "center",
-  mrp_or_lp: "right",
+  mrp_or_lp: "left",
   hsn_code: "left",
   vendor_description: "left",
 };
@@ -183,7 +183,7 @@ const CELL_CLASS: Record<ColumnKey, string> = {
   ka: "px-2 text-right font-display font-bold tabular-nums text-primary",
   status: "px-2",
   pricelisted: "px-2 text-center",
-  mrp_or_lp: "px-2 text-right font-display tabular-nums text-on-surface",
+  mrp_or_lp: "px-2",
   hsn_code: "px-2 font-display text-secondary",
   vendor_description: "max-w-[320px] whitespace-normal break-words px-2 py-1.5 align-top text-on-surface-variant",
 };
@@ -271,7 +271,7 @@ function draftToRow(d: Draft) {
     supplier: d.supplier.trim() || null,
     notes: d.notes.trim() || null,
     pricelisted: d.pricelisted,
-    mrp_or_lp: d.mrp_or_lp.trim() ? Number(d.mrp_or_lp) : null,
+    mrp_or_lp: d.mrp_or_lp || null,
     hsn_code: d.hsn_code.trim() || null,
     vendor_description: d.vendor_description.trim() || null,
   };
@@ -618,7 +618,7 @@ export function ItemMasterTable({
       supplier: item.supplier ?? "",
       notes: item.notes ?? "",
       pricelisted: item.pricelisted,
-      mrp_or_lp: item.mrp_or_lp === null ? "" : String(item.mrp_or_lp),
+      mrp_or_lp: item.mrp_or_lp ?? "",
       hsn_code: item.hsn_code ?? "",
       vendor_description: item.vendor_description ?? "",
     });
@@ -761,7 +761,11 @@ export function ItemMasterTable({
           <span className="text-outline-variant">—</span>
         );
       case "mrp_or_lp":
-        return item.mrp_or_lp != null ? `₹${item.mrp_or_lp.toLocaleString("en-IN")}` : "";
+        return item.mrp_or_lp ? (
+          <span className="rounded bg-surface-container-high px-1.5 py-0.5 text-[10px] font-bold text-on-surface-variant">{item.mrp_or_lp}</span>
+        ) : (
+          <span className="text-outline-variant">—</span>
+        );
       case "hsn_code":
         return item.hsn_code || "—";
       case "vendor_description":
@@ -825,7 +829,17 @@ export function ItemMasterTable({
           />
         );
       case "mrp_or_lp":
-        return <input type="text" inputMode="decimal" onKeyDown={numericKeyGuard()} className="w-24 rounded border px-1 py-0.5 text-right" value={editDraft.mrp_or_lp} onChange={(e) => setEditDraft({ ...editDraft, mrp_or_lp: e.target.value })} />;
+        return (
+          <select
+            className="rounded border px-1 py-0.5"
+            value={editDraft.mrp_or_lp}
+            onChange={(e) => setEditDraft({ ...editDraft, mrp_or_lp: e.target.value as "" | "MRP" | "LP" })}
+          >
+            <option value="">—</option>
+            <option value="MRP">MRP</option>
+            <option value="LP">LP</option>
+          </select>
+        );
       case "hsn_code":
         return <input className="w-24 rounded border px-1 py-0.5" value={editDraft.hsn_code} onChange={(e) => setEditDraft({ ...editDraft, hsn_code: e.target.value })} />;
       case "vendor_description":

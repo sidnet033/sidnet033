@@ -73,7 +73,7 @@ export type ItemMaster = {
   supplier: string | null;
   notes: string | null;
   pricelisted: boolean;
-  mrp_or_lp: number | null;
+  mrp_or_lp: "MRP" | "LP" | null;
   hsn_code: string | null;
   vendor_description: string | null;
   updated_at: string;
