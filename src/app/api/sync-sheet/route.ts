@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
 import { createClient } from "@/lib/supabase/server";
-import { importItemRows, type ParsedItemRow } from "@/lib/item-import";
+import { importItemRows, parseBooleanCell, type ParsedItemRow } from "@/lib/item-import";
 
 // Reads item master rows from a Google Sheet and imports them into
 // item_master. The sheet's first row must be a header with description and
 // source (Design or Estimation), plus sku and/or vendor_cat (every row
 // needs at least one of those two). make / category / status / amps /
 // frame / ka / poles / uom / unit_cost / list_price / discount_pct /
-// supplier / notes are optional. Columns can be in any order.
+// supplier / notes / pricelisted / mrp_or_lp / hsn_code /
+// vendor_description are optional. Columns can be in any order.
 export async function POST() {
   const supabase = await createClient();
   const {
@@ -20,7 +21,7 @@ export async function POST() {
 
   const { GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY, GOOGLE_SHEET_ID } =
     process.env;
-  const range = process.env.GOOGLE_SHEET_RANGE || "Item Master!A:Q";
+  const range = process.env.GOOGLE_SHEET_RANGE || "Item Master!A:U";
 
   if (!GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || !GOOGLE_SHEET_ID) {
     return NextResponse.json(
@@ -90,6 +91,10 @@ export async function POST() {
           discount_pct: get("discount_pct") ? Number(get("discount_pct")) : null,
           supplier: get("supplier") || null,
           notes: get("notes") || null,
+          pricelisted: parseBooleanCell(get("pricelisted")),
+          mrp_or_lp: get("mrp_or_lp") ? Number(get("mrp_or_lp")) : null,
+          hsn_code: get("hsn_code") || null,
+          vendor_description: get("vendor_description") || null,
         };
         return { rowNumber: i + 2, data };
       })

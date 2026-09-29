@@ -26,6 +26,10 @@ const EMPTY_DRAFT = {
   discount_pct: "",
   supplier: "",
   notes: "",
+  pricelisted: false,
+  mrp_or_lp: "",
+  hsn_code: "",
+  vendor_description: "",
 };
 
 type Draft = typeof EMPTY_DRAFT;
@@ -63,6 +67,10 @@ function draftToRow(d: Draft) {
     discount_pct: d.discount_pct.trim() ? Number(d.discount_pct) : null,
     supplier: d.supplier.trim() || null,
     notes: d.notes.trim() || null,
+    pricelisted: d.pricelisted,
+    mrp_or_lp: d.mrp_or_lp.trim() ? Number(d.mrp_or_lp) : null,
+    hsn_code: d.hsn_code.trim() || null,
+    vendor_description: d.vendor_description.trim() || null,
   };
 }
 
@@ -165,6 +173,15 @@ export function CreateItemDialog({
             <Field label="Discount %" value={draft.discount_pct} onChange={(v) => patch({ discount_pct: v })} numeric />
             <Field label="Supplier" value={draft.supplier} onChange={(v) => patch({ supplier: v })} />
             <Field label="Notes" value={draft.notes} onChange={(v) => patch({ notes: v })} className="sm:col-span-2" />
+            <Field label="HSN Code" value={draft.hsn_code} onChange={(v) => patch({ hsn_code: v })} />
+            <Field label="MRP or LP" value={draft.mrp_or_lp} onChange={(v) => patch({ mrp_or_lp: v })} numeric />
+            <Field label="Vendor Description" value={draft.vendor_description} onChange={(v) => patch({ vendor_description: v })} className="sm:col-span-2" />
+            <div className="flex items-end pb-1.5">
+              <label className="flex items-center gap-1.5 text-xs font-medium text-on-surface-variant">
+                <input type="checkbox" checked={draft.pricelisted} onChange={(e) => patch({ pricelisted: e.target.checked })} />
+                Pricelisted
+              </label>
+            </div>
           </div>
           <p className="mt-3 text-xs text-secondary">
             Either SKU or Vendor Cat is required (both are fine too). Description, Make, Category, and Source are always required. For ACB,

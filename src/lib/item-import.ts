@@ -22,7 +22,18 @@ export type ParsedItemRow = {
   discount_pct: number | null;
   supplier: string | null;
   notes: string | null;
+  pricelisted: boolean;
+  mrp_or_lp: number | null;
+  hsn_code: string | null;
+  vendor_description: string | null;
 };
+
+// Shared true/false parsing for the "pricelisted" column in both the .xlsx
+// upload and the Google Sheet sync -- accepts the common spellings someone
+// would actually type in a spreadsheet cell.
+export function parseBooleanCell(v: string): boolean {
+  return ["yes", "y", "true", "1"].includes(v.trim().toLowerCase());
+}
 
 export type ImportSummary = {
   created: number;

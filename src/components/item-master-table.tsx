@@ -31,6 +31,10 @@ const EMPTY_DRAFT = {
   discount_pct: "",
   supplier: "",
   notes: "",
+  pricelisted: false,
+  mrp_or_lp: "",
+  hsn_code: "",
+  vendor_description: "",
 };
 
 type Draft = typeof EMPTY_DRAFT;
@@ -53,6 +57,10 @@ const CSV_FIELDS: (keyof ItemMaster)[] = [
   "discount_pct",
   "supplier",
   "notes",
+  "pricelisted",
+  "mrp_or_lp",
+  "hsn_code",
+  "vendor_description",
 ];
 
 const ROWS_PER_PAGE_OPTIONS = [25, 50, 100];
@@ -86,7 +94,11 @@ type ColumnKey =
   | "frame"
   | "poles"
   | "ka"
-  | "status";
+  | "status"
+  | "pricelisted"
+  | "mrp_or_lp"
+  | "hsn_code"
+  | "vendor_description";
 
 const ALL_COLUMNS: ColumnKey[] = [
   "sku",
@@ -104,6 +116,10 @@ const ALL_COLUMNS: ColumnKey[] = [
   "poles",
   "ka",
   "status",
+  "pricelisted",
+  "mrp_or_lp",
+  "hsn_code",
+  "vendor_description",
 ];
 
 const COLUMN_LABELS: Record<ColumnKey, string> = {
@@ -122,6 +138,10 @@ const COLUMN_LABELS: Record<ColumnKey, string> = {
   poles: "Poles",
   ka: "kA",
   status: "Status",
+  pricelisted: "Pricelisted",
+  mrp_or_lp: "MRP or LP",
+  hsn_code: "HSN Code",
+  vendor_description: "Vendor Description",
 };
 
 const COLUMN_ALIGN: Record<ColumnKey, "left" | "right" | "center"> = {
@@ -140,6 +160,10 @@ const COLUMN_ALIGN: Record<ColumnKey, "left" | "right" | "center"> = {
   poles: "center",
   ka: "right",
   status: "left",
+  pricelisted: "center",
+  mrp_or_lp: "right",
+  hsn_code: "left",
+  vendor_description: "left",
 };
 
 const CELL_CLASS: Record<ColumnKey, string> = {
@@ -158,6 +182,10 @@ const CELL_CLASS: Record<ColumnKey, string> = {
   poles: "px-2 text-center font-display tabular-nums text-on-surface",
   ka: "px-2 text-right font-display font-bold tabular-nums text-primary",
   status: "px-2",
+  pricelisted: "px-2 text-center",
+  mrp_or_lp: "px-2 text-right font-display tabular-nums text-on-surface",
+  hsn_code: "px-2 font-display text-secondary",
+  vendor_description: "max-w-[320px] whitespace-normal break-words px-2 py-1.5 align-top text-on-surface-variant",
 };
 
 const VIEW_STORAGE_KEY = "item-master-view";
@@ -242,6 +270,10 @@ function draftToRow(d: Draft) {
     discount_pct: d.discount_pct.trim() ? Number(d.discount_pct) : null,
     supplier: d.supplier.trim() || null,
     notes: d.notes.trim() || null,
+    pricelisted: d.pricelisted,
+    mrp_or_lp: d.mrp_or_lp.trim() ? Number(d.mrp_or_lp) : null,
+    hsn_code: d.hsn_code.trim() || null,
+    vendor_description: d.vendor_description.trim() || null,
   };
 }
 
@@ -585,6 +617,10 @@ export function ItemMasterTable({
       discount_pct: item.discount_pct === null ? "" : String(item.discount_pct),
       supplier: item.supplier ?? "",
       notes: item.notes ?? "",
+      pricelisted: item.pricelisted,
+      mrp_or_lp: item.mrp_or_lp === null ? "" : String(item.mrp_or_lp),
+      hsn_code: item.hsn_code ?? "",
+      vendor_description: item.vendor_description ?? "",
     });
   }
 
@@ -718,6 +754,18 @@ export function ItemMasterTable({
         return item.ka ?? "—";
       case "status":
         return <StatusBadge status={item.status} />;
+      case "pricelisted":
+        return item.pricelisted ? (
+          <Icon name="check_circle" size={16} className="text-tertiary" />
+        ) : (
+          <span className="text-outline-variant">—</span>
+        );
+      case "mrp_or_lp":
+        return item.mrp_or_lp != null ? `₹${item.mrp_or_lp.toLocaleString("en-IN")}` : "";
+      case "hsn_code":
+        return item.hsn_code || "—";
+      case "vendor_description":
+        return item.vendor_description || <span className="text-outline-variant">—</span>;
     }
   }
 
@@ -768,6 +816,20 @@ export function ItemMasterTable({
             <option value="discontinued">{STATUS_LABELS.discontinued}</option>
           </select>
         );
+      case "pricelisted":
+        return (
+          <input
+            type="checkbox"
+            checked={editDraft.pricelisted}
+            onChange={(e) => setEditDraft({ ...editDraft, pricelisted: e.target.checked })}
+          />
+        );
+      case "mrp_or_lp":
+        return <input type="text" inputMode="decimal" onKeyDown={numericKeyGuard()} className="w-24 rounded border px-1 py-0.5 text-right" value={editDraft.mrp_or_lp} onChange={(e) => setEditDraft({ ...editDraft, mrp_or_lp: e.target.value })} />;
+      case "hsn_code":
+        return <input className="w-24 rounded border px-1 py-0.5" value={editDraft.hsn_code} onChange={(e) => setEditDraft({ ...editDraft, hsn_code: e.target.value })} />;
+      case "vendor_description":
+        return <input className="w-full min-w-40 rounded border px-1 py-0.5" value={editDraft.vendor_description} onChange={(e) => setEditDraft({ ...editDraft, vendor_description: e.target.value })} />;
     }
   }
 

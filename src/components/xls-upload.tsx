@@ -3,16 +3,18 @@
 import { useRef, useState } from "react";
 import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase/client";
-import { importItemRows, logImport, type ImportSummary, type ParsedItemRow } from "@/lib/item-import";
+import { importItemRows, logImport, parseBooleanCell, type ImportSummary, type ParsedItemRow } from "@/lib/item-import";
 import { Icon } from "@/components/icon";
 
 // Expected columns in the sheet's header row (any order, case-insensitive):
 // sku, vendor_cat, description, make, category, source, status, amps,
 // frame, ka, poles, uom, unit_cost, list_price, discount_pct, supplier,
-// notes. Every row needs a sku or a vendor_cat (or both), a description,
-// and a Source (Design or Estimation) — everything else is optional.
-// frame only means anything for ACB/MCCB/MCB items, but it's a plain
-// optional column like the rest.
+// notes, pricelisted, mrp_or_lp, hsn_code, vendor_description. Every row
+// needs a sku or a vendor_cat (or both), a description, and a Source
+// (Design or Estimation) — everything else is optional. frame only means
+// anything for ACB/MCCB/MCB items, but it's a plain optional column like
+// the rest. pricelisted accepts yes/y/true/1 (case-insensitive) for true,
+// anything else (including blank) for false.
 const REQUIRED_DESCRIPTION = "description";
 const REQUIRED_SOURCE = "source";
 
@@ -91,6 +93,10 @@ export function XlsUpload({ onDone, currentUserName }: { onDone: () => void; cur
             discount_pct: cellText("discount_pct") ? Number(cellText("discount_pct")) : null,
             supplier: cellText("supplier").trim() || null,
             notes: cellText("notes").trim() || null,
+            pricelisted: parseBooleanCell(cellText("pricelisted")),
+            mrp_or_lp: cellText("mrp_or_lp") ? Number(cellText("mrp_or_lp")) : null,
+            hsn_code: cellText("hsn_code").trim() || null,
+            vendor_description: cellText("vendor_description").trim() || null,
           },
         });
       });
