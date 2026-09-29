@@ -6,6 +6,7 @@ import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { numericKeyGuard } from "@/lib/numeric-input";
 import { itemCode, findDuplicateItem, isBreakerCategory, validateNewItemFields } from "@/lib/item-display";
+import { effectiveNetRate } from "@/lib/feeder-cost";
 import type { ItemMaster, ItemSource, ItemStatus } from "@/types/database";
 
 const EMPTY_DRAFT = {
@@ -49,6 +50,13 @@ function validateDraft(d: Draft): string | null {
 }
 
 function draftToRow(d: Draft) {
+  const list_price = d.list_price.trim() ? Number(d.list_price) : null;
+  const discount_pct = d.discount_pct.trim() ? Number(d.discount_pct) : null;
+  // Net cost is always derived from List Price x (1 - Discount %) when a
+  // list price is on file -- Unit Cost is only a manual fallback for items
+  // with no vendor price list. Mirrors effectiveNetRate, the same formula
+  // BOM Builder/Feeder Master use to cost feeders.
+  const unit_cost = Math.round(effectiveNetRate({ unit_cost: Number(d.unit_cost) || 0, list_price, discount_pct }) * 100) / 100;
   return {
     sku: d.sku.trim() || null,
     vendor_cat: d.vendor_cat.trim() || null,
@@ -62,9 +70,9 @@ function draftToRow(d: Draft) {
     ka: d.ka.trim() ? Number(d.ka) : null,
     poles: d.poles.trim() ? Number(d.poles) : null,
     uom: d.uom.trim() || "nos",
-    unit_cost: Number(d.unit_cost) || 0,
-    list_price: d.list_price.trim() ? Number(d.list_price) : null,
-    discount_pct: d.discount_pct.trim() ? Number(d.discount_pct) : null,
+    unit_cost,
+    list_price,
+    discount_pct,
     supplier: d.supplier.trim() || null,
     notes: d.notes.trim() || null,
     pricelisted: d.pricelisted,
@@ -168,9 +176,9 @@ export function CreateItemDialog({
             <Field label="kA" value={draft.ka} onChange={(v) => patch({ ka: v })} numeric required={isBreaker} />
             <Field label="Poles" value={draft.poles} onChange={(v) => patch({ poles: v })} numeric required={isBreaker} />
             <Field label="UOM" value={draft.uom} onChange={(v) => patch({ uom: v })} />
-            <Field label="Unit cost" value={draft.unit_cost} onChange={(v) => patch({ unit_cost: v })} numeric />
             <Field label="List price" value={draft.list_price} onChange={(v) => patch({ list_price: v })} numeric />
             <Field label="Discount %" value={draft.discount_pct} onChange={(v) => patch({ discount_pct: v })} numeric />
+            <Field label="Unit cost" value={draft.unit_cost} onChange={(v) => patch({ unit_cost: v })} numeric />
             <Field label="Supplier" value={draft.supplier} onChange={(v) => patch({ supplier: v })} />
             <Field label="Notes" value={draft.notes} onChange={(v) => patch({ notes: v })} className="sm:col-span-2" />
             <Field label="HSN Code" value={draft.hsn_code} onChange={(v) => patch({ hsn_code: v })} />
@@ -196,7 +204,8 @@ export function CreateItemDialog({
           </div>
           <p className="mt-3 text-xs text-secondary">
             Either SKU or Vendor Cat is required (both are fine too). Description, Make, Category, and Source are always required. For ACB,
-            MCCB, and MCB items, Amps, Poles, and kA are required too.
+            MCCB, and MCB items, Amps, Poles, and kA are required too. Unit cost is auto-calculated from List price and Discount % when both
+            are set — only type a Unit cost yourself for items with no list price on file.
           </p>
           {error && <p className="mt-2 text-sm text-error">{error}</p>}
           <div className="mt-4 flex items-center justify-end gap-2 border-t border-outline-variant/30 pt-3">

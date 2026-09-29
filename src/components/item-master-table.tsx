@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase/client";
 import { fetchAllItemMaster, itemRowClass } from "@/lib/item-display";
+import { effectiveNetRate } from "@/lib/feeder-cost";
 import type { ItemMaster, ItemStatus } from "@/types/database";
 import { XlsUpload } from "@/components/xls-upload";
 import { SheetSyncButton } from "@/components/sheet-sync-button";
@@ -108,9 +109,9 @@ const ALL_COLUMNS: ColumnKey[] = [
   "make",
   "source",
   "uom",
-  "unit_cost",
   "list_price",
   "discount_pct",
+  "unit_cost",
   "amps",
   "frame",
   "poles",
@@ -175,7 +176,7 @@ const CELL_CLASS: Record<ColumnKey, string> = {
   source: "px-2",
   uom: "px-2 text-center font-display text-secondary",
   unit_cost: "px-2 text-right font-display font-bold tabular-nums text-on-surface",
-  list_price: "px-2 text-right font-display tabular-nums text-secondary line-through",
+  list_price: "px-2 text-right font-display tabular-nums text-secondary",
   discount_pct: "px-2 text-center",
   amps: "px-2 text-right font-display font-semibold tabular-nums text-on-surface",
   frame: "px-2 text-center font-display text-secondary",
@@ -252,6 +253,14 @@ function getPageNumbers(current: number, total: number): (number | "...")[] {
 }
 
 function draftToRow(d: Draft) {
+  const list_price = d.list_price.trim() ? Number(d.list_price) : null;
+  const discount_pct = d.discount_pct.trim() ? Number(d.discount_pct) : null;
+  // Net cost is always derived from List Price x (1 - Discount %) when a
+  // list price is on file -- Unit Cost is only ever a manually-typed
+  // fallback for items with no vendor price list at all. This mirrors
+  // effectiveNetRate, the same formula BOM Builder/Feeder Master use to
+  // cost feeders, so the figure shown here matches what's actually costed.
+  const unit_cost = Math.round(effectiveNetRate({ unit_cost: Number(d.unit_cost) || 0, list_price, discount_pct }) * 100) / 100;
   return {
     sku: d.sku.trim() || null,
     vendor_cat: d.vendor_cat.trim() || null,
@@ -265,9 +274,9 @@ function draftToRow(d: Draft) {
     ka: d.ka.trim() ? Number(d.ka) : null,
     poles: d.poles.trim() ? Number(d.poles) : null,
     uom: d.uom.trim() || "nos",
-    unit_cost: Number(d.unit_cost) || 0,
-    list_price: d.list_price.trim() ? Number(d.list_price) : null,
-    discount_pct: d.discount_pct.trim() ? Number(d.discount_pct) : null,
+    unit_cost,
+    list_price,
+    discount_pct,
     supplier: d.supplier.trim() || null,
     notes: d.notes.trim() || null,
     pricelisted: d.pricelisted,
@@ -680,12 +689,26 @@ export function ItemMasterTable({
   async function applyBulkDiscount() {
     const value = Number(bulkDiscountValue);
     if (bulkDiscountValue.trim() === "" || Number.isNaN(value)) return;
-    const { error } = await supabase
-      .from("item_master")
-      .update({ discount_pct: value, updated_at: new Date().toISOString() })
-      .in("id", Array.from(selectedIds));
-    if (error) {
-      alert(error.message);
+    // Unit Cost has to be recomputed per row (it depends on each item's own
+    // List Price), so a single blanket .update() won't do -- issue one
+    // update per selected item instead.
+    const targets = items.filter((i) => selectedIds.has(i.id));
+    const updatedAt = new Date().toISOString();
+    const results = await Promise.all(
+      targets.map((item) =>
+        supabase
+          .from("item_master")
+          .update({
+            discount_pct: value,
+            unit_cost: Math.round(effectiveNetRate({ unit_cost: item.unit_cost, list_price: item.list_price, discount_pct: value }) * 100) / 100,
+            updated_at: updatedAt,
+          })
+          .eq("id", item.id)
+      )
+    );
+    const firstError = results.find((r) => r.error)?.error;
+    if (firstError) {
+      alert(firstError.message);
       return;
     }
     setBulkDiscountOpen(false);

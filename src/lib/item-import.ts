@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { validateNewItemFields } from "@/lib/item-display";
+import { effectiveNetRate } from "@/lib/feeder-cost";
 
 // Shared between the .xlsx upload (browser) and the Google Sheet sync
 // (server) — both parse rows into this shape, then hand off to
@@ -92,7 +93,14 @@ export async function importItemRows(
       });
       continue;
     }
-    validRows.push({ ...row, data: { ...row.data, source } });
+    // Net cost is always derived from List Price x (1 - Discount %) when a
+    // list price is on the sheet -- Unit Cost is only a manual fallback for
+    // rows with no list price at all. Mirrors effectiveNetRate, the same
+    // formula BOM Builder/Feeder Master use to cost feeders.
+    const unit_cost = Math.round(
+      effectiveNetRate({ unit_cost: row.data.unit_cost, list_price: row.data.list_price, discount_pct: row.data.discount_pct }) * 100
+    ) / 100;
+    validRows.push({ ...row, data: { ...row.data, source, unit_cost } });
   }
   onProgress?.(rows.length - validRows.length, rows.length);
 
