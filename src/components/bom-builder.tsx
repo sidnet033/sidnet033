@@ -16,6 +16,8 @@ import { numericKeyGuard } from "@/lib/numeric-input";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { formatMoney } from "@/lib/money";
+import { loadBusbarTakeoff, type BusbarTakeoff } from "@/lib/busbar-bom";
+import { ampsViolations, nextStandardAmps } from "@/lib/amps-check";
 import type {
   DeviceType,
   Feeder,
@@ -97,7 +99,7 @@ async function loadBomData(supabase: ReturnType<typeof createClient>, switchboar
   const { data: verticals } = await supabase.from("verticals").select("id").eq("switchboard_id", switchboardId);
   const verticalIds = ((verticals ?? []) as { id: string }[]).map((v) => v.id);
 
-  const [{ data: placed }, { data: busbarRows }, { data: enclosureRows }, { data: libraryFeeders }] = await Promise.all([
+  const [{ data: placed }, { data: busbarRows }, { data: enclosureRows }, { data: libraryFeeders }, busbarTakeoff] = await Promise.all([
     verticalIds.length
       ? supabase
           .from("placed_feeders")
@@ -107,6 +109,7 @@ async function loadBomData(supabase: ReturnType<typeof createClient>, switchboar
     supabase.from("switchboard_busbars").select("*").eq("switchboard_id", switchboardId).order("sort_order"),
     supabase.from("switchboard_enclosure_lines").select("*").eq("switchboard_id", switchboardId).order("sort_order"),
     supabase.from("feeders").select("id, name, category, tag, rating_summary").eq("is_library", true).order("name"),
+    loadBusbarTakeoff(supabase, switchboard as Switchboard),
   ]);
 
   type PlacedRow = { id: string; vertical_id: string; tier_number: number; qty: number; feeder: Feeder };
@@ -153,6 +156,7 @@ async function loadBomData(supabase: ReturnType<typeof createClient>, switchboar
     busbars: (busbarRows ?? []) as SwitchboardBusbarLine[],
     enclosureLines: (enclosureRows ?? []) as SwitchboardEnclosureLine[],
     libraryFeedersAll: (libraryFeeders ?? []) as LibraryFeederOption[],
+    busbarTakeoff,
   };
 }
 
@@ -250,6 +254,7 @@ export function BomBuilder({
   const [saving, setSaving] = useState(false);
   const [resetKey, setResetKey] = useState(0);
   const [items, setItems] = useState(allItems);
+  const [busbarTakeoff, setBusbarTakeoff] = useState<BusbarTakeoff | null>(null);
 
   // Creating a new item from within the BOM Builder (e.g. next to "Add Item
   // to Feeder") should be searchable immediately across every feeder module
@@ -269,6 +274,7 @@ export function BomBuilder({
       setSaved(d);
       setDraft(d);
       setLibraryFeedersAll(data.libraryFeedersAll);
+      setBusbarTakeoff(data.busbarTakeoff);
       setLoading(false);
     })();
     return () => {
@@ -279,22 +285,28 @@ export function BomBuilder({
   const readOnly = !sb || revisionArchived || (sb.locked_by !== null && sb.locked_by !== currentUserId);
   const dirty = !!draft && !!saved && JSON.stringify(draft) !== JSON.stringify(saved);
 
+  // No feeder in the BOM may be rated above the switchboard itself -- Save
+  // stays blocked until either side is changed.
+  const ampsIssues = sb && draft ? ampsViolations(sb.amps, draft.modules.map((m) => m.feeder)) : [];
+  const ampsIssueIds = new Set(ampsIssues.map((f) => f.id));
+  const saveBlocked = ampsIssues.length > 0;
+
   // Ctrl+S / Cmd+S saves the BOM, same as clicking "Save Changes". handleSave
   // closes over the latest draft/saved on every render, so it's tracked via a
   // ref (updated on every render) rather than a useEffect dependency -- that
   // keeps the listener itself mounted once while always calling the freshest
   // save function instead of one captured from a stale render.
-  const keyboardSaveRef = useRef({ readOnly, dirty, saving, handleSave: () => {} });
+  const keyboardSaveRef = useRef({ readOnly, dirty, saving, saveBlocked, handleSave: () => {} });
   useEffect(() => {
-    keyboardSaveRef.current = { readOnly, dirty, saving, handleSave };
+    keyboardSaveRef.current = { readOnly, dirty, saving, saveBlocked, handleSave };
   });
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        const { readOnly, dirty, saving, handleSave } = keyboardSaveRef.current;
-        if (!readOnly && dirty && !saving) handleSave();
+        const { readOnly, dirty, saving, saveBlocked, handleSave } = keyboardSaveRef.current;
+        if (!readOnly && dirty && !saving && !saveBlocked) handleSave();
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -302,7 +314,7 @@ export function BomBuilder({
   }, []);
 
   const electrical = draft ? draft.modules.reduce((s, m) => s + m.qty * lineTotal(m.lines), 0) : 0;
-  const busbarsTotal = draft ? draft.busbars.reduce((s, b) => s + b.qty * b.rate, 0) : 0;
+  const busbarsTotal = (busbarTakeoff?.total ?? 0) + (draft ? draft.busbars.reduce((s, b) => s + b.qty * b.rate, 0) : 0);
   const enclosureTotal = draft ? draft.enclosureLines.reduce((s, e) => s + e.qty * e.rate, 0) : 0;
   const rmTotal = electrical + busbarsTotal + enclosureTotal;
   const wiringAmt = draft ? (rmTotal * draft.laborWiring) / 100 : 0;
@@ -569,7 +581,7 @@ export function BomBuilder({
   }
 
   async function handleSave() {
-    if (!sb || !draft || !saved) return;
+    if (!sb || !draft || !saved || saveBlocked) return;
     setSaving(true);
     try {
       const laborPatch: Partial<Pick<Switchboard, "labor_wiring_pct" | "labor_assembly_pct" | "labor_testing_pct">> = {};
@@ -867,7 +879,12 @@ export function BomBuilder({
               <button onClick={handleCancel} disabled={!dirty || saving} className="btn btn-outline">
                 Cancel
               </button>
-              <button onClick={handleSave} disabled={!dirty || saving} className="btn btn-primary">
+              <button
+                onClick={handleSave}
+                disabled={!dirty || saving || saveBlocked}
+                title={saveBlocked ? "Fix the switchboard rating error below first" : undefined}
+                className="btn btn-primary"
+              >
                 <Icon name="save" size={16} />
                 {saving ? "Saving..." : "Save Changes"}
               </button>
@@ -880,6 +897,28 @@ export function BomBuilder({
         <div className="flex items-center gap-2 rounded-lg border border-amber-200/80 bg-amber-50/60 px-3 py-2 text-xs text-amber-800">
           <Icon name="visibility" size={15} />
           {revisionArchived ? "This revision is archived — read only." : "This switchboard is locked by another user — read only until it's released."}
+        </div>
+      )}
+
+      {ampsIssues.length > 0 && sb && (
+        <div className="rounded-lg border border-error/40 bg-error/5 px-4 py-3 text-sm text-on-surface">
+          <div className="flex items-center gap-2 font-semibold text-error">
+            <Icon name="error" size={18} /> Switchboard rating is below its feeders — can&apos;t save yet
+          </div>
+          <p className="mt-1">
+            {sb.tag} is rated <b>{sb.amps}A</b>, but{" "}
+            {ampsIssues.map((f, i) => (
+              <span key={f.id}>
+                {i > 0 ? ", " : ""}
+                <b>{f.name}</b> is {f.rated_current}A
+              </span>
+            ))}
+            .
+          </p>
+          <p className="mt-1 text-on-surface-variant">
+            To fix: raise the switchboard&apos;s Amps to at least <b>{nextStandardAmps(Math.max(...ampsIssues.map((f) => f.rated_current!)))}A</b> in Project
+            Detail → Switchboards (save there first), or lower the rating of / replace the feeder{ampsIssues.length > 1 ? "s" : ""} highlighted in red below.
+          </p>
         </div>
       )}
 
@@ -900,6 +939,7 @@ export function BomBuilder({
           <FeederModuleCard
             key={mod.feeder.id}
             mod={mod}
+            ampsError={ampsIssueIds.has(mod.feeder.id) && sb ? `Rated above the switchboard (${sb.amps}A)` : null}
             readOnly={readOnly}
             canEditLines={!readOnly && (isAdmin || !mod.feeder.is_library)}
             allItems={items}
@@ -923,7 +963,15 @@ export function BomBuilder({
         )}
       </div>
 
-      <LineItemsSection title="1. Busbars" lines={draft.busbars} readOnly={readOnly} onAdd={addBusbar} onUpdate={updateBusbar} onRemove={removeBusbar} />
+      <LineItemsSection
+        title="1. Busbars"
+        lines={draft.busbars}
+        autoLines={busbarTakeoff}
+        readOnly={readOnly}
+        onAdd={addBusbar}
+        onUpdate={updateBusbar}
+        onRemove={removeBusbar}
+      />
       <LineItemsSection
         title="2. Enclosure & Cubicle Construction"
         lines={draft.enclosureLines}
@@ -1049,6 +1097,7 @@ function CategoryDiscountTool({ categories, onApply }: { categories: string[]; o
 
 function FeederModuleCard({
   mod,
+  ampsError,
   readOnly,
   canEditLines,
   allItems,
@@ -1065,6 +1114,7 @@ function FeederModuleCard({
   onPromote,
 }: {
   mod: DraftModule;
+  ampsError: string | null;
   readOnly: boolean;
   canEditLines: boolean;
   allItems: ItemMaster[];
@@ -1130,7 +1180,14 @@ function FeederModuleCard({
     : "border-emerald-100 bg-emerald-50";
 
   return (
-    <div className="overflow-hidden rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-xs">
+    <div
+      className={`overflow-hidden rounded-xl border bg-surface-container-lowest shadow-xs ${ampsError ? "border-error ring-2 ring-error/40" : "border-surface-container-high"}`}
+    >
+      {ampsError && (
+        <div className="flex items-center gap-1.5 bg-error/10 px-4 py-1 text-xs font-medium text-error">
+          <Icon name="error" size={14} /> {ampsError} — lower this feeder&apos;s rating or raise the switchboard&apos;s Amps.
+        </div>
+      )}
       <div className={`flex flex-wrap items-center gap-3 border-b px-4 py-2.5 ${headerClass}`}>
         <button onClick={() => setExpanded(!expanded)} className="text-on-surface-variant hover:text-on-surface-variant">
           <Icon name={expanded ? "expand_less" : "expand_more"} size={18} />
@@ -1482,6 +1539,7 @@ function FeederModuleCard({
 function LineItemsSection<T extends { id: string; description: string; qty: number; rate: number }>({
   title,
   lines,
+  autoLines,
   readOnly,
   onAdd,
   onUpdate,
@@ -1489,12 +1547,15 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
 }: {
   title: string;
   lines: T[];
+  // Busbars only: lines computed from the GA busbar plan (read-only here --
+  // sizes are changed in GA Builder, the per-kg rate in Project Detail).
+  autoLines?: BusbarTakeoff | null;
   readOnly: boolean;
   onAdd: () => void;
   onUpdate: (id: string, patch: Partial<T>) => void;
   onRemove: (id: string) => void;
 }) {
-  const total = lines.reduce((s, l) => s + l.qty * l.rate, 0);
+  const total = lines.reduce((s, l) => s + l.qty * l.rate, 0) + (autoLines?.total ?? 0);
   return (
     <div className="overflow-hidden rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-xs">
       <div className="flex items-center justify-between border-b border-surface-container bg-surface-container-low/60 px-4 py-2.5">
@@ -1516,6 +1577,29 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
           </tr>
         </thead>
         <tbody>
+          {autoLines?.lines.map((l) => (
+            <tr key={`auto-${l.key}`} className="border-t border-surface-container bg-primary/5">
+              <td className="px-3 py-1.5">
+                <span className="mr-2 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-primary" title="From the GA busbar plan">
+                  Auto
+                </span>
+                {l.description}
+              </td>
+              <td className="px-3 py-1.5 text-right tabular-nums">{l.kg} kg</td>
+              <td className={`px-3 py-1.5 text-right tabular-nums ${autoLines.rateMissing ? "text-error" : ""}`}>{money(l.rate)}/kg</td>
+              <td className="px-3 py-1.5 text-right tabular-nums">{money(l.amount)}</td>
+              {!readOnly && <td />}
+            </tr>
+          ))}
+          {autoLines && autoLines.lines.length > 0 && (
+            <tr className="border-t border-surface-container">
+              <td colSpan={5} className={`px-3 py-1 text-[11px] ${autoLines.rateMissing ? "text-error" : "text-on-surface-variant"}`}>
+                {autoLines.rateMissing
+                  ? `No ${autoLines.material === "Cu" ? "copper" : "aluminium"} busbar rate set for this project — set "Busbar Rate (INR/kg)" in Project Detail so these lines are costed.`
+                  : "Auto lines come from the GA busbar plan — change bar sizes in GA Builder (Busbars layer) and the per-kg rate in Project Detail. Add lines below for supports, sleeves, etc."}
+              </td>
+            </tr>
+          )}
           {lines.map((l) => (
             <tr key={l.id} className="border-t border-surface-container">
               <td className="px-3 py-1.5">
@@ -1558,7 +1642,7 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
               )}
             </tr>
           ))}
-          {lines.length === 0 && (
+          {lines.length === 0 && !autoLines?.lines.length && (
             <tr>
               <td colSpan={5} className="px-3 py-4 text-center text-on-surface-variant">
                 No lines yet.

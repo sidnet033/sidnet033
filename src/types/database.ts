@@ -143,6 +143,8 @@ export type Project = {
   exchange_rate: number;
   busbar_density_cu: number;
   busbar_density_al: number;
+  busbar_rate_cu: number;
+  busbar_rate_al: number;
 };
 
 export type Consultant = { id: string; name: string; created_by: string | null; created_at: string };

@@ -1,8 +1,8 @@
 // Reference data ingested from ArTuK's standard feeder/bay sizing sheet
 // (ArTuK_Copper_Busbar_Length_for_Emax_ACB_2.xlsx, "FEEDER SIZES" tab).
 // This is a fixed engineering standard, not user-editable data -- both
-// GA Builder's auto-generator (ga-canvas.tsx) and the read-only Dimensions
-// Master page (dimensions-master.tsx) read from here, so they can never
+// GA Builder's auto-generator (ga-canvas.tsx) and the read-only How it works
+// page (how-it-works.tsx, Dimensions section) read from here, so they can never
 // drift out of sync.
 //
 // DEFAULT POLICY -- resolves every place the source data offers more than

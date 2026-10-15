@@ -26,7 +26,7 @@ export const KIND_LABELS: Record<BusbarKind, string> = {
 
 // The only flats we buy, per material (width × thickness, mm). Auto-sizing
 // picks from these and every place a user can change a bar size offers
-// only these. Shown on the Dimensions Master page. Beyond the largest
+// only these. Shown on the How it works page (Dimensions). Beyond the largest
 // single bar the plan adds parallel runs per phase.
 const bars = (list: [number, number][]): BarSize[] =>
   list.map(([widthMm, thicknessMm]) => ({ widthMm, thicknessMm })).sort((a, b) => barArea(a) - barArea(b));

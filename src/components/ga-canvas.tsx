@@ -121,7 +121,7 @@ function explainBay(v: VerticalWithFeeders): string[] {
   if (otherClassified.length > 0) {
     const types = Array.from(new Set(otherClassified.map((p) => DEVICE_TYPE_LABELS[p.feeder.device_type!])));
     lines.push(
-      `${otherClassified.length} feeder(s) (${types.join(", ")}) pack into ArTuK's standard ${OUTGOING_MCC_BAY.widthMm}×${OUTGOING_MCC_BAY.depthMm}mm outgoing module, stacked by each feeder's rated height (see Dimensions Master).`
+      `${otherClassified.length} feeder(s) (${types.join(", ")}) pack into ArTuK's standard ${OUTGOING_MCC_BAY.widthMm}×${OUTGOING_MCC_BAY.depthMm}mm outgoing module, stacked by each feeder's rated height (see How it works → Dimensions).`
     );
     if (v.width_mm !== OUTGOING_MCC_BAY.widthMm) lines.push(`Current width ${v.width_mm ?? "—"}mm differs from the ${OUTGOING_MCC_BAY.widthMm}mm standard — likely adjusted by hand.`);
   }
@@ -1233,8 +1233,8 @@ export function GaCanvas({
               <p className="mb-3 text-[11px] text-on-surface-variant">
                 Create your bays and drag feeders into them first (each feeder needs a Device Type and rating in BOM Builder), then click
                 Update GA to size every bay from what you&rsquo;ve placed, using ArTuK standard sizing -- see{" "}
-                <a href="/dimensions-master" target="_blank" rel="noopener noreferrer" className="text-primary underline hover:no-underline">
-                  Dimensions Master
+                <a href="/how-it-works#dimensions" target="_blank" rel="noopener noreferrer" className="text-primary underline hover:no-underline">
+                  How it works → Dimensions
                 </a>{" "}
                 for how sizes are worked out. It never creates, deletes, or moves bays or feeders.
               </p>
@@ -1550,7 +1550,7 @@ export function GaCanvas({
                   {sizingLogicOpen && (
                     <div className="mt-2 space-y-2">
                       <p className="font-body-sm text-[11px] leading-snug text-on-surface-variant">
-                        How each bay&rsquo;s width and height were worked out, based on its placed feeders. See Dimensions Master for the
+                        How each bay&rsquo;s width and height were worked out, based on its placed feeders. See How it works → Dimensions for the
                         underlying ArTuK data.
                       </p>
                       {bays.length === 0 && <p className="font-body-sm text-body-sm text-on-surface-variant">No bays yet.</p>}

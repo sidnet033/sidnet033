@@ -22,9 +22,10 @@ import {
 import { COUNTRIES } from "@/lib/countries";
 import { CURRENCIES } from "@/lib/currencies";
 import { formatMoneyDual } from "@/lib/money";
+import { ampsViolations, nextStandardAmps } from "@/lib/amps-check";
 import { numericKeyGuard } from "@/lib/numeric-input";
 import type { SwitchboardListItem } from "@/lib/revision-context";
-import type { Customer, Project, ProjectStage, Revision, Switchboard } from "@/types/database";
+import type { Customer, Feeder, Project, ProjectStage, Revision, Switchboard } from "@/types/database";
 import type { Tab } from "@/components/revision-workspace";
 
 const STD_OPTIONS = ["ArTuK", "61439", "60439"] as const;
@@ -77,6 +78,8 @@ type ProjectPatch = {
   exchange_rate: number;
   busbar_density_cu: number;
   busbar_density_al: number;
+  busbar_rate_cu: number;
+  busbar_rate_al: number;
 };
 
 function densitiesOf(p: ProjectPatch): Densities {
@@ -99,6 +102,8 @@ function snapshotOf(project: Project): ProjectPatch {
     exchange_rate: project.exchange_rate,
     busbar_density_cu: project.busbar_density_cu,
     busbar_density_al: project.busbar_density_al,
+    busbar_rate_cu: project.busbar_rate_cu,
+    busbar_rate_al: project.busbar_rate_al,
   };
 }
 
@@ -207,6 +212,22 @@ export function ProjectDetailTab({
     () => (projectData ? auditProject(projectData, densitiesOf(savedSnapshot), currentUserId, isAdmin) : []),
     [projectData, savedSnapshot, currentUserId, isAdmin]
   );
+  // A switchboard's Amps can't be lowered below its highest-rated feeder --
+  // only checked for boards whose Amps is being changed on this page (an
+  // existing mismatch shows under Alerts instead of blocking other edits).
+  const feedersByBoard = useMemo(() => {
+    const map = new Map<string, Feeder[]>();
+    for (const b of projectData?.boards ?? []) map.set(b.switchboard.id, b.verticals.flatMap((v) => v.placed.map((p) => p.feeder)));
+    return map;
+  }, [projectData]);
+  const ampsErrors = boards.flatMap((b) => {
+    const prev = boardsSnapshot.find((x) => x.switchboard.id === b.switchboard.id);
+    if (!prev || prev.switchboard.amps === b.switchboard.amps) return [];
+    const over = ampsViolations(b.switchboard.amps, feedersByBoard.get(b.switchboard.id) ?? []);
+    return over.length > 0 ? [{ sb: b.switchboard, savedAmps: prev.switchboard.amps, over }] : [];
+  });
+  const ampsErrorIds = new Set(ampsErrors.map((e) => e.sb.id));
+
   const [review, setReview] = useState<ReviewItem[] | null>(null);
   const [applyingFixes, setApplyingFixes] = useState(false);
 
@@ -231,6 +252,20 @@ export function ProjectDetailTab({
       let items: ReviewItem[] = [];
       try {
         const data = await loadProjectData(supabase, project.id);
+        setProjectData(data);
+        const blocked = data.boards.find((bd) => {
+          const draft = draftBoards.get(bd.switchboard.id);
+          return (
+            draft &&
+            "amps" in draft &&
+            ampsViolations(draft.amps ?? null, bd.verticals.flatMap((v) => v.placed.map((p) => p.feeder))).length > 0
+          );
+        });
+        if (blocked) {
+          setSaving(false);
+          alert(`${blocked.switchboard.tag}: Amps is below the rating of a feeder in its BOM. Fix the highlighted Amps before saving.`);
+          return;
+        }
         items = computeImpact({ data, before, after, draftBoards, currentUserId, isAdmin });
       } catch (e) {
         setSaving(false);
@@ -313,17 +348,17 @@ export function ProjectDetailTab({
   // table), same as clicking "Save Changes". Tracked via a ref (updated on
   // every render) so the listener stays mounted once while always calling
   // the freshest save function instead of one captured from a stale render.
-  const keyboardSaveRef = useRef({ dirty, saving, review: null as ReviewItem[] | null, handleSave: () => {} });
+  const keyboardSaveRef = useRef({ dirty, saving, review: null as ReviewItem[] | null, ampsBlocked: false, handleSave: () => {} });
   useEffect(() => {
-    keyboardSaveRef.current = { dirty, saving, review, handleSave };
+    keyboardSaveRef.current = { dirty, saving, review, ampsBlocked: ampsErrors.length > 0, handleSave };
   });
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        const { dirty, saving, review, handleSave } = keyboardSaveRef.current;
-        if (!revisionArchived && dirty && !saving && !review) handleSave();
+        const { dirty, saving, review, ampsBlocked, handleSave } = keyboardSaveRef.current;
+        if (!revisionArchived && dirty && !saving && !review && !ampsBlocked) handleSave();
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -484,7 +519,8 @@ export function ProjectDetailTab({
           {!revisionArchived && (
             <button
               onClick={handleSave}
-              disabled={!dirty || saving}
+              disabled={!dirty || saving || ampsErrors.length > 0}
+              title={ampsErrors.length > 0 ? "Fix the switchboard Amps error first" : undefined}
               className="flex items-center gap-1 rounded bg-primary px-space-lg py-space-sm font-label-md text-label-md text-on-primary shadow-sm transition-all hover:bg-primary-container disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Icon name="save" size={16} />
@@ -712,6 +748,24 @@ export function ProjectDetailTab({
                     onCommit={(v) => patch("busbar_density_al", v)}
                   />
                 </Field>
+                <Field label="Busbar Rate — Cu (INR/kg)">
+                  <DensityInput
+                    key={`rcu-${savedSnapshot.busbar_rate_cu}`}
+                    disabled={revisionArchived}
+                    value={form.busbar_rate_cu}
+                    allowZero
+                    onCommit={(v) => patch("busbar_rate_cu", v)}
+                  />
+                </Field>
+                <Field label="Busbar Rate — Al (INR/kg)">
+                  <DensityInput
+                    key={`ral-${savedSnapshot.busbar_rate_al}`}
+                    disabled={revisionArchived}
+                    value={form.busbar_rate_al}
+                    allowZero
+                    onCommit={(v) => patch("busbar_rate_al", v)}
+                  />
+                </Field>
               </div>
 
               <div>
@@ -748,6 +802,38 @@ export function ProjectDetailTab({
               </button>
             )}
           </div>
+
+          {ampsErrors.length > 0 && (
+            <div className="mx-space-lg mb-space-md space-y-1 rounded-lg border border-error/40 bg-error/5 px-4 py-3 text-sm">
+              <div className="flex items-center gap-2 font-semibold text-error">
+                <Icon name="error" size={18} /> Amps set below a feeder&apos;s rating — can&apos;t save until fixed
+              </div>
+              {ampsErrors.map(({ sb, savedAmps, over }) => {
+                const needed = nextStandardAmps(over[0].rated_current!);
+                return (
+                  <div key={sb.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-on-surface">
+                    <span>
+                      <b>{sb.tag}</b> is set to <b>{sb.amps}A</b>, but its BOM has <b>{over[0].name}</b> at {over[0].rated_current}A
+                      {over.length > 1 ? ` (and ${over.length - 1} more above ${sb.amps}A)` : ""}. Set Amps to {needed}A or more, or lower/replace the feeder in
+                      BOM Builder first.
+                    </span>
+                    <button
+                      onClick={() => updateSwitchboardField(sb.id, { amps: needed })}
+                      className="rounded bg-primary px-2 py-0.5 text-xs font-medium text-on-primary hover:bg-primary-container"
+                    >
+                      Set to {needed}A
+                    </button>
+                    <button
+                      onClick={() => updateSwitchboardField(sb.id, { amps: savedAmps })}
+                      className="rounded bg-surface-container-low px-2 py-0.5 text-xs font-medium text-on-surface"
+                    >
+                      Undo ({savedAmps ?? "—"}A)
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left text-xs">
@@ -892,7 +978,9 @@ export function ProjectDetailTab({
                           type="text"
                           inputMode="numeric"
                           disabled={rowDisabled}
+                          key={`amps-${sb.amps ?? ""}`}
                           defaultValue={sb.amps ?? ""}
+                          title={ampsErrorIds.has(sb.id) ? "Below the rating of a feeder in this switchboard's BOM" : undefined}
                           onBlur={(e) => {
                             const digits = e.target.value.replace(/[^0-9]/g, "");
                             e.target.value = digits;
@@ -900,7 +988,7 @@ export function ProjectDetailTab({
                             if (next === (sb.amps ?? null)) return;
                             updateSwitchboardField(sb.id, { amps: next });
                           }}
-                          className="w-14 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
+                          className={`w-14 rounded border px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent ${ampsErrorIds.has(sb.id) ? "border-error bg-error/10 text-error ring-2 ring-error/30" : "border-surface-container-high"}`}
                         />
                       </td>
                       <td className="px-space-md py-space-md">
@@ -1117,7 +1205,19 @@ function ReadOnlyValue({ value, mono = false }: { value: string; mono?: boolean 
 
 // Edited as text and committed on blur so a value like "1.6" can be typed
 // through its intermediate "1." state without being coerced back to 1.
-function DensityInput({ value, disabled, onCommit }: { value: number; disabled: boolean; onCommit: (v: number) => void }) {
+// Commits on blur. Rejects blanks/non-numbers (and 0 unless allowZero) by
+// snapping back to the last good value.
+function DensityInput({
+  value,
+  disabled,
+  allowZero = false,
+  onCommit,
+}: {
+  value: number;
+  disabled: boolean;
+  allowZero?: boolean;
+  onCommit: (v: number) => void;
+}) {
   const [local, setLocal] = useState(String(value));
   return (
     <input
@@ -1129,7 +1229,7 @@ function DensityInput({ value, disabled, onCommit }: { value: number; disabled: 
       onKeyDown={numericKeyGuard()}
       onBlur={() => {
         const n = Number(local);
-        if (n > 0) onCommit(n);
+        if (local.trim() !== "" && (n > 0 || (allowZero && n === 0))) onCommit(n);
         else setLocal(String(value));
       }}
       className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low"

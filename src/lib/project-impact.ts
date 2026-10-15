@@ -338,6 +338,17 @@ export function auditBoard(
           applyLabel: null,
         });
       }
+      if (sb.amps != null && f.rated_current != null && f.rated_current > sb.amps) {
+        items.push({
+          ...base,
+          id: `${sb.id}|feeder-over-amps|${f.id}`,
+          area: "BOM",
+          severity: "conflict",
+          message: `"${f.name}" is rated ${f.rated_current}A, above the switchboard's ${sb.amps}A — raise the switchboard's Amps or change the feeder.`,
+          apply: null,
+          applyLabel: null,
+        });
+      }
       const ka = parseKa(f.breaking_capacity);
       if (
         sb.ka != null &&
