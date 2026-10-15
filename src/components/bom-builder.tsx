@@ -291,6 +291,22 @@ export function BomBuilder({
   const ampsIssueIds = new Set(ampsIssues.map((f) => f.id));
   const saveBlocked = ampsIssues.length > 0;
 
+  // Items rated below the switchboard's fault level -- a warning only;
+  // saving is still allowed.
+  const kaWarnings: { key: string; feeder: string; item: string; ka: number }[] = [];
+  if (sb?.ka != null && draft) {
+    const seenKa = new Set<string>();
+    for (const m of draft.modules) {
+      for (const l of m.lines) {
+        if (l.item.ka == null || Number(l.item.ka) >= sb.ka) continue;
+        const key = `${m.feeder.id}|${l.item_id}`;
+        if (seenKa.has(key)) continue;
+        seenKa.add(key);
+        kaWarnings.push({ key, feeder: m.feeder.name, item: l.item.description, ka: Number(l.item.ka) });
+      }
+    }
+  }
+
   // Ctrl+S / Cmd+S saves the BOM, same as clicking "Save Changes". handleSave
   // closes over the latest draft/saved on every render, so it's tracked via a
   // ref (updated on every render) rather than a useEffect dependency -- that
@@ -918,6 +934,25 @@ export function BomBuilder({
           <p className="mt-1 text-on-surface-variant">
             To fix: raise the switchboard&apos;s Amps to at least <b>{nextStandardAmps(Math.max(...ampsIssues.map((f) => f.rated_current!)))}A</b> in Project
             Detail → Switchboards (save there first), or lower the rating of / replace the feeder{ampsIssues.length > 1 ? "s" : ""} highlighted in red below.
+          </p>
+        </div>
+      )}
+
+      {kaWarnings.length > 0 && sb && (
+        <div className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-4 py-3 text-sm text-on-surface">
+          <div className="flex items-center gap-2 font-semibold text-amber-800">
+            <Icon name="warning" size={18} /> Warning: {kaWarnings.length} item{kaWarnings.length === 1 ? "" : "s"} rated below the switchboard&apos;s {sb.ka}kA
+            fault level
+          </div>
+          <ul className="mt-1 list-disc pl-6 text-xs">
+            {kaWarnings.map((w) => (
+              <li key={w.key}>
+                <b>{w.item}</b> ({w.ka}kA) in {w.feeder}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-xs text-on-surface-variant">
+            You can still save. If these aren&apos;t protected by an upstream device (cascading), pick a higher-kA item or check the switchboard&apos;s kA in Project Detail.
           </p>
         </div>
       )}

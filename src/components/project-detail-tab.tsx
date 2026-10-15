@@ -13,6 +13,7 @@ import {
   actionsFor,
   applyActions,
   auditProject,
+  alertsAfterSave,
   computeImpact,
   loadProjectData,
   type Densities,
@@ -227,6 +228,9 @@ export function ProjectDetailTab({
     return over.length > 0 ? [{ sb: b.switchboard, savedAmps: prev.switchboard.amps, over }] : [];
   });
   const ampsErrorIds = new Set(ampsErrors.map((e) => e.sb.id));
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- recomputed whenever the drafts change
+  const liveRemainingAlerts = useMemo(() => (projectData ? remainingAlerts(projectData, draftBoardChanges()) : []), [projectData, form, savedSnapshot, boards, boardsSnapshot]);
+  const saveBlocked = ampsErrors.length > 0 || liveRemainingAlerts.length > 0;
 
   const [review, setReview] = useState<ReviewItem[] | null>(null);
   const [applyingFixes, setApplyingFixes] = useState(false);
@@ -234,9 +238,8 @@ export function ProjectDetailTab({
   // Save first checks what the change does to every switchboard's GA and
   // busbars; when anything is affected the user reviews it (tick to apply)
   // before anything is written.
-  async function handleSave() {
-    const before = densitiesOf(savedSnapshot);
-    const after = densitiesOf(form);
+  // The IMPACT_FIELDS of each switchboard edited on this page, as drafted.
+  function draftBoardChanges(): Map<string, Partial<Switchboard>> {
     const draftBoards = new Map<string, Partial<Switchboard>>();
     for (const b of boards) {
       const prev = boardsSnapshot.find((x) => x.switchboard.id === b.switchboard.id);
@@ -247,36 +250,63 @@ export function ProjectDetailTab({
       }
       if (Object.keys(changed).length > 0) draftBoards.set(b.switchboard.id, changed);
     }
-    if (before.Cu !== after.Cu || before.Al !== after.Al || draftBoards.size > 0) {
-      setSaving(true);
-      let items: ReviewItem[] = [];
-      try {
-        const data = await loadProjectData(supabase, project.id);
-        setProjectData(data);
-        const blocked = data.boards.find((bd) => {
-          const draft = draftBoards.get(bd.switchboard.id);
-          return (
-            draft &&
-            "amps" in draft &&
-            ampsViolations(draft.amps ?? null, bd.verticals.flatMap((v) => v.placed.map((p) => p.feeder))).length > 0
-          );
-        });
-        if (blocked) {
-          setSaving(false);
-          alert(`${blocked.switchboard.tag}: Amps is below the rating of a feeder in its BOM. Fix the highlighted Amps before saving.`);
-          return;
-        }
-        items = computeImpact({ data, before, after, draftBoards, currentUserId, isAdmin });
-      } catch (e) {
+    return draftBoards;
+  }
+
+  // Alerts already in this revision that the drafted changes don't clear --
+  // while any remain, the page can't be saved (warnings never block).
+  function remainingAlerts(data: ProjectData, draftBoards: Map<string, Partial<Switchboard>>): ReviewItem[] {
+    const common = { data, revisionId, currentUserId, isAdmin };
+    const existing = new Set(alertsAfterSave({ ...common, densities: densitiesOf(savedSnapshot), draftBoards: new Map() }).map((i) => i.id));
+    return alertsAfterSave({ ...common, densities: densitiesOf(form), draftBoards }).filter((i) => existing.has(i.id));
+  }
+
+  // Save first checks what the change does to every switchboard's GA and
+  // busbars; when anything is affected the user reviews it (tick to apply)
+  // before anything is written.
+  async function handleSave() {
+    const before = densitiesOf(savedSnapshot);
+    const after = densitiesOf(form);
+    const draftBoards = draftBoardChanges();
+    setSaving(true);
+    let items: ReviewItem[] = [];
+    try {
+      const data = await loadProjectData(supabase, project.id);
+      setProjectData(data);
+      const blocked = data.boards.find((bd) => {
+        const draft = draftBoards.get(bd.switchboard.id);
+        return (
+          draft &&
+          "amps" in draft &&
+          ampsViolations(draft.amps ?? null, bd.verticals.flatMap((v) => v.placed.map((p) => p.feeder))).length > 0
+        );
+      });
+      if (blocked) {
         setSaving(false);
-        alert(`Could not check the project for the effect of this change: ${(e as Error).message}`);
+        alert(`${blocked.switchboard.tag}: Amps is below the rating of a feeder in its BOM. Fix the highlighted Amps before saving.`);
         return;
       }
+      const remaining = remainingAlerts(data, draftBoards);
+      if (remaining.length > 0) {
+        setSaving(false);
+        alert(
+          `Can't save — this revision has ${remaining.length} alert${remaining.length === 1 ? "" : "s"} to fix first (see Alerts & Warnings):\n\n` +
+            remaining.map((i) => `• ${i.boardLabel}: ${i.message}`).join("\n")
+        );
+        return;
+      }
+      if (before.Cu !== after.Cu || before.Al !== after.Al || draftBoards.size > 0) {
+        items = computeImpact({ data, before, after, draftBoards, currentUserId, isAdmin });
+      }
+    } catch (e) {
       setSaving(false);
-      if (items.length > 0) {
-        setReview(items);
-        return;
-      }
+      alert(`Could not check the project before saving: ${(e as Error).message}`);
+      return;
+    }
+    setSaving(false);
+    if (items.length > 0) {
+      setReview(items);
+      return;
     }
     await persist();
   }
@@ -310,6 +340,10 @@ export function ProjectDetailTab({
   }
 
   async function persist(): Promise<boolean> {
+    if (form.currency !== "INR" && !(form.exchange_rate > 0)) {
+      alert(`Enter an exchange rate for ${form.currency} (INR per 1 ${form.currency}) before saving.`);
+      return false;
+    }
     setSaving(true);
     const { error: projectError } = await supabase.from("projects").update(form).eq("id", project.id);
     if (projectError) {
@@ -341,6 +375,9 @@ export function ProjectDetailTab({
     setBoardsSnapshot(boards);
     setJustSaved(true);
     setDataVersion((v) => v + 1);
+    // Other tabs (Costing, BOM, header) read the project from the server
+    // copy -- refresh it so a new currency/rate shows everywhere at once.
+    router.refresh();
     return true;
   }
 
@@ -350,7 +387,7 @@ export function ProjectDetailTab({
   // the freshest save function instead of one captured from a stale render.
   const keyboardSaveRef = useRef({ dirty, saving, review: null as ReviewItem[] | null, ampsBlocked: false, handleSave: () => {} });
   useEffect(() => {
-    keyboardSaveRef.current = { dirty, saving, review, ampsBlocked: ampsErrors.length > 0, handleSave };
+    keyboardSaveRef.current = { dirty, saving, review, ampsBlocked: saveBlocked, handleSave };
   });
 
   useEffect(() => {
@@ -509,6 +546,11 @@ export function ProjectDetailTab({
         <div className="flex items-center gap-space-sm">
           {!revisionArchived && justSaved && !dirty && <span className="font-body-sm text-body-sm text-tertiary">Saved</span>}
           {!revisionArchived && dirty && <span className="font-body-sm text-body-sm text-amber-600">Unsaved changes</span>}
+          {!revisionArchived && dirty && liveRemainingAlerts.length > 0 && (
+            <span className="flex items-center gap-1 font-body-sm text-body-sm font-medium text-error">
+              <Icon name="error" size={15} /> Fix {liveRemainingAlerts.length} alert{liveRemainingAlerts.length === 1 ? "" : "s"} to save
+            </span>
+          )}
           <button
             disabled
             title="Export coming soon"
@@ -519,8 +561,14 @@ export function ProjectDetailTab({
           {!revisionArchived && (
             <button
               onClick={handleSave}
-              disabled={!dirty || saving || ampsErrors.length > 0}
-              title={ampsErrors.length > 0 ? "Fix the switchboard Amps error first" : undefined}
+              disabled={!dirty || saving || saveBlocked}
+              title={
+                ampsErrors.length > 0
+                  ? "Fix the switchboard Amps error first"
+                  : liveRemainingAlerts.length > 0
+                    ? "Fix the alerts in this revision first (see Alerts & Warnings)"
+                    : undefined
+              }
               className="flex items-center gap-1 rounded bg-primary px-space-lg py-space-sm font-label-md text-label-md text-on-primary shadow-sm transition-all hover:bg-primary-container disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Icon name="save" size={16} />
@@ -711,7 +759,12 @@ export function ProjectDetailTab({
                   <select
                     disabled={revisionArchived}
                     value={form.currency}
-                    onChange={(e) => patch("currency", e.target.value)}
+                    onChange={(e) => {
+                      const currency = e.target.value;
+                      // INR is the base currency: its rate is always 1
+                      setForm((f) => ({ ...f, currency, exchange_rate: currency === "INR" ? 1 : f.exchange_rate }));
+                      setJustSaved(false);
+                    }}
                     className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low"
                   >
                     {CURRENCIES.map((c) => (
@@ -721,11 +774,12 @@ export function ProjectDetailTab({
                     ))}
                   </select>
                 </Field>
-                <Field label="Exchange Rate">
+                <Field label={form.currency === "INR" ? "Exchange Rate (INR is the base currency)" : `Exchange Rate (INR per 1 ${form.currency})`}>
                   <input
                     type="text"
                     inputMode="decimal"
-                    disabled={revisionArchived}
+                    disabled={revisionArchived || form.currency === "INR"}
+                    title={form.currency === "INR" ? "INR is the base currency — its rate is always 1" : undefined}
                     value={form.exchange_rate}
                     onChange={(e) => patch("exchange_rate", Number(e.target.value) || 0)}
                     onKeyDown={numericKeyGuard()}

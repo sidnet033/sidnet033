@@ -8,6 +8,7 @@ import type {
 import { lookupAcbBaySpec, suggestAcbFrame } from "@/lib/artuk-sizing";
 import {
   KIND_LABELS,
+  barArea,
   bayFunctionOf,
   formatBar,
   isIncomerFeeder,
@@ -38,11 +39,15 @@ type Supabase = ReturnType<typeof createClient>;
 
 export type Densities = Record<BusbarMaterial, number>;
 
+export type FeederItemRating = { itemId: string; description: string; ka: number | null };
+
 export type BoardData = {
   revision: { id: string; label: string };
   switchboard: Switchboard;
   verticals: VerticalWithFeeders[];
   overrides: Record<string, BusbarOverride>;
+  // item lines of each feeder used on the board (for the kA check)
+  feederItems: Record<string, FeederItemRating[]>;
 };
 
 export type ProjectData = { boards: BoardData[] };
@@ -84,7 +89,10 @@ export type FixAction =
       depthMm: number;
     };
 
-export type Severity = "conflict" | "deviation" | "change";
+// alert: conflicts with the project/switchboard settings -- blocks saving
+// until fixed. warning: worth checking, but saving is allowed. change: a
+// line in the Save-time review describing what the save will do.
+export type Severity = "alert" | "warning" | "change";
 
 // One line in the review dialog / Alerts list. Ticked runs `apply`,
 // unticked runs `keep`; a line with neither is information only (it needs a
@@ -101,6 +109,9 @@ export type ReviewItem = {
   keep: FixAction | null;
   applyLabel: string | null;
   blockedReason: string | null;
+  // review lines only: what leaving it unticked would leave behind (an
+  // undersized bar is an alert, so the save can't go ahead with it)
+  keepSeverity?: "alert" | null;
 };
 
 export async function loadProjectData(
@@ -158,6 +169,16 @@ export async function loadProjectData(
     switchboard_id: string;
   })[];
 
+  const feederIds = [...new Set(placed.map((p) => p.feeder_id))];
+  const { data: fiRows } = feederIds.length
+    ? await supabase.from("feeder_items").select("feeder_id, item:item_master(id, description, ka)").in("feeder_id", feederIds)
+    : { data: [] };
+  const feederItems: Record<string, FeederItemRating[]> = {};
+  for (const r of (fiRows ?? []) as unknown as { feeder_id: string; item: { id: string; description: string; ka: number | null } | null }[]) {
+    if (!r.item) continue;
+    (feederItems[r.feeder_id] ??= []).push({ itemId: r.item.id, description: r.item.description, ka: r.item.ka != null ? Number(r.item.ka) : null });
+  }
+
   const multipleNames = new Set(revs.map((r) => r.name)).size > 1;
   return {
     boards: switchboards.map((sb) => {
@@ -179,6 +200,7 @@ export async function loadProjectData(
         overrides: overridesFromRows(
           overrideRows.filter((r) => r.switchboard_id === sb.id),
         ),
+        feederItems,
       };
     }),
   };
@@ -272,7 +294,7 @@ export function auditBoard(
         ...base,
         id: `${sb.id}|main-unrated`,
         area: "Busbars",
-        severity: "conflict",
+        severity: "alert",
         message:
           "Main busbar can't be sized — set the switchboard's Amps (or an incomer rating).",
         apply: null,
@@ -291,13 +313,13 @@ export function auditBoard(
     )
       continue;
     let message: string;
-    let severity: Severity = "conflict";
+    let severity: Severity = "warning";
     if (seg.undersized) {
+      severity = "alert";
       message = `${segmentName(seg)} is set by hand to ${current} — carries ${seg.capacityA}A at ${densities[material]} A/mm², needs ${seg.designCurrentA}A.`;
     } else if (notStocked) {
       message = `${segmentName(seg)} is set to ${current}, which isn't a stocked ${material} size.`;
     } else {
-      severity = "deviation";
       message = `${segmentName(seg)} is set by hand to ${current}; project rules give ${rule}.`;
     }
     items.push({
@@ -317,6 +339,7 @@ export function auditBoard(
 
   // feeders, once each even when placed in several bays/units
   const seen = new Set<string>();
+  const seenItems = new Set<string>();
   for (const v of placedBays) {
     for (const p of v.placed) {
       const f = p.feeder;
@@ -332,7 +355,7 @@ export function auditBoard(
           ...base,
           id: `${sb.id}|incomer-amps|${f.id}`,
           area: "BOM",
-          severity: "conflict",
+          severity: "alert",
           message: `Incomer "${f.name}" is rated ${f.rated_current}A but the switchboard is ${sb.amps}A — change the feeder in BOM Builder.`,
           apply: null,
           applyLabel: null,
@@ -343,14 +366,34 @@ export function auditBoard(
           ...base,
           id: `${sb.id}|feeder-over-amps|${f.id}`,
           area: "BOM",
-          severity: "conflict",
+          severity: "alert",
           message: `"${f.name}" is rated ${f.rated_current}A, above the switchboard's ${sb.amps}A — raise the switchboard's Amps or change the feeder.`,
           apply: null,
           applyLabel: null,
         });
       }
+      // kA below the switchboard's fault level is a warning, not an alert:
+      // checked on the feeder's own items (breakers carry their kA), and on
+      // the feeder's breaking capacity when none of its items has one.
+      const rated = (board.feederItems[f.id] ?? []).filter((i) => i.ka != null);
+      if (sb.ka != null) {
+        for (const item of rated) {
+          if (item.ka! >= sb.ka || seenItems.has(item.itemId)) continue;
+          seenItems.add(item.itemId);
+          items.push({
+            ...base,
+            id: `${sb.id}|item-ka|${item.itemId}`,
+            area: "BOM",
+            severity: "warning",
+            message: `"${item.description}" (in ${f.name}) is rated ${item.ka}kA, below the switchboard's ${sb.ka}kA fault level.`,
+            apply: null,
+            applyLabel: null,
+          });
+        }
+      }
       const ka = parseKa(f.breaking_capacity);
       if (
+        rated.length === 0 &&
         sb.ka != null &&
         ka != null &&
         (f.device_type === "ACB" || f.device_type === "MCCB") &&
@@ -360,7 +403,7 @@ export function auditBoard(
           ...base,
           id: `${sb.id}|ka|${f.id}`,
           area: "BOM",
-          severity: "conflict",
+          severity: "warning",
           message: `"${f.name}" breaks ${ka}kA but the switchboard fault level is ${sb.ka}kA — change the feeder in BOM Builder.`,
           apply: null,
           applyLabel: null,
@@ -381,7 +424,7 @@ export function auditBoard(
           ...base,
           id: `${sb.id}|bay-size|${v.id}`,
           area: "GA",
-          severity: "conflict",
+          severity: "warning",
           message: `Bay "${v.name}" is ${v.width_mm ?? "—"}W × ${v.depth_mm ?? "—"}D mm; ArTu-K needs ${size.widthMm}W × ${size.depthMm}D.`,
           apply: {
             type: "resize_bay",
@@ -406,7 +449,7 @@ export function auditBoard(
             ...base,
             id: `${sb.id}|ip|${v.id}`,
             area: "GA",
-            severity: "conflict",
+            severity: "warning",
             message: `Bay "${v.name}" (${spec.frame} ArTu-K) is only rated IP${spec.ipRating}; the switchboard calls for IP${boardIp}.`,
             apply: null,
             applyLabel: null,
@@ -417,6 +460,27 @@ export function auditBoard(
   }
 
   return items;
+}
+
+export function alertsOnly(items: ReviewItem[]): ReviewItem[] {
+  return items.filter((i) => i.severity === "alert");
+}
+
+// The alerts this revision would have after the drafted changes are saved --
+// any left means the save is refused.
+export function alertsAfterSave(args: {
+  data: ProjectData;
+  densities: Densities;
+  draftBoards: Map<string, Partial<Switchboard>>;
+  revisionId: string;
+  currentUserId: string;
+  isAdmin: boolean;
+}): ReviewItem[] {
+  return alertsOnly(
+    args.data.boards
+      .filter((b) => b.revision.id === args.revisionId)
+      .flatMap((b) => auditBoard(withDraft(b, args.draftBoards.get(b.switchboard.id)), args.densities, args.currentUserId, args.isAdmin))
+  );
 }
 
 export function auditProject(
@@ -479,6 +543,7 @@ export function computeImpact(args: {
       if (!prev || !prev.auto || !seg.auto || sameSize(prev.auto, seg.auto))
         continue;
       const from = formatBar(prev.auto.bar, prev.auto.runs);
+      const keptCapacity = barArea(prev.auto.bar) * prev.auto.runs * args.after[sb.busbar ?? "Cu"];
       const to = formatBar(seg.auto.bar, seg.auto.runs);
       items.push({
         id: `${sb.id}|resize|${seg.key}`,
@@ -498,6 +563,7 @@ export function computeImpact(args: {
         },
         applyLabel: `Use ${to}`,
         blockedReason,
+        keepSeverity: seg.designCurrentA != null && keptCapacity < seg.designCurrentA ? "alert" : null,
       });
     }
 

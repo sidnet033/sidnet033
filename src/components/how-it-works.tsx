@@ -212,7 +212,9 @@ export function HowItWorks() {
                 Won/Lost…).
               </>,
               <>
-                <b>Currency & exchange rate</b>: all costs are kept in INR; the project currency is only used to show the totals converted alongside.
+                <b>Currency & exchange rate</b>: INR is the base currency — all costs are kept in INR, and an INR project&apos;s rate is fixed at 1.
+                For another currency, enter how many INR make 1 unit of it; totals then show in INR with the converted amount alongside, everywhere
+                in the project.
               </>,
               <>
                 <b>Busbar current density</b> (A/mm², Cu and Al) sets how large busbars are made. <b>Busbar rate</b> (INR/kg, Cu and Al) prices the
@@ -258,7 +260,7 @@ export function HowItWorks() {
               </>,
               <>
                 The BOM <b>can&apos;t be saved</b> while any feeder is rated above the switchboard&apos;s Amps — raise the switchboard rating in Project
-                Detail or lower/replace the feeder.
+                Detail or lower/replace the feeder. Items rated below the switchboard&apos;s kA show as a <b>warning</b> — you can still save.
               </>,
             ]}
           />
@@ -325,13 +327,17 @@ export function HowItWorks() {
             items={[
               <>
                 <b>Review on Save</b> (Project Detail): changing busbar density, or a switchboard&apos;s Amps, material, neutral, cable entry, Std,
-                kA, IP or Form, checks every switchboard in the project. Bars that would change size and new conflicts are listed with checkboxes —{" "}
-                <b>ticked</b> applies the change, <b>unticked</b> keeps things as they are.
+                kA, IP or Form, checks every switchboard in the project. Bars that would change size and new issues are listed with checkboxes —{" "}
+                <b>ticked</b> applies the change, <b>unticked</b> keeps things as they are. Approve is disabled while an alert would be left
+                behind.
               </>,
               <>
-                <b>Alerts</b> (top of Project Detail): anything still in conflict with the project settings — hand-set bars that are undersized or
-                differ from the rules, incomers or feeders rated against the switchboard Amps, breakers below the switchboard kA, ArTuK bays at the
-                wrong size or IP. Tick fixable ones and click <b>Apply selected fixes</b>; the rest say where to fix them.
+                <b>Alerts &amp; Warnings</b> (top of Project Detail). <span className="font-semibold text-error">Alerts</span> are real conflicts
+                and <b>block saving</b> the revision they&apos;re in until fixed: feeders rated above the switchboard Amps, an incomer rated below it,
+                undersized busbars, a main busbar with no rating. <span className="font-semibold text-amber-700">Warnings</span> are worth checking
+                but <b>don&apos;t stop you saving</b>: items or breakers rated below the switchboard kA, ArTuK bays below the switchboard IP or at a
+                non-standard size, hand-set bars that differ from the rules. Tick fixable lines and click <b>Apply selected fixes</b>; the rest say
+                where to fix them.
               </>,
               <>
                 <b>Amps guard</b>: a switchboard&apos;s Amps can&apos;t be saved below its highest-rated feeder, and a BOM can&apos;t be saved with a
@@ -364,13 +370,14 @@ export function HowItWorks() {
                 [<Chip key="4" className="border border-emerald-100 bg-emerald-50 text-on-surface">Feeder</Chip>, "Green header: a custom feeder for this switchboard only."],
                 [<Chip key="5" className="border border-error text-error ring-2 ring-error/40">Feeder</Chip>, "Red outline: feeder rated above the switchboard's Amps."],
                 [<Chip key="6" className="bg-primary/10 text-primary">AUTO</Chip>, "Busbar line calculated from the GA busbar plan."],
+                [<Chip key="7" className="border border-amber-300/70 bg-amber-50/70 text-amber-800">Warning</Chip>, "Amber box: a warning (e.g. item kA below the switchboard's) — you can still save."],
               ]}
             />
             <ColorGroup
               title="Alerts & review"
               rows={[
-                [<Dot key="1" className="bg-error" />, "Conflict with the project/switchboard settings — should be fixed."],
-                [<Dot key="2" className="bg-amber-500" />, "Hand-set value that differs from the project rules (allowed, but check it)."],
+                [<Dot key="1" className="bg-error" />, "Alert — conflicts with the project/switchboard settings; blocks saving until fixed."],
+                [<Dot key="2" className="bg-amber-500" />, "Warning — worth checking (e.g. kA below the switchboard's); saving is allowed."],
                 [<Dot key="3" className="bg-primary" />, "A change your Save will make (review list only)."],
               ]}
             />
