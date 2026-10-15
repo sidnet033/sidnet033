@@ -368,12 +368,13 @@ export type SideBay = {
   panelTopMm: number;
 };
 
-// Side view. With no bay chosen it shows the whole board: the main busbar
-// end-on in the chamber and each incomer's cable-termination bar. With a
-// bay chosen it shows that bay's devices, their terminals, and every bar
-// that serves them -- riser / ACB link / dropper / feeder links / cable
-// link -- each drawn as phases × runs and labelled with size and current,
-// so the routing and sizing can be followed.
+// Side view of the bay selected in the front view, looking at it from the
+// side with the panel FRONT ON THE RIGHT: the bay's devices, their rear
+// terminals, and every bar that serves them -- riser / ACB link / dropper /
+// feeder links, plus the main busbar end-on -- each drawn as phases × runs
+// and labelled with size and current, so the routing and sizing can be
+// followed. (The incomer's cable-termination bar isn't drawn: it's in the
+// schedule and costing.)
 export function BusbarSideOverlay({
   plan,
   widthPx,
@@ -404,7 +405,8 @@ export function BusbarSideOverlay({
   onSelect: (key: string) => void;
 }) {
   const xScale = depthMm > 0 ? widthPx / depthMm : 0;
-  const x = (mm: number) => mm * xScale;
+  // depth measured from the panel front, which is drawn on the right
+  const x = (mm: number) => widthPx - mm * xScale;
   const segs = showBars && plan ? plan.segments : [];
   const main = segs.find((s) => s.kind === "main") ?? null;
   const select = (key: string) => (e: React.MouseEvent) => {
@@ -421,41 +423,8 @@ export function BusbarSideOverlay({
     </text>
   );
 
-  // ---- whole board -------------------------------------------------------
-  if (!bay) {
-    return (
-      <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" style={{ width: Math.max(widthPx, 1), height: Math.max(heightPx, 1) }}>
-        {main && (
-          <MainCrossSection
-            seg={main}
-            cx={widthPx * 0.62}
-            cy={yPx(plan!.chamberMidY)}
-            maxHeightPx={chamberPx - 4}
-            pxPerMm={pxPerMm}
-            hasNeutral={hasNeutral}
-            selected={main.key === selectedKey}
-            onSelect={select(main.key)}
-            material={material}
-          />
-        )}
-        {segs
-          .filter((seg) => seg.kind === "incomer_cable_link" && seg.side)
-          .map((seg) => {
-            const y = yPx(seg.side!.y);
-            const pts = [
-              { x: x(seg.side!.x1), y },
-              { x: x(seg.side!.x2), y },
-            ];
-            return (
-              <g key={seg.key}>
-                <PhaseBars seg={seg} pts={pts} hasNeutral={hasNeutral} color={colorOf(seg)} selected={seg.key === selectedKey} onSelect={select(seg.key)} title={tip(seg)} />
-                {tag(seg, { x: (pts[0].x + pts[1].x) / 2, y: y - 8 })}
-              </g>
-            );
-          })}
-      </svg>
-    );
-  }
+  // Nothing to show until a bay is chosen in the front view.
+  if (!bay) return null;
 
   // ---- one bay -----------------------------------------------------------
   // Depth zones (mm from the front): devices at the front, their rear
@@ -485,24 +454,7 @@ export function BusbarSideOverlay({
       drawn.push(
         <g key={seg.key}>
           <PhaseBars seg={seg} pts={pts} hasNeutral={hasNeutral} color={colorOf(seg)} selected={sel} onSelect={select(seg.key)} title={tip(seg)} />
-          {tag(seg, { x: x(mainX) + 8, y: (ty + chamberY) / 2 }, "start", 0)}
-        </g>
-      );
-    } else if (seg.kind === "incomer_cable_link") {
-      const ty = yPx(seg.side?.y ?? seg.path[0].y);
-      terminals.push({ x: termX, y: ty });
-      const end = Math.min(deviceDepth + seg.lengthMm, depthMm - 10);
-      const pts = [
-        { x: termX, y: ty },
-        { x: x(end), y: ty },
-      ];
-      drawn.push(
-        <g key={seg.key}>
-          <PhaseBars seg={seg} pts={pts} hasNeutral={hasNeutral} color={colorOf(seg)} selected={sel} onSelect={select(seg.key)} title={tip(seg)} />
-          <text x={(pts[0].x + pts[1].x) / 2} y={ty + 14} fontSize={7} fontFamily="ui-monospace, monospace" fill={colorOf(seg)} textAnchor="middle" style={textHalo}>
-            CABLE LINK {seg.lengthMm}mm
-          </text>
-          {tag(seg, { x: (pts[0].x + pts[1].x) / 2, y: ty - 8 })}
+          {tag(seg, { x: x(mainX) - 8, y: (ty + chamberY) / 2 }, "end", 0)}
         </g>
       );
     } else if (seg.kind === "feeder_link") {
@@ -529,7 +481,7 @@ export function BusbarSideOverlay({
     drawn.push(
       <g key={seg.key}>
         <PhaseBars seg={seg} pts={pts} hasNeutral={hasNeutral} color={colorOf(seg)} selected={seg.key === selectedKey} onSelect={select(seg.key)} title={tip(seg)} />
-        {tag(seg, { x: x(mainX) + 10, y: (chamberY + farY) / 2 }, "start", 0)}
+        {tag(seg, { x: x(mainX) - 10, y: (chamberY + farY) / 2 }, "end", 0)}
       </g>
     );
   }
@@ -543,9 +495,9 @@ export function BusbarSideOverlay({
         return (
           <g key={c.id}>
             <rect
-              x={2}
+              x={termX + 2}
               y={top + 1}
-              width={Math.max(termX - 4, 2)}
+              width={Math.max(widthPx - termX - 4, 2)}
               height={Math.max(h - 2, 1)}
               fill={c.isBlank ? "none" : "#f1f5f9"}
               stroke={c.isBlank ? "#cbd5e1" : "#64748b"}
@@ -553,7 +505,7 @@ export function BusbarSideOverlay({
               strokeWidth={0.8}
             />
             {h >= 9 && (
-              <text x={5} y={top + Math.min(h / 2 + 3, 11)} fontSize={7} fontFamily="ui-sans-serif, system-ui" fill={c.isBlank ? "#94a3b8" : "#334155"}>
+              <text x={widthPx - 5} y={top + Math.min(h / 2 + 3, 11)} fontSize={7} fontFamily="ui-sans-serif, system-ui" fill={c.isBlank ? "#94a3b8" : "#334155"} textAnchor="end">
                 {c.label.length > 22 ? `${c.label.slice(0, 21)}…` : c.label}
               </text>
             )}
@@ -562,8 +514,11 @@ export function BusbarSideOverlay({
       })}
       {/* device rear face (terminal plane) */}
       <line x1={termX} y1={0} x2={termX} y2={heightPx} stroke="#94a3b8" strokeWidth={0.6} strokeDasharray="2 3" />
-      <text x={termX + 2} y={heightPx - 3} fontSize={6.5} fill="#64748b">
+      <text x={termX - 2} y={heightPx - 3} fontSize={6.5} fill="#64748b" textAnchor="end">
         terminals
+      </text>
+      <text x={widthPx - 3} y={heightPx - 3} fontSize={7} fontWeight={700} fill="#334155" textAnchor="end">
+        FRONT →
       </text>
       {drawn}
       {main && (
@@ -588,8 +543,8 @@ export function BusbarSideOverlay({
         <g>
           {(["R", "Y", "B", ...(hasNeutral ? ["N"] : [])] as string[]).map((ph, i) => (
             <g key={ph}>
-              <line x1={widthPx - 34} y1={heightPx - 44 + i * 9} x2={widthPx - 24} y2={heightPx - 44 + i * 9} stroke={PHASE_COLOR[ph]} strokeWidth={1.5} />
-              <text x={widthPx - 21} y={heightPx - 41 + i * 9} fontSize={7} fill="#334155">
+              <line x1={4} y1={heightPx - 44 + i * 9} x2={14} y2={heightPx - 44 + i * 9} stroke={PHASE_COLOR[ph]} strokeWidth={1.5} />
+              <text x={17} y={heightPx - 41 + i * 9} fontSize={7} fill="#334155">
                 {ph}
               </text>
             </g>

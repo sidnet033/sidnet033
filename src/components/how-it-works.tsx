@@ -304,8 +304,9 @@ export function HowItWorks() {
                 at once, and <b>Reset to auto</b> to go back to the automatic size. <b>Esc</b> clears any selection.
               </>,
               <>
-                The <b>Side View</b> menu shows one bay at a time: its devices, their rear terminals and every bar serving them (riser, cable
-                link, dropper, feeder links, main bar end-on), each drawn as phases × runs with its size and current.
+                Click a bay in the front view and the <b>Side View</b> (panel front on the right) shows that bay: its devices, their rear
+                terminals and every bar serving them (riser, dropper, feeder links, main bar end-on), each drawn as phases × runs with its size
+                and current. With no bay selected, the side view shows no busbars.
               </>,
               <>Bar sizes and lengths flow into the BOM&apos;s busbar lines and the costing once the GA is saved.</>,
             ]}

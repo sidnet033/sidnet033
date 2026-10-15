@@ -334,8 +334,9 @@ export function GaCanvas({
   const [selectedBayId, setSelectedBayId] = useState<string | null>(null);
   const [selectedPlacedId, setSelectedPlacedId] = useState<string | null>(null);
   const [busbarSelected, setBusbarSelected] = useState(false);
-  // bay shown in the side view (null = whole switchboard); follows the bay
-  // last clicked in the front view, or is picked from the side view's menu
+  // bay shown in the side view: the bay last clicked in the front view.
+  // Selecting one of its busbars keeps it; deselecting the bay (Esc, click
+  // off) clears it -- and with no bay, the side view shows no busbars.
   const [sideBayId, setSideBayId] = useState<string | null>(null);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
   const [sizingLogicOpen, setSizingLogicOpen] = useState(true);
@@ -1050,6 +1051,7 @@ export function GaCanvas({
         // Escape clears every selection on the canvas (bay, feeder, busbar,
         // busbar chamber) -- and leaves fullscreen if it's on.
         setSelectedBayId(null);
+        setSideBayId(null);
         setSelectedPlacedId(null);
         setSelectedSegmentKey(null);
         setBusbarSelected(false);
@@ -1359,6 +1361,7 @@ export function GaCanvas({
                                 : () => {
                                     setBusbarSelected(true);
                                     setSelectedBayId(null);
+                                    setSideBayId(null);
                                     setSelectedPlacedId(null);
                                     setSelectedSegmentKey(null);
                                   }
@@ -1420,6 +1423,7 @@ export function GaCanvas({
                                 : () => {
                                     setBusbarSelected(true);
                                     setSelectedBayId(null);
+                                    setSideBayId(null);
                                     setSelectedPlacedId(null);
                                     setSelectedSegmentKey(null);
                                   }
@@ -1476,19 +1480,7 @@ export function GaCanvas({
 
                   <div className="inline-block">
                     <ViewLabel>Side View{sideBay ? ` — ${sideBay.name}` : ""}</ViewLabel>
-                    <select
-                      value={sideBayId ?? ""}
-                      onChange={(e) => setSideBayId(e.target.value || null)}
-                      title="Show one bay's devices, terminals and busbars"
-                      className="mb-1 max-w-[220px] rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-0.5 text-[11px] text-on-surface"
-                    >
-                      <option value="">Whole switchboard</option>
-                      {bays.map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.name}
-                        </option>
-                      ))}
-                    </select>
+                    {!sideBay && <p className="mb-1 max-w-[220px] text-[10px] text-on-surface-variant">Select a bay in the front view to see its devices and busbars here.</p>}
                     {sb.std === "ArTuK" && (
                       <div
                         className="flex items-center justify-center bg-red-600 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-white"
@@ -1501,7 +1493,7 @@ export function GaCanvas({
                       {busbarPosition === "top" && <DrawingBar label={chamberCaption} heightPx={busbarHeight * pxPerMm} widthPx={sideViewWidthPx} />}
                       <div className="border border-black/70 bg-white" style={{ width: sideViewWidthPx, height: Math.max(panelHeight * pxPerMm, 2) }} />
                       {busbarPosition === "bottom" && <DrawingBar label={chamberCaption} heightPx={busbarHeight * pxPerMm} widthPx={sideViewWidthPx} />}
-                      {(showBusbars || sideBay) && (
+                      {sideBay && (
                         <BusbarSideOverlay
                           plan={busbarPlan}
                           widthPx={sideViewWidthPx}
@@ -1601,10 +1593,12 @@ export function GaCanvas({
                       if (!selectedBay) return;
                       deleteBay(selectedBay.id);
                       setSelectedBayId(null);
+                      setSideBayId(null);
                       setSelectedPlacedId(null);
                     }}
                     onClose={() => {
                       setSelectedBayId(null);
+                      setSideBayId(null);
                       setSelectedPlacedId(null);
                     }}
                   />
@@ -1916,7 +1910,7 @@ function BayColumn({
               onMoveBay("left");
             }}
             title="Move bay left"
-            className="absolute -left-3.5 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-primary bg-surface-container-lowest text-primary shadow-sm hover:bg-primary/10"
+            className="absolute left-1/2 top-1 z-30 flex h-6 w-6 -translate-x-[calc(100%+2px)] items-center justify-center rounded-full border border-primary bg-surface-container-lowest text-primary shadow-sm hover:bg-primary/10"
           >
             <Icon name="chevron_left" size={16} />
           </button>
@@ -1926,7 +1920,7 @@ function BayColumn({
               onMoveBay("right");
             }}
             title="Move bay right"
-            className="absolute -right-3.5 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-primary bg-surface-container-lowest text-primary shadow-sm hover:bg-primary/10"
+            className="absolute left-1/2 top-1 z-30 flex h-6 w-6 translate-x-[2px] items-center justify-center rounded-full border border-primary bg-surface-container-lowest text-primary shadow-sm hover:bg-primary/10"
           >
             <Icon name="chevron_right" size={16} />
           </button>
