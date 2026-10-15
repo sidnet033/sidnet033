@@ -36,6 +36,7 @@ const EDITABLE_SWITCHBOARD_FIELDS = [
   "cable_entry",
   "cable_exit",
   "busbar",
+  "neutral_size_pct",
   "qty",
 ] as const satisfies readonly (keyof Switchboard)[];
 
@@ -62,6 +63,8 @@ type ProjectPatch = {
   owner_id: string | null;
   currency: string;
   exchange_rate: number;
+  busbar_density_cu: number;
+  busbar_density_al: number;
 };
 
 function snapshotOf(project: Project): ProjectPatch {
@@ -78,6 +81,8 @@ function snapshotOf(project: Project): ProjectPatch {
     owner_id: project.owner_id,
     currency: project.currency,
     exchange_rate: project.exchange_rate,
+    busbar_density_cu: project.busbar_density_cu,
+    busbar_density_al: project.busbar_density_al,
   };
 }
 
@@ -566,6 +571,22 @@ export function ProjectDetailTab({
                     className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low"
                   />
                 </Field>
+                <Field label="Busbar Current Density — Cu (A/mm²)">
+                  <DensityInput
+                    key={`cu-${savedSnapshot.busbar_density_cu}`}
+                    disabled={revisionArchived}
+                    value={form.busbar_density_cu}
+                    onCommit={(v) => patch("busbar_density_cu", v)}
+                  />
+                </Field>
+                <Field label="Busbar Current Density — Al (A/mm²)">
+                  <DensityInput
+                    key={`al-${savedSnapshot.busbar_density_al}`}
+                    disabled={revisionArchived}
+                    value={form.busbar_density_al}
+                    onCommit={(v) => patch("busbar_density_al", v)}
+                  />
+                </Field>
               </div>
 
               <div>
@@ -618,6 +639,7 @@ export function ProjectDetailTab({
                   <th className="px-space-md py-space-sm">Cable Entry</th>
                   <th className="px-space-md py-space-sm">Cable Exit</th>
                   <th className="px-space-md py-space-sm">Busbar</th>
+                  <th className="px-space-md py-space-sm" title="Neutral bar size as a % of the phase bar">Neutral</th>
                   <th className="px-space-md py-space-sm text-right">Qty</th>
                   <th className="px-space-md py-space-sm text-right">Unit Cost</th>
                   <th className="px-space-md py-space-sm text-right">Margin</th>
@@ -832,6 +854,17 @@ export function ProjectDetailTab({
                           ))}
                         </select>
                       </td>
+                      <td className="px-space-md py-space-md">
+                        <select
+                          disabled={rowDisabled}
+                          value={sb.neutral_size_pct}
+                          onChange={(e) => updateSwitchboardField(sb.id, { neutral_size_pct: Number(e.target.value) })}
+                          className="w-20 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 disabled:border-transparent disabled:bg-transparent"
+                        >
+                          <option value={100}>100%</option>
+                          <option value={50}>50%</option>
+                        </select>
+                      </td>
                       <td className="px-space-md py-space-md text-right">
                         <input
                           type="text"
@@ -913,7 +946,7 @@ export function ProjectDetailTab({
                 })}
                 {boards.length === 0 && (
                   <tr>
-                    <td colSpan={14} className="px-space-md py-10 text-center text-secondary">
+                    <td colSpan={19} className="px-space-md py-10 text-center text-secondary">
                       No switchboards yet. Add one to start building its BOM and GA.
                     </td>
                   </tr>
@@ -922,7 +955,7 @@ export function ProjectDetailTab({
               {boards.length > 0 && (
                 <tfoot>
                   <tr className="border-t-2 border-surface-container-high bg-surface-container-low font-semibold text-on-surface">
-                    <td colSpan={8} className="px-space-md py-space-sm">
+                    <td colSpan={13} className="px-space-md py-space-sm">
                       Total - {boards.length} Product{boards.length === 1 ? "" : "s"} / {totalUnits} unit{totalUnits === 1 ? "" : "s"}
                     </td>
                     <td className="whitespace-nowrap px-space-md py-space-sm text-right tabular-nums">{money(totalMfgCost)}</td>
@@ -954,5 +987,27 @@ function ReadOnlyValue({ value, mono = false }: { value: string; mono?: boolean 
     <div className={`rounded border border-transparent bg-surface-container-low px-space-sm py-1.5 text-body-sm text-on-surface-variant ${mono ? "font-mono text-xs" : ""}`}>
       {value}
     </div>
+  );
+}
+
+// Edited as text and committed on blur so a value like "1.6" can be typed
+// through its intermediate "1." state without being coerced back to 1.
+function DensityInput({ value, disabled, onCommit }: { value: number; disabled: boolean; onCommit: (v: number) => void }) {
+  const [local, setLocal] = useState(String(value));
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      disabled={disabled}
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onKeyDown={numericKeyGuard()}
+      onBlur={() => {
+        const n = Number(local);
+        if (n > 0) onCommit(n);
+        else setLocal(String(value));
+      }}
+      className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low"
+    />
   );
 }

@@ -29,8 +29,9 @@ import {
   lookupAcbBaySpec,
   lookupFeederBoxHeight,
   suggestAcbFrame,
-  type BayFunction,
 } from "@/lib/artuk-sizing";
+import { bayFunctionOf, overrideKey, planBusbars, type BusbarOverride, type BusbarPlan, type BusbarSegment } from "@/lib/busbar-plan";
+import { BusbarFrontOverlay, BusbarSchedule, BusbarSegmentPanel, BusbarSideOverlay } from "@/components/ga-busbar-layer";
 
 type VerticalWithFeeders = Vertical & {
   placed: (PlacedFeeder & { feeder: Feeder })[];
@@ -81,7 +82,7 @@ function niceTickStepMm(pxPerMm: number): number {
 
 type HoverExtent = { topMm: number; heightMm: number; bayLeftMm: number; bayWidthMm: number; label: string } | null;
 
-type Compartment = { id: string; label: string; heightMm: number; topMm: number; isBlank: boolean; placedId?: string };
+type Compartment = { id: string; label: string; heightMm: number; topMm: number; isBlank: boolean; placedId?: string; unitIndex?: number };
 
 function blankCompartmentLabel(bayType: BayType | null): string {
   if (bayType === "cable_alley") return "CABLE ALLEY";
@@ -122,7 +123,7 @@ function computeCompartments(vertical: VerticalWithFeeders, panelHeightMm: numbe
     // gets its own compartment, not one compartment for the whole row.
     for (let u = 0; u < p.qty; u++) {
       maybePushDummy();
-      compartments.push({ id: `${p.id}::${u}`, placedId: p.id, label: p.feeder.name, heightMm, topMm: used, isBlank: false });
+      compartments.push({ id: `${p.id}::${u}`, placedId: p.id, unitIndex: u, label: p.feeder.name, heightMm, topMm: used, isBlank: false });
       used += heightMm;
       unitIndex++;
     }
@@ -204,9 +205,42 @@ async function loadGaData(supabase: ReturnType<typeof createClient>, switchboard
     ),
   }));
 
+  const { data: revision } = await supabase.from("revisions").select("project_id").eq("id", switchboard.revision_id).single();
+  const { data: project } = revision
+    ? await supabase.from("projects").select("busbar_density_cu, busbar_density_al").eq("id", (revision as { project_id: string }).project_id).single()
+    : { data: null };
+  const { data: overrideRows } = await supabase.from("busbar_overrides").select("*").eq("switchboard_id", switchboardId);
+
+  const overrides: Record<string, BusbarOverride> = {};
+  for (const r of (overrideRows ?? []) as {
+    kind: BusbarOverride["kind"];
+    vertical_id: string | null;
+    placed_feeder_id: string | null;
+    unit_index: number;
+    bar_width_mm: number | null;
+    bar_thickness_mm: number | null;
+    runs_per_phase: number | null;
+    length_mm: number | null;
+  }[]) {
+    const o: BusbarOverride = {
+      kind: r.kind,
+      verticalId: r.vertical_id,
+      placedFeederId: r.placed_feeder_id,
+      unitIndex: r.unit_index,
+      barWidthMm: r.bar_width_mm != null ? Number(r.bar_width_mm) : null,
+      barThicknessMm: r.bar_thickness_mm != null ? Number(r.bar_thickness_mm) : null,
+      runsPerPhase: r.runs_per_phase,
+      lengthMm: r.length_mm != null ? Number(r.length_mm) : null,
+    };
+    overrides[overrideKey(o)] = o;
+  }
+
+  const densityRow = project as { busbar_density_cu: number; busbar_density_al: number } | null;
   return {
     switchboard: switchboard as Switchboard,
     verticals: verticalsWithFeeders,
+    densities: { Cu: Number(densityRow?.busbar_density_cu ?? 1.6), Al: Number(densityRow?.busbar_density_al ?? 1.0) },
+    overrides,
   };
 }
 
@@ -314,17 +348,6 @@ function makeVertical(
   };
 }
 
-// "Incomer"/"Sub-Incomer" -> incomer, "Outgoing" -> outgoing, "Bus Coupler"
-// -> bus_coupler. "APFC Capacitor Bank" and unclassified feeders have no
-// ArTuK sizing data at all, so Auto-generate GA leaves those bays alone.
-function bayFunctionOf(feeder: Feeder): BayFunction | null {
-  const cat = (feeder.category ?? "").toLowerCase();
-  if (cat.includes("bus coupler")) return "bus_coupler";
-  if (cat.includes("incomer")) return "incomer";
-  if (cat.includes("outgoing")) return "outgoing";
-  return null;
-}
-
 // Plain rect-intersection collision detection needs the DRAGGED card's
 // whole bounding box to overlap a droppable's box -- with bays now
 // rendered at their real (often narrow) mm width instead of a fixed
@@ -363,6 +386,11 @@ export function GaCanvas({
   const [savedPanelHeight, setSavedPanelHeight] = useState(2100);
   const [busbarHeight, setBusbarHeight] = useState(BUSBAR_CHAMBER_HEIGHT_MM);
   const [savedBusbarHeight, setSavedBusbarHeight] = useState(BUSBAR_CHAMBER_HEIGHT_MM);
+  const [busbarOverrides, setBusbarOverrides] = useState<Record<string, BusbarOverride>>({});
+  const [savedBusbarOverrides, setSavedBusbarOverrides] = useState<Record<string, BusbarOverride>>({});
+  const [densities, setDensities] = useState<{ Cu: number; Al: number }>({ Cu: 1.6, Al: 1.0 });
+  const [showBusbars, setShowBusbars] = useState(true);
+  const [selectedSegmentKey, setSelectedSegmentKey] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [resetKey, setResetKey] = useState(0);
 
@@ -462,6 +490,9 @@ export function GaCanvas({
     setSavedPanelHeight(panel);
     setBusbarHeight(busbar);
     setSavedBusbarHeight(busbar);
+    setDensities(data.densities);
+    setBusbarOverrides(data.overrides);
+    setSavedBusbarOverrides(data.overrides);
   }
 
   useEffect(() => {
@@ -482,6 +513,9 @@ export function GaCanvas({
       setSavedPanelHeight(panel);
       setBusbarHeight(busbar);
       setSavedBusbarHeight(busbar);
+      setDensities(data.densities);
+      setBusbarOverrides(data.overrides);
+      setSavedBusbarOverrides(data.overrides);
       setLoading(false);
     })();
     return () => {
@@ -495,7 +529,8 @@ export function GaCanvas({
     JSON.stringify(verticals) !== JSON.stringify(savedVerticals) ||
     plinthHeight !== savedPlinthHeight ||
     panelHeight !== savedPanelHeight ||
-    busbarHeight !== savedBusbarHeight;
+    busbarHeight !== savedBusbarHeight ||
+    JSON.stringify(busbarOverrides) !== JSON.stringify(savedBusbarOverrides);
 
   const bays = verticals.filter((v) => v.bay_type !== "unassigned").sort((a, b) => a.sort_order - b.sort_order);
   const unallocated = verticals.find((v) => v.bay_type === "unassigned") ?? null;
@@ -531,6 +566,77 @@ export function GaCanvas({
   // panel (more room to route cable near the entry side); the base plinth
   // is always the floor support, so it stays at the very bottom regardless.
   const busbarPosition: "top" | "bottom" = sb?.cable_entry === "Top" ? "bottom" : "top";
+
+  // Live busbar routing/sizing for the current draft layout -- recomputed on
+  // every render so it always follows the bays/feeders as they're edited;
+  // only the user's deliberate overrides are stored.
+  const busbarMaterial: "Cu" | "Al" = sb?.busbar ?? "Cu";
+  const busbarPlan: BusbarPlan | null = sb
+    ? planBusbars({
+        bays: bays.map((v, i) => ({
+          id: v.id,
+          name: v.name,
+          bayType: v.bay_type,
+          widthMm: v.width_mm ?? 0,
+          depthMm: v.depth_mm,
+          leftMm: bayOffsets[i],
+          placed: v.placed.map((p) => ({ id: p.id, qty: p.qty, feeder: p.feeder })),
+          compartments: computeCompartments(v, panelHeight)
+            .filter((c) => !c.isBlank && c.placedId)
+            .map((c) => ({ placedId: c.placedId!, unitIndex: c.unitIndex ?? 0, topMm: c.topMm, heightMm: c.heightMm })),
+        })),
+        panelHeightMm: panelHeight,
+        chamberHeightMm: busbarHeight,
+        chamberPosition: busbarPosition,
+        material: busbarMaterial,
+        densityAPerMm2: densities[busbarMaterial],
+        poles: sb.poles ?? 4,
+        neutralPct: sb.neutral_size_pct ?? 100,
+        switchboardAmps: sb.amps,
+        defaultDepthMm: sideViewDepthMm,
+        overrides: busbarOverrides,
+      })
+    : null;
+  const selectedSegment = busbarPlan?.segments.find((seg) => seg.key === selectedSegmentKey) ?? null;
+
+  function patchSegmentOverrides(segs: BusbarSegment[], patch: Partial<Pick<BusbarOverride, "barWidthMm" | "barThicknessMm" | "runsPerPhase" | "lengthMm">>) {
+    setBusbarOverrides((prev) => {
+      const next = { ...prev };
+      for (const seg of segs) {
+        const base: BusbarOverride = prev[seg.key] ?? {
+          kind: seg.kind,
+          verticalId: seg.verticalId,
+          placedFeederId: seg.placedFeederId,
+          unitIndex: seg.unitIndex,
+          barWidthMm: null,
+          barThicknessMm: null,
+          runsPerPhase: null,
+          lengthMm: null,
+        };
+        const merged = { ...base, ...patch };
+        if (merged.barWidthMm == null && merged.barThicknessMm == null && merged.runsPerPhase == null && merged.lengthMm == null) delete next[seg.key];
+        else next[seg.key] = merged;
+      }
+      return next;
+    });
+  }
+
+  function resetSegmentOverrides(keys: string[]) {
+    setBusbarOverrides((prev) => {
+      const next = { ...prev };
+      for (const k of keys) delete next[k];
+      return next;
+    });
+  }
+
+  function selectSegment(key: string | null) {
+    setSelectedSegmentKey(key);
+    if (key) {
+      setSelectedBayId(null);
+      setSelectedPlacedId(null);
+      setBusbarSelected(false);
+    }
+  }
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
@@ -799,7 +905,9 @@ export function GaCanvas({
     setPlinthHeight(savedPlinthHeight);
     setPanelHeight(savedPanelHeight);
     setBusbarHeight(savedBusbarHeight);
+    setBusbarOverrides(savedBusbarOverrides);
     setBusbarSelected(false);
+    setSelectedSegmentKey(null);
     setResetKey((k) => k + 1);
   }
 
@@ -809,6 +917,7 @@ export function GaCanvas({
     try {
       const tempVerticalIdMap = new Map<string, string>();
       const tempFeederIdMap = new Map<string, string>();
+      const tempPlacedIdMap = new Map<string, string>();
 
       for (const v of verticals) {
         if (!v.id.startsWith("new-")) continue;
@@ -864,10 +973,13 @@ export function GaCanvas({
         for (const p of v.placed) {
           const realFeederId = tempFeederIdMap.get(p.feeder_id) ?? p.feeder_id;
           if (p.id.startsWith("new-")) {
-            const { error } = await supabase
+            const { data, error } = await supabase
               .from("placed_feeders")
-              .insert({ vertical_id: realVerticalId, feeder_id: realFeederId, qty: p.qty, sort_order: p.sort_order, tier_number: p.tier_number });
-            if (error) throw new Error(error.message);
+              .insert({ vertical_id: realVerticalId, feeder_id: realFeederId, qty: p.qty, sort_order: p.sort_order, tier_number: p.tier_number })
+              .select("id")
+              .single();
+            if (error || !data) throw new Error(error?.message ?? "Could not place feeder.");
+            tempPlacedIdMap.set(p.id, (data as { id: string }).id);
             continue;
           }
           keptPlacedIds.add(p.id);
@@ -895,6 +1007,35 @@ export function GaCanvas({
         if (verticals.some((v) => v.id === sv.id)) continue;
         const { error } = await supabase.from("verticals").delete().eq("id", sv.id);
         if (error) throw new Error(error.message);
+      }
+
+      // Busbar overrides are rewritten wholesale when they've changed --
+      // there are only ever a handful per switchboard. Any pointing at a
+      // bay/feeder removed in this draft are dropped (the DB would cascade
+      // them away anyway); temp ids from this draft are mapped to real ones.
+      if (JSON.stringify(busbarOverrides) !== JSON.stringify(savedBusbarOverrides)) {
+        const liveVerticalIds = new Set(verticals.map((v) => v.id));
+        const livePlacedIds = new Set(verticals.flatMap((v) => v.placed.map((p) => p.id)));
+        const rows = Object.values(busbarOverrides)
+          .filter((o) => (!o.verticalId || liveVerticalIds.has(o.verticalId)) && (!o.placedFeederId || livePlacedIds.has(o.placedFeederId)))
+          .map((o) => ({
+            switchboard_id: sb.id,
+            kind: o.kind,
+            vertical_id: o.verticalId ? (tempVerticalIdMap.get(o.verticalId) ?? o.verticalId) : null,
+            placed_feeder_id: o.placedFeederId ? (tempPlacedIdMap.get(o.placedFeederId) ?? o.placedFeederId) : null,
+            unit_index: o.unitIndex,
+            bar_width_mm: o.barWidthMm,
+            bar_thickness_mm: o.barThicknessMm,
+            runs_per_phase: o.runsPerPhase,
+            length_mm: o.lengthMm,
+            updated_at: new Date().toISOString(),
+          }));
+        const { error: delError } = await supabase.from("busbar_overrides").delete().eq("switchboard_id", sb.id);
+        if (delError) throw new Error(delError.message);
+        if (rows.length > 0) {
+          const { error } = await supabase.from("busbar_overrides").insert(rows);
+          if (error) throw new Error(error.message);
+        }
       }
 
       const paramPatch: Partial<Switchboard> = {};
@@ -1012,7 +1153,19 @@ export function GaCanvas({
     return <div className="p-8 text-sm text-on-surface-variant">Loading...</div>;
   }
 
+  // Same px heights the drawing actually renders (DrawingBar enforces a
+  // 16px minimum), so the busbar overlay lines up with the chamber/bays.
+  const chamberPx = Math.max(busbarHeight * pxPerMm, 16);
+  const panelPx = Math.max(panelHeight * pxPerMm, 2);
+  const busbarYPx = (mm: number) => {
+    if (busbarPosition === "top") return mm <= busbarHeight ? (mm / busbarHeight) * chamberPx : chamberPx + (mm - busbarHeight) * pxPerMm;
+    return mm <= panelHeight ? mm * pxPerMm : panelPx + ((mm - panelHeight) / busbarHeight) * chamberPx;
+  };
+
   const busbarLabel = `BUSBAR CHAMBER${sb.amps ? ` · ${sb.amps}A` : ""}${sb.ka ? ` · ${sb.ka}kA` : ""} · ${sb.busbar ?? "Cu"}`;
+  // With the busbar layer on, the main bar's own label (size + rating)
+  // replaces the chamber caption, which it would otherwise strike through.
+  const chamberCaption = showBusbars && busbarPlan && bays.length > 0 ? "" : busbarLabel;
 
   return (
     <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
@@ -1155,6 +1308,17 @@ export function GaCanvas({
               >
                 <Icon name="download" size={14} /> {exporting ? "Exporting..." : "Export PDF"}
               </button>
+              <button
+                onClick={() => {
+                  setShowBusbars((v) => !v);
+                  setSelectedSegmentKey(null);
+                }}
+                disabled={bays.length === 0}
+                title={showBusbars ? "Hide the busbar layer" : "Show the planned busbar routing and sizes"}
+                className={`btn btn-sm ${showBusbars ? "btn-primary" : "btn-outline"}`}
+              >
+                <Icon name="electric_bolt" size={14} /> Busbars
+              </button>
               {!readOnly && dirty && (
                 <>
                   <button onClick={handleCancel} disabled={saving} className="btn btn-outline btn-sm">
@@ -1244,12 +1408,12 @@ export function GaCanvas({
                         title/ArTuK-strip rows above or the plinth row below. */}
                     <div className="flex items-start">
                       <VerticalDimension heightPx={bayHeightMm * pxPerMm} label={`${bayHeightMm}mm`} />
-                      <div className="inline-block">
+                      <div className="relative inline-block">
                       {busbarPosition === "top" && (
                         <div className="flex">
                           <div style={{ width: RULER_WIDTH_PX }} />
                           <DrawingBar
-                            label={busbarLabel}
+                            label={chamberCaption}
                             heightPx={busbarHeight * pxPerMm}
                             widthPx={totalWidth * pxPerMm}
                             isSelected={busbarSelected}
@@ -1260,6 +1424,7 @@ export function GaCanvas({
                                     setBusbarSelected(true);
                                     setSelectedBayId(null);
                                     setSelectedPlacedId(null);
+                                    setSelectedSegmentKey(null);
                                   }
                             }
                           />
@@ -1268,7 +1433,7 @@ export function GaCanvas({
 
                       <div className="flex">
                         <VerticalRuler totalHeightMm={panelHeight} pxPerMm={pxPerMm} hover={hover} />
-                        <div className="flex">
+                        <div className="flex transition-opacity" style={{ opacity: showBusbars && busbarPlan ? 0.55 : 1 }}>
                           {bays.map((v, i) => (
                             <BayColumn
                               key={`${v.id}-${resetKey}`}
@@ -1285,11 +1450,13 @@ export function GaCanvas({
                                 setSelectedBayId(v.id);
                                 setSelectedPlacedId(null);
                                 setBusbarSelected(false);
+                                setSelectedSegmentKey(null);
                               }}
                               onSelectFeeder={(placedId) => {
                                 setSelectedBayId(v.id);
                                 setSelectedPlacedId(placedId);
                                 setBusbarSelected(false);
+                                setSelectedSegmentKey(null);
                               }}
                               onMoveBay={(direction) => moveBay(v.id, direction)}
                               onMoveFeeder={(placedId, direction) => moveFeeder(v.id, placedId, direction)}
@@ -1305,7 +1472,7 @@ export function GaCanvas({
                         <div className="flex">
                           <div style={{ width: RULER_WIDTH_PX }} />
                           <DrawingBar
-                            label={busbarLabel}
+                            label={chamberCaption}
                             heightPx={busbarHeight * pxPerMm}
                             widthPx={totalWidth * pxPerMm}
                             isSelected={busbarSelected}
@@ -1316,10 +1483,25 @@ export function GaCanvas({
                                     setBusbarSelected(true);
                                     setSelectedBayId(null);
                                     setSelectedPlacedId(null);
+                                    setSelectedSegmentKey(null);
                                   }
                             }
                           />
                         </div>
+                      )}
+
+                      {showBusbars && busbarPlan && (
+                        <BusbarFrontOverlay
+                          plan={busbarPlan}
+                          leftPx={RULER_WIDTH_PX}
+                          widthPx={totalWidth * pxPerMm}
+                          heightPx={chamberPx + panelPx}
+                          xPx={(mm) => mm * pxPerMm}
+                          yPx={busbarYPx}
+                          material={busbarMaterial}
+                          selectedKey={selectedSegmentKey}
+                          onSelect={selectSegment}
+                        />
                       )}
 
                       </div>
@@ -1361,13 +1543,43 @@ export function GaCanvas({
                         ArTuK
                       </div>
                     )}
-                    {busbarPosition === "top" && <DrawingBar label={busbarLabel} heightPx={busbarHeight * pxPerMm} widthPx={sideViewWidthPx} />}
-                    <div className="border border-black/70 bg-white" style={{ width: sideViewWidthPx, height: Math.max(panelHeight * pxPerMm, 2) }} />
-                    {busbarPosition === "bottom" && <DrawingBar label={busbarLabel} heightPx={busbarHeight * pxPerMm} widthPx={sideViewWidthPx} />}
+                    <div className="relative">
+                      {busbarPosition === "top" && <DrawingBar label={chamberCaption} heightPx={busbarHeight * pxPerMm} widthPx={sideViewWidthPx} />}
+                      <div className="border border-black/70 bg-white" style={{ width: sideViewWidthPx, height: Math.max(panelHeight * pxPerMm, 2) }} />
+                      {busbarPosition === "bottom" && <DrawingBar label={chamberCaption} heightPx={busbarHeight * pxPerMm} widthPx={sideViewWidthPx} />}
+                      {showBusbars && busbarPlan && (
+                        <BusbarSideOverlay
+                          plan={busbarPlan}
+                          widthPx={sideViewWidthPx}
+                          heightPx={chamberPx + panelPx}
+                          depthMm={sideViewDepthMm}
+                          yPx={busbarYPx}
+                          material={busbarMaterial}
+                          selectedKey={selectedSegmentKey}
+                          onSelect={selectSegment}
+                        />
+                      )}
+                    </div>
                     <DrawingBar label={`PLINTH · ${plinthHeight}mm`} heightPx={plinthHeight * pxPerMm} widthPx={sideViewWidthPx} />
                     <HorizontalDimension widthPx={sideViewWidthPx} label={`${sideViewDepthMm}mm`} />
                   </div>
                 </div>
+              )}
+              {showBusbars && busbarPlan && bays.length > 0 && (
+                <BusbarSchedule
+                  plan={busbarPlan}
+                  material={busbarMaterial}
+                  density={densities[busbarMaterial]}
+                  poles={sb.poles ?? 4}
+                  neutralPct={sb.neutral_size_pct ?? 100}
+                  readOnly={readOnly}
+                  selectedKey={selectedSegmentKey}
+                  onSelect={selectSegment}
+                  onApplySize={(segs, bar, runs) =>
+                    patchSegmentOverrides(segs, { barWidthMm: bar.widthMm, barThicknessMm: bar.thicknessMm, runsPerPhase: runs })
+                  }
+                  onReset={resetSegmentOverrides}
+                />
               )}
             </div>
           </div>
@@ -1389,7 +1601,20 @@ export function GaCanvas({
 
             {!rightSidebarCollapsed && (
               <>
-                {busbarSelected ? (
+                {selectedSegment ? (
+                  <BusbarSegmentPanel
+                    key={`${selectedSegment.key}-${resetKey}`}
+                    segment={selectedSegment}
+                    material={busbarMaterial}
+                    density={densities[busbarMaterial]}
+                    neutralPct={sb.neutral_size_pct ?? 100}
+                    hasNeutral={(sb.poles ?? 4) >= 4}
+                    readOnly={readOnly}
+                    onPatch={(patch) => patchSegmentOverrides([selectedSegment], patch)}
+                    onReset={() => resetSegmentOverrides([selectedSegment.key])}
+                    onClose={() => setSelectedSegmentKey(null)}
+                  />
+                ) : busbarSelected ? (
                   <BusbarDetailsPanel
                     key={`busbar-${resetKey}`}
                     height={busbarHeight}

@@ -141,6 +141,8 @@ export type Project = {
   owner_id: string | null;
   currency: string;
   exchange_rate: number;
+  busbar_density_cu: number;
+  busbar_density_al: number;
 };
 
 export type Consultant = { id: string; name: string; created_by: string | null; created_at: string };
@@ -192,6 +194,7 @@ export type Switchboard = {
   cable_entry: "Top" | "Bottom" | null;
   cable_exit: "Top" | "Bottom" | null;
   busbar: "Cu" | "Al" | null;
+  neutral_size_pct: number;
   std: "ArTuK" | "61439" | "60439" | null;
   qty: number;
   sort_order: number;
