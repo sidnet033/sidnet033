@@ -12,6 +12,11 @@ import {
   STAR_DELTA_SIZES,
   VFD_SOFT_STARTER_SIZES,
 } from "@/lib/artuk-sizing";
+import { BAR_SIZES, MATERIAL_DENSITY, barArea, type BusbarMaterial } from "@/lib/busbar-plan";
+
+// Reference capacity uses the project defaults; each project can set its own
+// current density in Project Detail.
+const DEFAULT_DENSITY: Record<BusbarMaterial, number> = { Cu: 1.6, Al: 1.0 };
 
 function mm(n: number | null) {
   return n == null ? "—" : `${n}mm`;
@@ -29,6 +34,45 @@ export function DimensionsMaster() {
           proposed bay&rsquo;s width/depth can still be adjusted by hand afterward in GA Builder.
         </p>
       </div>
+
+      <Section
+        title="Busbar sizes (stocked)"
+        note="The only flats we buy. GA Builder's busbar plan sizes every bar from these, and they're the only sizes offered when a bar is changed by hand."
+      >
+        <div className="grid gap-6 sm:grid-cols-2">
+          {(["Cu", "Al"] as const).map((material) => (
+            <div key={material}>
+              <p className="mb-1 text-sm font-semibold text-on-surface">{material === "Cu" ? "Copper (Cu)" : "Aluminium (Al)"}</p>
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-surface-container-high text-xs uppercase tracking-wide text-on-surface-variant">
+                    <th className="py-2 pr-3">Size (W × T)</th>
+                    <th className="py-2 pr-3 text-right">Area</th>
+                    <th className="py-2 pr-3 text-right">Capacity @ {DEFAULT_DENSITY[material]} A/mm²</th>
+                    <th className="py-2 pr-3 text-right">kg / m</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {BAR_SIZES[material].map((b) => (
+                    <tr key={`${b.widthMm}x${b.thicknessMm}`} className="border-b border-surface-container-high/60">
+                      <td className="py-1.5 pr-3 font-medium">
+                        {b.widthMm} × {b.thicknessMm}
+                      </td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums">{barArea(b)} mm²</td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums">{Math.round(barArea(b) * DEFAULT_DENSITY[material])} A</td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums">{(barArea(b) * 1000 * MATERIAL_DENSITY[material]).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-secondary">
+          Capacity is per bar at the default current density; each project can set its own Cu/Al density in Project Detail. Above the largest bar,
+          the plan runs bars in parallel per phase.
+        </p>
+      </Section>
 
       <Section title="ACB (Emax2)" note="Device's own breaker-face footprint. Bay dimensions come from the ArTuK bay assemblies below, not this table.">
         <table className="w-full text-left text-sm">

@@ -24,29 +24,48 @@ export const KIND_LABELS: Record<BusbarKind, string> = {
   acb_link: "ACB link",
 };
 
-// Common rectangular flats stocked for LV switchboards, smallest first.
-// Beyond the largest single bar the plan adds parallel runs per phase.
-export const STANDARD_BARS: BarSize[] = [
-  { widthMm: 15, thicknessMm: 3 },
-  { widthMm: 20, thicknessMm: 3 },
-  { widthMm: 20, thicknessMm: 5 },
-  { widthMm: 25, thicknessMm: 5 },
-  { widthMm: 30, thicknessMm: 5 },
-  { widthMm: 40, thicknessMm: 5 },
-  { widthMm: 30, thicknessMm: 10 },
-  { widthMm: 40, thicknessMm: 10 },
-  { widthMm: 50, thicknessMm: 10 },
-  { widthMm: 60, thicknessMm: 10 },
-  { widthMm: 80, thicknessMm: 10 },
-  { widthMm: 100, thicknessMm: 10 },
-  { widthMm: 120, thicknessMm: 10 },
-];
+// The only flats we buy, per material (width × thickness, mm). Auto-sizing
+// picks from these and every place a user can change a bar size offers
+// only these. Shown on the Dimensions Master page. Beyond the largest
+// single bar the plan adds parallel runs per phase.
+const bars = (list: [number, number][]): BarSize[] =>
+  list.map(([widthMm, thicknessMm]) => ({ widthMm, thicknessMm })).sort((a, b) => barArea(a) - barArea(b));
+
+export const BAR_SIZES: Record<BusbarMaterial, BarSize[]> = {
+  Cu: bars([
+    [20, 10],
+    [30, 10],
+    [40, 10],
+    [50, 10],
+    [60, 10],
+    [80, 10],
+    [100, 10],
+    [120, 10],
+    [160, 10],
+  ]),
+  Al: bars([
+    [20, 10],
+    [30, 6],
+    [40, 10],
+    [50, 10],
+    [60, 10],
+    [80, 10],
+    [100, 10],
+    [125, 10],
+    [150, 10],
+    [160, 10],
+  ]),
+};
+
+export function isStockedBar(material: BusbarMaterial, bar: BarSize): boolean {
+  return BAR_SIZES[material].some((b) => b.widthMm === bar.widthMm && b.thicknessMm === bar.thicknessMm);
+}
 
 export const MAX_RUNS_PER_PHASE = 6;
 const PREFERRED_MAX_RUNS = 4;
 
 // kg per mm³
-const MATERIAL_DENSITY: Record<BusbarMaterial, number> = { Cu: 8.96e-6, Al: 2.7e-6 };
+export const MATERIAL_DENSITY: Record<BusbarMaterial, number> = { Cu: 8.96e-6, Al: 2.7e-6 };
 
 // The incomer's cable-termination bar runs front-to-back for 75% of the bay
 // depth so the customer's incoming cables can be lugged onto it.
@@ -91,17 +110,18 @@ export function bayFunctionOf(feeder: Feeder): BayFunction | null {
   return null;
 }
 
-// Smallest standard bar (fewest runs first, up to 4) whose cross-section
+// Smallest stocked bar (fewest runs first, up to 4) whose cross-section
 // carries `currentA` at `densityAPerMm2`. Above 4 × the largest bar it keeps
 // adding runs of the largest bar.
-export function autoSize(currentA: number | null, densityAPerMm2: number): { bar: BarSize; runs: number } | null {
+export function autoSize(currentA: number | null, densityAPerMm2: number, material: BusbarMaterial): { bar: BarSize; runs: number } | null {
   if (currentA == null || currentA <= 0 || densityAPerMm2 <= 0) return null;
+  const sizes = BAR_SIZES[material];
   const required = currentA / densityAPerMm2;
   for (let runs = 1; runs <= PREFERRED_MAX_RUNS; runs++) {
-    const bar = STANDARD_BARS.find((b) => barArea(b) * runs >= required);
+    const bar = sizes.find((b) => barArea(b) * runs >= required);
     if (bar) return { bar, runs };
   }
-  const largest = STANDARD_BARS[STANDARD_BARS.length - 1];
+  const largest = sizes[sizes.length - 1];
   return { bar: largest, runs: Math.min(MAX_RUNS_PER_PHASE, Math.ceil(required / barArea(largest))) };
 }
 
@@ -405,7 +425,7 @@ function finishSegment(
 ): BusbarSegment {
   const key = segmentKey(d.kind, d.verticalId, d.placedFeederId, d.unitIndex);
   const o = ctx.overrides[key];
-  const auto = autoSize(d.designCurrentA, ctx.densityAPerMm2);
+  const auto = autoSize(d.designCurrentA, ctx.densityAPerMm2, ctx.material);
   const sizeOverridden = !!o && o.barWidthMm != null && o.barThicknessMm != null;
   const runsOverridden = !!o && o.runsPerPhase != null;
   const lengthOverridden = !!o && o.lengthMm != null;
@@ -415,7 +435,7 @@ function finishSegment(
 
   let neutral: { bar: BarSize; runs: number } | null = null;
   if (ctx.hasNeutral && bar) {
-    neutral = ctx.neutralPct >= 100 ? { bar, runs } : autoSize(d.designCurrentA != null ? (d.designCurrentA * ctx.neutralPct) / 100 : null, ctx.densityAPerMm2);
+    neutral = ctx.neutralPct >= 100 ? { bar, runs } : autoSize(d.designCurrentA != null ? (d.designCurrentA * ctx.neutralPct) / 100 : null, ctx.densityAPerMm2, ctx.material);
   }
 
   const capacityA = bar ? Math.round(barArea(bar) * runs * ctx.densityAPerMm2) : null;
@@ -437,6 +457,10 @@ function finishSegment(
     capacityA,
     undersized,
     weightKg,
-    warnings: undersized ? [...d.warnings, `Undersized: carries ${capacityA}A at ${ctx.densityAPerMm2} A/mm² vs ${d.designCurrentA}A needed.`] : d.warnings,
+    warnings: [
+      ...d.warnings,
+      ...(undersized ? [`Undersized: carries ${capacityA}A at ${ctx.densityAPerMm2} A/mm² vs ${d.designCurrentA}A needed.`] : []),
+      ...(bar && !isStockedBar(ctx.material, bar) ? [`${bar.widthMm}×${bar.thicknessMm} isn't a stocked ${ctx.material} size — pick one from the list.`] : []),
+    ],
   };
 }

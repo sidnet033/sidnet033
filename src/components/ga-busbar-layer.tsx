@@ -6,9 +6,10 @@ import { numericKeyGuard } from "@/lib/numeric-input";
 import {
   KIND_LABELS,
   MAX_RUNS_PER_PHASE,
-  STANDARD_BARS,
+  BAR_SIZES,
   barArea,
   formatBar,
+  isStockedBar,
   type BarSize,
   type BusbarKind,
   type BusbarMaterial,
@@ -243,9 +244,13 @@ function parseBar(v: string): BarSize | null {
   return w > 0 && t > 0 ? { widthMm: w, thicknessMm: t } : null;
 }
 
-function barOptions(current: BarSize | null): BarSize[] {
-  if (!current || STANDARD_BARS.some((b) => b.widthMm === current.widthMm && b.thicknessMm === current.thicknessMm)) return STANDARD_BARS;
-  return [...STANDARD_BARS, current].sort((a, b) => barArea(a) - barArea(b));
+// Only the stocked sizes for this material are offered. A bar already set
+// to something else (e.g. after the board's material changed) still shows,
+// marked, so the select reflects reality -- but can't be chosen again.
+function barOptions(material: BusbarMaterial, current: BarSize | null): { bar: BarSize; stocked: boolean }[] {
+  const stocked = BAR_SIZES[material].map((bar) => ({ bar, stocked: true }));
+  if (!current || isStockedBar(material, current)) return stocked;
+  return [...stocked, { bar: current, stocked: false }].sort((a, b) => barArea(a.bar) - barArea(b.bar));
 }
 
 type OverridePatch = Partial<Pick<BusbarOverride, "barWidthMm" | "barThicknessMm" | "runsPerPhase" | "lengthMm">>;
@@ -333,9 +338,9 @@ export function BusbarSegmentPanel({
             className="w-full rounded border border-surface-container-high px-1.5 py-1 text-sm disabled:bg-surface-container-low"
           >
             {!segment.bar && <option value="">—</option>}
-            {barOptions(segment.bar).map((b) => (
-              <option key={barValue(b)} value={barValue(b)}>
-                {b.widthMm} × {b.thicknessMm} ({barArea(b)} mm²)
+            {barOptions(material, segment.bar).map(({ bar: b, stocked }) => (
+              <option key={barValue(b)} value={barValue(b)} disabled={!stocked}>
+                {b.widthMm} × {b.thicknessMm} ({barArea(b)} mm²){stocked ? "" : " — not stocked"}
               </option>
             ))}
           </select>
@@ -441,7 +446,7 @@ export function BusbarSchedule({
   onReset: (keys: string[]) => void;
 }) {
   const [checked, setChecked] = useState<Set<string>>(new Set());
-  const [bulkBar, setBulkBar] = useState(barValue(STANDARD_BARS[6]));
+  const [bulkBar, setBulkBar] = useState(barValue(BAR_SIZES[material][0]));
   const [bulkRuns, setBulkRuns] = useState(1);
   const liveChecked = plan.segments.filter((s) => checked.has(s.key));
   const overriddenKeys = plan.segments.filter((s) => s.overridden.size || s.overridden.runs || s.overridden.length).map((s) => s.key);
@@ -485,7 +490,7 @@ export function BusbarSchedule({
           <span className="font-semibold">{liveChecked.length} selected</span>
           <span className="opacity-60">Set size</span>
           <select value={bulkBar} onChange={(e) => setBulkBar(e.target.value)} className="rounded bg-surface-container-lowest px-1.5 py-1 text-on-surface">
-            {STANDARD_BARS.map((b) => (
+            {BAR_SIZES[material].map((b) => (
               <option key={barValue(b)} value={barValue(b)}>
                 {b.widthMm} × {b.thicknessMm}
               </option>
