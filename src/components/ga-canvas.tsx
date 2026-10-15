@@ -22,20 +22,26 @@ import { SavingOverlay } from "@/components/saving-overlay";
 import { numericKeyGuard } from "@/lib/numeric-input";
 import {
   ACB_2TIER_OUTGOING_E12,
-  ACB_SIZES,
   DEVICE_TYPE_LABELS,
   MCC_FRONT_ACCESS_PAIR,
   OUTGOING_MCC_BAY,
   lookupAcbBaySpec,
-  lookupFeederBoxHeight,
   suggestAcbFrame,
 } from "@/lib/artuk-sizing";
-import { bayFunctionOf, overrideKey, planBusbars, type BusbarOverride, type BusbarPlan, type BusbarSegment } from "@/lib/busbar-plan";
+import { bayFunctionOf, type BusbarOverride, type BusbarPlan, type BusbarSegment } from "@/lib/busbar-plan";
+import {
+  BUSBAR_CHAMBER_HEIGHT_MM,
+  DEFAULT_COMPARTMENT_HEIGHT_MM,
+  artukBaySize,
+  chamberPositionFor,
+  computeCompartments,
+  overridesFromRows,
+  planForSwitchboard,
+  type BusbarOverrideRow,
+  type VerticalWithFeeders,
+} from "@/lib/ga-layout";
 import { BusbarFrontOverlay, BusbarSchedule, BusbarSegmentPanel, BusbarSideOverlay } from "@/components/ga-busbar-layer";
 
-type VerticalWithFeeders = Vertical & {
-  placed: (PlacedFeeder & { feeder: Feeder })[];
-};
 type PlacedWithFeeder = VerticalWithFeeders["placed"][number];
 
 // One draggable card per physical unit of a feeder waiting to be placed --
@@ -60,8 +66,6 @@ const PANEL_HEIGHT_OPTIONS = [1800, 2000, 2100, 2200];
 // Elevation drawing scale. BUSBAR_CHAMBER_HEIGHT_MM is only the default
 // used when a switchboard has no busbar_chamber_height_mm set yet -- the
 // user can select the busbar chamber in the drawing and edit its real height.
-const BUSBAR_CHAMBER_HEIGHT_MM = 100;
-const DEFAULT_COMPARTMENT_HEIGHT_MM = 150;
 const DRAWING_TARGET_HEIGHT_PX = 520;
 const MIN_PX_PER_MM = 0.12;
 const MAX_PX_PER_MM = 0.6;
@@ -81,56 +85,6 @@ function niceTickStepMm(pxPerMm: number): number {
 }
 
 type HoverExtent = { topMm: number; heightMm: number; bayLeftMm: number; bayWidthMm: number; label: string } | null;
-
-type Compartment = { id: string; label: string; heightMm: number; topMm: number; isBlank: boolean; placedId?: string; unitIndex?: number };
-
-function blankCompartmentLabel(bayType: BayType | null): string {
-  if (bayType === "cable_alley") return "CABLE ALLEY";
-  if (bayType === "busbar_alley") return "BUSBAR ALLEY";
-  return "DUMMY";
-}
-
-// Placed feeders stack top-to-bottom by tier_number (this is the first
-// place tier_number actually drives visual order), each sized by its real
-// ArTuK height when the feeder has a device_type set, else a flat fallback
-// slot so something always renders. Unused height becomes a labeled blank
-// ("DUMMY"/alley) compartment -- vertical.dummy_slot is a flat UNIT index
-// (0..totalUnits, counting every individual unit of every row, not just
-// rows), so the gap can sit anywhere, including between two units of the
-// very same multi-qty row (four merged MCCBs, say), not just between two
-// different rows. totalUnits means "after everything," the default.
-function computeCompartments(vertical: VerticalWithFeeders, panelHeightMm: number): Compartment[] {
-  const sorted = [...vertical.placed].sort((a, b) => a.tier_number - b.tier_number || a.sort_order - b.sort_order);
-  const usedByRows = sorted.reduce((sum, p) => sum + (lookupFeederBoxHeight(p.feeder) ?? DEFAULT_COMPARTMENT_HEIGHT_MM) * p.qty, 0);
-  const dummyHeight = panelHeightMm - usedByRows;
-  const totalUnits = sorted.reduce((sum, p) => sum + p.qty, 0);
-  const dummySlot = Math.min(Math.max(vertical.dummy_slot ?? totalUnits, 0), totalUnits);
-  const dummyId = `${vertical.id}::dummy`;
-
-  const compartments: Compartment[] = [];
-  let used = 0;
-  let unitIndex = 0;
-  const maybePushDummy = () => {
-    if (unitIndex === dummySlot && dummyHeight > 0) {
-      compartments.push({ id: dummyId, placedId: dummyId, label: blankCompartmentLabel(vertical.bay_type), heightMm: dummyHeight, topMm: used, isBlank: true });
-      used += dummyHeight;
-    }
-  };
-  for (const p of sorted) {
-    const heightMm = lookupFeederBoxHeight(p.feeder) ?? DEFAULT_COMPARTMENT_HEIGHT_MM;
-    // A placed_feeders row with qty > 1 (several units of the same feeder
-    // merged into one bay) is that many separate physical devices -- each
-    // gets its own compartment, not one compartment for the whole row.
-    for (let u = 0; u < p.qty; u++) {
-      maybePushDummy();
-      compartments.push({ id: `${p.id}::${u}`, placedId: p.id, unitIndex: u, label: p.feeder.name, heightMm, topMm: used, isBlank: false });
-      used += heightMm;
-      unitIndex++;
-    }
-  }
-  maybePushDummy();
-  return compartments;
-}
 
 // Plain-language explanation of why THIS bay currently has the
 // width/depth it has -- read directly off the same ArTuK sizing lookups
@@ -211,29 +165,7 @@ async function loadGaData(supabase: ReturnType<typeof createClient>, switchboard
     : { data: null };
   const { data: overrideRows } = await supabase.from("busbar_overrides").select("*").eq("switchboard_id", switchboardId);
 
-  const overrides: Record<string, BusbarOverride> = {};
-  for (const r of (overrideRows ?? []) as {
-    kind: BusbarOverride["kind"];
-    vertical_id: string | null;
-    placed_feeder_id: string | null;
-    unit_index: number;
-    bar_width_mm: number | null;
-    bar_thickness_mm: number | null;
-    runs_per_phase: number | null;
-    length_mm: number | null;
-  }[]) {
-    const o: BusbarOverride = {
-      kind: r.kind,
-      verticalId: r.vertical_id,
-      placedFeederId: r.placed_feeder_id,
-      unitIndex: r.unit_index,
-      barWidthMm: r.bar_width_mm != null ? Number(r.bar_width_mm) : null,
-      barThicknessMm: r.bar_thickness_mm != null ? Number(r.bar_thickness_mm) : null,
-      runsPerPhase: r.runs_per_phase,
-      lengthMm: r.length_mm != null ? Number(r.length_mm) : null,
-    };
-    overrides[overrideKey(o)] = o;
-  }
+  const overrides = overridesFromRows((overrideRows ?? []) as BusbarOverrideRow[]);
 
   const densityRow = project as { busbar_density_cu: number; busbar_density_al: number } | null;
   return {
@@ -565,36 +497,20 @@ export function GaCanvas({
   // Physically, the busbar chamber sits away from wherever cables enter the
   // panel (more room to route cable near the entry side); the base plinth
   // is always the floor support, so it stays at the very bottom regardless.
-  const busbarPosition: "top" | "bottom" = sb?.cable_entry === "Top" ? "bottom" : "top";
+  const busbarPosition = chamberPositionFor(sb?.cable_entry ?? null);
 
   // Live busbar routing/sizing for the current draft layout -- recomputed on
   // every render so it always follows the bays/feeders as they're edited;
   // only the user's deliberate overrides are stored.
   const busbarMaterial: "Cu" | "Al" = sb?.busbar ?? "Cu";
   const busbarPlan: BusbarPlan | null = sb
-    ? planBusbars({
-        bays: bays.map((v, i) => ({
-          id: v.id,
-          name: v.name,
-          bayType: v.bay_type,
-          widthMm: v.width_mm ?? 0,
-          depthMm: v.depth_mm,
-          leftMm: bayOffsets[i],
-          placed: v.placed.map((p) => ({ id: p.id, qty: p.qty, feeder: p.feeder })),
-          compartments: computeCompartments(v, panelHeight)
-            .filter((c) => !c.isBlank && c.placedId)
-            .map((c) => ({ placedId: c.placedId!, unitIndex: c.unitIndex ?? 0, topMm: c.topMm, heightMm: c.heightMm })),
-        })),
+    ? planForSwitchboard({
+        params: sb,
+        verticals: bays,
+        overrides: busbarOverrides,
+        densities,
         panelHeightMm: panelHeight,
         chamberHeightMm: busbarHeight,
-        chamberPosition: busbarPosition,
-        material: busbarMaterial,
-        densityAPerMm2: densities[busbarMaterial],
-        poles: sb.poles ?? 4,
-        neutralPct: sb.neutral_size_pct ?? 100,
-        switchboardAmps: sb.amps,
-        defaultDepthMm: sideViewDepthMm,
-        overrides: busbarOverrides,
       })
     : null;
   const selectedSegment = busbarPlan?.segments.find((seg) => seg.key === selectedSegmentKey) ?? null;
@@ -756,27 +672,8 @@ export function GaCanvas({
     if (!sb || readOnly) return;
     setVerticals(
       verticals.map((v) => {
-        if (v.bay_type === "cable_alley" || v.bay_type === "busbar_alley" || v.bay_type === "unassigned") return v;
-        const acbUnits = v.placed.filter((p) => p.feeder.device_type === "ACB");
-        if (acbUnits.length > 0) {
-          const p = acbUnits[0];
-          if (p.feeder.rated_current == null) return v;
-          const frame = suggestAcbFrame(p.feeder.rated_current);
-          const fn = bayFunctionOf(p.feeder) ?? "outgoing";
-          let spec = lookupAcbBaySpec(frame, fn);
-          if (!spec) {
-            // No dedicated ArTuK bay-spec row for this combination (only
-            // happens for E4.2/E6.2 bus-coupler, absent from the source's
-            // 11 sample rows) -- fall back to the device's own generic
-            // dimensions, using the same 1037mm depth as the rest of the board.
-            const bracket = ACB_SIZES.find((b) => b.frame === frame);
-            if (bracket) spec = { frame, function: fn, widthMm: bracket.width4P100, heightMm: 2231, depthMm: 1037, ipRating: 54, form: "4b", label: "" };
-          }
-          return spec ? { ...v, width_mm: spec.widthMm, depth_mm: spec.depthMm } : v;
-        }
-        const hasOtherClassified = v.placed.some((p) => p.feeder.device_type && p.feeder.device_type !== "ACB" && p.feeder.device_type !== "OTHER");
-        if (hasOtherClassified) return { ...v, width_mm: OUTGOING_MCC_BAY.widthMm, depth_mm: OUTGOING_MCC_BAY.depthMm };
-        return v;
+        const size = artukBaySize(v);
+        return size ? { ...v, width_mm: size.widthMm, depth_mm: size.depthMm } : v;
       })
     );
   }

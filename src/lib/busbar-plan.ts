@@ -217,7 +217,7 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
   const incomerRatings: number[] = [];
   for (const bay of bays) {
     for (const p of bay.placed) {
-      if (isIncomer(p.feeder, bay) && p.feeder.rated_current != null) incomerRatings.push(p.feeder.rated_current);
+      if (isIncomerFeeder(p.feeder, bay.bayType) && p.feeder.rated_current != null) incomerRatings.push(p.feeder.rated_current);
     }
   }
   const mainCurrent = input.switchboardAmps ?? (incomerRatings.length ? Math.max(...incomerRatings) : null);
@@ -270,7 +270,7 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
       const unitName = placed.qty > 1 ? `${f.name} #${c.unitIndex + 1}` : f.name;
       const noRating = f.rated_current == null ? ["No rated current on this feeder — set it in BOM Builder to size this bar."] : [];
 
-      if (isIncomer(f, bay)) {
+      if (isIncomerFeeder(f, bay.bayType)) {
         const current = f.rated_current ?? mainCurrent;
         const terminalY = nearChamberY(c);
         drafts.push({
@@ -413,10 +413,10 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
   return { segments, chamberMidY, totalWeightKg, warnings: planWarnings };
 }
 
-function isIncomer(feeder: Feeder, bay: Pick<PlanBay, "bayType">): boolean {
+export function isIncomerFeeder(feeder: Feeder, bayType: BayType | null): boolean {
   const fn = bayFunctionOf(feeder);
   if (fn === "incomer") return true;
-  return bay.bayType === "incomer" && fn !== "outgoing" && fn !== "bus_coupler";
+  return bayType === "incomer" && fn !== "outgoing" && fn !== "bus_coupler";
 }
 
 function finishSegment(

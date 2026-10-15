@@ -7,6 +7,18 @@ import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { LookupSelect } from "@/components/lookup-select";
 import { StageStepper } from "@/components/stage-stepper";
+import { AlertsPanel, ImpactReviewDialog } from "@/components/project-impact-ui";
+import {
+  IMPACT_FIELDS,
+  actionsFor,
+  applyActions,
+  auditProject,
+  computeImpact,
+  loadProjectData,
+  type Densities,
+  type ProjectData,
+  type ReviewItem,
+} from "@/lib/project-impact";
 import { COUNTRIES } from "@/lib/countries";
 import { CURRENCIES } from "@/lib/currencies";
 import { formatMoneyDual } from "@/lib/money";
@@ -66,6 +78,10 @@ type ProjectPatch = {
   busbar_density_cu: number;
   busbar_density_al: number;
 };
+
+function densitiesOf(p: ProjectPatch): Densities {
+  return { Cu: Number(p.busbar_density_cu), Al: Number(p.busbar_density_al) };
+}
 
 function snapshotOf(project: Project): ProjectPatch {
   return {
@@ -167,13 +183,104 @@ export function ProjectDetailTab({
   const boardsDirty = JSON.stringify(boards) !== JSON.stringify(boardsSnapshot);
   const dirty = JSON.stringify(form) !== JSON.stringify(savedSnapshot) || boardsDirty;
 
+  // Every switchboard in the project (all live revisions), for the Save-time
+  // impact review and the Alerts section. Reloaded after each save/fix and
+  // whenever the server copy of this revision's boards changes.
+  const [projectData, setProjectData] = useState<ProjectData | null>(null);
+  const [dataVersion, setDataVersion] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await loadProjectData(supabase, project.id);
+        if (!cancelled) setProjectData(data);
+      } catch {
+        // alerts are advisory -- a failed load just hides them
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, project.id, switchboards, dataVersion]);
+
+  const alerts = useMemo(
+    () => (projectData ? auditProject(projectData, densitiesOf(savedSnapshot), currentUserId, isAdmin) : []),
+    [projectData, savedSnapshot, currentUserId, isAdmin]
+  );
+  const [review, setReview] = useState<ReviewItem[] | null>(null);
+  const [applyingFixes, setApplyingFixes] = useState(false);
+
+  // Save first checks what the change does to every switchboard's GA and
+  // busbars; when anything is affected the user reviews it (tick to apply)
+  // before anything is written.
   async function handleSave() {
+    const before = densitiesOf(savedSnapshot);
+    const after = densitiesOf(form);
+    const draftBoards = new Map<string, Partial<Switchboard>>();
+    for (const b of boards) {
+      const prev = boardsSnapshot.find((x) => x.switchboard.id === b.switchboard.id);
+      if (!prev) continue;
+      const changed: Partial<Switchboard> = {};
+      for (const key of IMPACT_FIELDS) {
+        if (b.switchboard[key] !== prev.switchboard[key]) (changed as Record<string, unknown>)[key] = b.switchboard[key];
+      }
+      if (Object.keys(changed).length > 0) draftBoards.set(b.switchboard.id, changed);
+    }
+    if (before.Cu !== after.Cu || before.Al !== after.Al || draftBoards.size > 0) {
+      setSaving(true);
+      let items: ReviewItem[] = [];
+      try {
+        const data = await loadProjectData(supabase, project.id);
+        items = computeImpact({ data, before, after, draftBoards, currentUserId, isAdmin });
+      } catch (e) {
+        setSaving(false);
+        alert(`Could not check the project for the effect of this change: ${(e as Error).message}`);
+        return;
+      }
+      setSaving(false);
+      if (items.length > 0) {
+        setReview(items);
+        return;
+      }
+    }
+    await persist();
+  }
+
+  async function handleApproveReview(ticked: Set<string>) {
+    const items = review ?? [];
+    setReview(null);
+    if (!(await persist())) return;
+    setSaving(true);
+    try {
+      await applyActions(supabase, actionsFor(items, ticked));
+    } catch (e) {
+      alert(`Saved, but some changes could not be applied: ${(e as Error).message}`);
+    }
+    setSaving(false);
+    setDataVersion((v) => v + 1);
+  }
+
+  async function handleApplyAlertFixes(ids: Set<string>) {
+    setApplyingFixes(true);
+    try {
+      await applyActions(
+        supabase,
+        alerts.filter((i) => ids.has(i.id) && i.apply && !i.blockedReason).map((i) => i.apply!)
+      );
+    } catch (e) {
+      alert(`Some fixes could not be applied: ${(e as Error).message}`);
+    }
+    setApplyingFixes(false);
+    setDataVersion((v) => v + 1);
+  }
+
+  async function persist(): Promise<boolean> {
     setSaving(true);
     const { error: projectError } = await supabase.from("projects").update(form).eq("id", project.id);
     if (projectError) {
       setSaving(false);
       alert(projectError.message);
-      return;
+      return false;
     }
 
     for (const b of boards) {
@@ -190,7 +297,7 @@ export function ProjectDetailTab({
       if (error) {
         setSaving(false);
         alert(`Could not save "${b.switchboard.tag}": ${error.message}`);
-        return;
+        return false;
       }
     }
 
@@ -198,23 +305,25 @@ export function ProjectDetailTab({
     setSavedSnapshot(form);
     setBoardsSnapshot(boards);
     setJustSaved(true);
+    setDataVersion((v) => v + 1);
+    return true;
   }
 
   // Ctrl+S / Cmd+S saves the whole page (project fields + switchboard
   // table), same as clicking "Save Changes". Tracked via a ref (updated on
   // every render) so the listener stays mounted once while always calling
   // the freshest save function instead of one captured from a stale render.
-  const keyboardSaveRef = useRef({ dirty, saving, handleSave: () => {} });
+  const keyboardSaveRef = useRef({ dirty, saving, review: null as ReviewItem[] | null, handleSave: () => {} });
   useEffect(() => {
-    keyboardSaveRef.current = { dirty, saving, handleSave };
+    keyboardSaveRef.current = { dirty, saving, review, handleSave };
   });
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        const { dirty, saving, handleSave } = keyboardSaveRef.current;
-        if (!revisionArchived && dirty && !saving) handleSave();
+        const { dirty, saving, review, handleSave } = keyboardSaveRef.current;
+        if (!revisionArchived && dirty && !saving && !review) handleSave();
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -351,6 +460,7 @@ export function ProjectDetailTab({
   return (
     <div className="w-full">
       <SavingOverlay show={saving} />
+      {review && <ImpactReviewDialog items={review} onApprove={handleApproveReview} onCancel={() => setReview(null)} />}
       <div className="flex flex-wrap items-center justify-between gap-space-md border-b border-surface-container-high bg-surface-container-lowest px-margin-lg py-space-lg">
         <div>
           <div className="flex items-center gap-2">
@@ -385,6 +495,21 @@ export function ProjectDetailTab({
       </div>
 
       <div className="space-y-space-lg p-margin-lg">
+        <AlertsPanel
+          items={alerts}
+          loading={projectData == null}
+          readOnly={revisionArchived}
+          applying={applyingFixes}
+          onApply={handleApplyAlertFixes}
+          onOpenBoard={(id) => {
+            if (!boards.some((b) => b.switchboard.id === id)) {
+              alert("That switchboard is in another revision — open that revision to edit it.");
+              return;
+            }
+            if (confirmDiscardUnsaved()) onOpenSwitchboard(id, "ga");
+          }}
+        />
+
         {/* Stage */}
         <div className="rounded-xl bg-surface-container-lowest p-space-lg shadow-sm">
           <div className="mb-space-md flex items-center justify-between">
