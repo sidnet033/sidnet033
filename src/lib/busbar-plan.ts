@@ -80,6 +80,10 @@ export type BusbarOverride = {
   barThicknessMm: number | null;
   runsPerPhase: number | null;
   lengthMm: number | null;
+  // set by dragging a bar's end in the drawing: mm added at the first /
+  // last point of its path (negative shortens). A typed lengthMm wins.
+  startExtMm?: number | null;
+  endExtMm?: number | null;
 };
 
 export function segmentKey(kind: BusbarKind, verticalId: string | null, placedFeederId: string | null, unitIndex: number): string {
@@ -419,6 +423,21 @@ export function isIncomerFeeder(feeder: Feeder, bayType: BayType | null): boolea
   return bayType === "incomer" && fn !== "outgoing" && fn !== "bus_coupler";
 }
 
+// Moves a polyline's first point back along its first leg by `startExt`
+// and its last point on along its last leg by `endExt` (negative = shorter).
+export function stretchPath(path: Point[], startExt: number, endExt: number): Point[] {
+  if (path.length < 2 || (startExt === 0 && endExt === 0)) return path;
+  const out = path.map((p) => ({ ...p }));
+  const move = (from: Point, to: Point, by: number): Point => {
+    const len = Math.hypot(to.x - from.x, to.y - from.y);
+    if (len === 0) return to;
+    return { x: to.x + ((to.x - from.x) / len) * by, y: to.y + ((to.y - from.y) / len) * by };
+  };
+  out[0] = move(path[1], path[0], startExt);
+  out[out.length - 1] = move(path[path.length - 2], path[path.length - 1], endExt);
+  return out;
+}
+
 function finishSegment(
   d: DraftSegment,
   ctx: { material: BusbarMaterial; densityAPerMm2: number; hasNeutral: boolean; neutralPct: number; overrides: Record<string, BusbarOverride> }
@@ -428,10 +447,13 @@ function finishSegment(
   const auto = autoSize(d.designCurrentA, ctx.densityAPerMm2, ctx.material);
   const sizeOverridden = !!o && o.barWidthMm != null && o.barThicknessMm != null;
   const runsOverridden = !!o && o.runsPerPhase != null;
-  const lengthOverridden = !!o && o.lengthMm != null;
+  const startExt = o?.startExtMm ?? 0;
+  const endExt = o?.endExtMm ?? 0;
+  const lengthOverridden = !!o && (o.lengthMm != null || startExt !== 0 || endExt !== 0);
   const bar = sizeOverridden ? { widthMm: o!.barWidthMm!, thicknessMm: o!.barThicknessMm! } : (auto?.bar ?? null);
   const runs = runsOverridden ? o!.runsPerPhase! : (auto?.runs ?? 1);
-  const lengthMm = lengthOverridden ? o!.lengthMm! : d.autoLengthMm;
+  const lengthMm = o?.lengthMm != null ? o.lengthMm : Math.max(0, Math.round(d.autoLengthMm + startExt + endExt));
+  const path = o?.lengthMm == null ? stretchPath(d.path, startExt, endExt) : d.path;
 
   let neutral: { bar: BarSize; runs: number } | null = null;
   if (ctx.hasNeutral && bar) {
@@ -446,6 +468,7 @@ function finishSegment(
 
   return {
     ...d,
+    path,
     key,
     requiredAreaMm2: d.designCurrentA != null ? Math.round(d.designCurrentA / ctx.densityAPerMm2) : null,
     auto,

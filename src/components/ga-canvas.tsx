@@ -31,6 +31,7 @@ import {
 import { bayFunctionOf, type BusbarOverride, type BusbarPlan, type BusbarSegment } from "@/lib/busbar-plan";
 import {
   BUSBAR_CHAMBER_HEIGHT_MM,
+  DEFAULT_BAY_DEPTH_MM,
   DEFAULT_COMPARTMENT_HEIGHT_MM,
   artukBaySize,
   chamberPositionFor,
@@ -333,6 +334,9 @@ export function GaCanvas({
   const [selectedBayId, setSelectedBayId] = useState<string | null>(null);
   const [selectedPlacedId, setSelectedPlacedId] = useState<string | null>(null);
   const [busbarSelected, setBusbarSelected] = useState(false);
+  // bay shown in the side view (null = whole switchboard); follows the bay
+  // last clicked in the front view, or is picked from the side view's menu
+  const [sideBayId, setSideBayId] = useState<string | null>(null);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
   const [sizingLogicOpen, setSizingLogicOpen] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -488,10 +492,12 @@ export function GaCanvas({
   const pxPerMm = computePxPerMm(totalHeightMm);
   const selectedBay = bays.find((v) => v.id === selectedBayId) ?? null;
 
-  // Side view has no bay-by-bay breakdown (all bays share one front-view
-  // face) -- it's one profile using the deepest bay's depth, so the drawing
-  // never understates how far the enclosure actually projects.
-  const sideViewDepthMm = Math.max(0, ...bays.map((v) => v.depth_mm ?? 0)) || 600;
+  // Side view: the whole switchboard uses the deepest bay's depth (so the
+  // drawing never understates how far the enclosure projects); a single
+  // bay chosen for the side view uses its own depth.
+  const sideBay = bays.find((v) => v.id === sideBayId) ?? null;
+  const deepestBayMm = Math.max(0, ...bays.map((v) => v.depth_mm ?? 0)) || DEFAULT_BAY_DEPTH_MM;
+  const sideViewDepthMm = sideBay ? (sideBay.depth_mm ?? deepestBayMm) : deepestBayMm;
   const sideViewWidthPx = Math.max(sideViewDepthMm * pxPerMm, 1);
 
   // Physically, the busbar chamber sits away from wherever cables enter the
@@ -515,7 +521,10 @@ export function GaCanvas({
     : null;
   const selectedSegment = busbarPlan?.segments.find((seg) => seg.key === selectedSegmentKey) ?? null;
 
-  function patchSegmentOverrides(segs: BusbarSegment[], patch: Partial<Pick<BusbarOverride, "barWidthMm" | "barThicknessMm" | "runsPerPhase" | "lengthMm">>) {
+  function patchSegmentOverrides(
+    segs: BusbarSegment[],
+    patch: Partial<Pick<BusbarOverride, "barWidthMm" | "barThicknessMm" | "runsPerPhase" | "lengthMm" | "startExtMm" | "endExtMm">>
+  ) {
     setBusbarOverrides((prev) => {
       const next = { ...prev };
       for (const seg of segs) {
@@ -530,11 +539,34 @@ export function GaCanvas({
           lengthMm: null,
         };
         const merged = { ...base, ...patch };
-        if (merged.barWidthMm == null && merged.barThicknessMm == null && merged.runsPerPhase == null && merged.lengthMm == null) delete next[seg.key];
+        if (
+          merged.barWidthMm == null &&
+          merged.barThicknessMm == null &&
+          merged.runsPerPhase == null &&
+          merged.lengthMm == null &&
+          !merged.startExtMm &&
+          !merged.endExtMm
+        )
+          delete next[seg.key];
         else next[seg.key] = merged;
       }
       return next;
     });
+  }
+
+  // A dragged bar end: add the drag to that end's stored extension (a
+  // typed length gives way to the drag).
+  function stretchSegment(key: string, end: "start" | "end", deltaMm: number) {
+    const seg = busbarPlan?.segments.find((x) => x.key === key);
+    if (!seg) return;
+    const o = busbarOverrides[key];
+    const field = end === "start" ? "startExtMm" : "endExtMm";
+    const other = (end === "start" ? o?.endExtMm : o?.startExtMm) ?? 0;
+    // new length = what's shown now + the drag; stored as this end's
+    // extension over the auto length (so a typed length carries over)
+    const ext = Math.round(seg.lengthMm + deltaMm - seg.autoLengthMm - other);
+    patchSegmentOverrides([seg], { [field]: ext || null, lengthMm: null });
+    setResetKey((k) => k + 1);
   }
 
   function resetSegmentOverrides(keys: string[]) {
@@ -925,6 +957,8 @@ export function GaCanvas({
             bar_thickness_mm: o.barThicknessMm,
             runs_per_phase: o.runsPerPhase,
             length_mm: o.lengthMm,
+            start_ext_mm: o.startExtMm || null,
+            end_ext_mm: o.endExtMm || null,
             updated_at: new Date().toISOString(),
           }));
         const { error: delError } = await supabase.from("busbar_overrides").delete().eq("switchboard_id", sb.id);
@@ -1003,9 +1037,8 @@ export function GaCanvas({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // "F" toggles fullscreen (ignored while typing in a field); Escape exits
-  // it -- browsers already bind Escape to exit native fullscreen on their
-  // own, but this makes it explicit and doesn't hurt.
+  // "F" toggles fullscreen and Escape deselects everything (both ignored
+  // while typing in a field).
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const tag = (document.activeElement?.tagName ?? "").toLowerCase();
@@ -1013,8 +1046,14 @@ export function GaCanvas({
       if (e.key.toLowerCase() === "f" && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         toggleFullscreen();
-      } else if (e.key === "Escape" && document.fullscreenElement) {
-        document.exitFullscreen();
+      } else if (e.key === "Escape") {
+        // Escape clears every selection on the canvas (bay, feeder, busbar,
+        // busbar chamber) -- and leaves fullscreen if it's on.
+        setSelectedBayId(null);
+        setSelectedPlacedId(null);
+        setSelectedSegmentKey(null);
+        setBusbarSelected(false);
+        if (document.fullscreenElement) document.exitFullscreen();
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -1345,12 +1384,14 @@ export function GaCanvas({
                               cableExit={sb.cable_exit}
                               onSelectBay={() => {
                                 setSelectedBayId(v.id);
+                                setSideBayId(v.id);
                                 setSelectedPlacedId(null);
                                 setBusbarSelected(false);
                                 setSelectedSegmentKey(null);
                               }}
                               onSelectFeeder={(placedId) => {
                                 setSelectedBayId(v.id);
+                                setSideBayId(v.id);
                                 setSelectedPlacedId(placedId);
                                 setBusbarSelected(false);
                                 setSelectedSegmentKey(null);
@@ -1398,6 +1439,9 @@ export function GaCanvas({
                           material={busbarMaterial}
                           selectedKey={selectedSegmentKey}
                           onSelect={selectSegment}
+                          pxPerMm={pxPerMm}
+                          readOnly={readOnly}
+                          onStretch={stretchSegment}
                         />
                       )}
 
@@ -1431,7 +1475,20 @@ export function GaCanvas({
                   </div>
 
                   <div className="inline-block">
-                    <ViewLabel>Side View</ViewLabel>
+                    <ViewLabel>Side View{sideBay ? ` — ${sideBay.name}` : ""}</ViewLabel>
+                    <select
+                      value={sideBayId ?? ""}
+                      onChange={(e) => setSideBayId(e.target.value || null)}
+                      title="Show one bay's devices, terminals and busbars"
+                      className="mb-1 max-w-[220px] rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-0.5 text-[11px] text-on-surface"
+                    >
+                      <option value="">Whole switchboard</option>
+                      {bays.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.name}
+                        </option>
+                      ))}
+                    </select>
                     {sb.std === "ArTuK" && (
                       <div
                         className="flex items-center justify-center bg-red-600 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-white"
@@ -1444,14 +1501,28 @@ export function GaCanvas({
                       {busbarPosition === "top" && <DrawingBar label={chamberCaption} heightPx={busbarHeight * pxPerMm} widthPx={sideViewWidthPx} />}
                       <div className="border border-black/70 bg-white" style={{ width: sideViewWidthPx, height: Math.max(panelHeight * pxPerMm, 2) }} />
                       {busbarPosition === "bottom" && <DrawingBar label={chamberCaption} heightPx={busbarHeight * pxPerMm} widthPx={sideViewWidthPx} />}
-                      {showBusbars && busbarPlan && (
+                      {(showBusbars || sideBay) && (
                         <BusbarSideOverlay
                           plan={busbarPlan}
                           widthPx={sideViewWidthPx}
                           heightPx={chamberPx + panelPx}
                           depthMm={sideViewDepthMm}
                           yPx={busbarYPx}
+                          pxPerMm={pxPerMm}
+                          chamberPx={chamberPx}
                           material={busbarMaterial}
+                          hasNeutral={(sb.poles ?? 4) >= 4}
+                          showBars={showBusbars}
+                          bay={
+                            sideBay
+                              ? {
+                                  id: sideBay.id,
+                                  name: sideBay.name,
+                                  compartments: computeCompartments(sideBay, panelHeight),
+                                  panelTopMm: busbarPosition === "top" ? busbarHeight : 0,
+                                }
+                              : null
+                          }
                           selectedKey={selectedSegmentKey}
                           onSelect={selectSegment}
                         />

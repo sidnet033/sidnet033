@@ -33,9 +33,20 @@ export function blankCompartmentLabel(bayType: BayType | null): string {
 // rows), so the gap can sit anywhere, including between two units of the
 // very same multi-qty row (four merged MCCBs, say), not just between two
 // different rows. totalUnits means "after everything," the default.
+// A placed unit's compartment height. ACBs aren't in the MCC stacking table
+// (they get a dedicated ArTuK bay) -- their compartment is the Emax 2
+// frame's own height from the ACB catalog, picked by rated current.
+export function compartmentHeightFor(feeder: Feeder): number {
+  if (feeder.device_type === "ACB" && feeder.rated_current != null) {
+    const bracket = ACB_SIZES.find((b) => feeder.rated_current! <= b.uptoAmps) ?? ACB_SIZES[ACB_SIZES.length - 1];
+    if (bracket.height != null) return bracket.height;
+  }
+  return lookupFeederBoxHeight(feeder) ?? DEFAULT_COMPARTMENT_HEIGHT_MM;
+}
+
 export function computeCompartments(vertical: VerticalWithFeeders, panelHeightMm: number): Compartment[] {
   const sorted = [...vertical.placed].sort((a, b) => a.tier_number - b.tier_number || a.sort_order - b.sort_order);
-  const usedByRows = sorted.reduce((sum, p) => sum + (lookupFeederBoxHeight(p.feeder) ?? DEFAULT_COMPARTMENT_HEIGHT_MM) * p.qty, 0);
+  const usedByRows = sorted.reduce((sum, p) => sum + compartmentHeightFor(p.feeder) * p.qty, 0);
   const dummyHeight = panelHeightMm - usedByRows;
   const totalUnits = sorted.reduce((sum, p) => sum + p.qty, 0);
   const dummySlot = Math.min(Math.max(vertical.dummy_slot ?? totalUnits, 0), totalUnits);
@@ -51,7 +62,7 @@ export function computeCompartments(vertical: VerticalWithFeeders, panelHeightMm
     }
   };
   for (const p of sorted) {
-    const heightMm = lookupFeederBoxHeight(p.feeder) ?? DEFAULT_COMPARTMENT_HEIGHT_MM;
+    const heightMm = compartmentHeightFor(p.feeder);
     // A placed_feeders row with qty > 1 (several units of the same feeder
     // merged into one bay) is that many separate physical devices -- each
     // gets its own compartment, not one compartment for the whole row.
@@ -101,6 +112,8 @@ export type BusbarOverrideRow = {
   bar_thickness_mm: number | null;
   runs_per_phase: number | null;
   length_mm: number | null;
+  start_ext_mm?: number | null;
+  end_ext_mm?: number | null;
 };
 
 export function overridesFromRows(rows: BusbarOverrideRow[]): Record<string, BusbarOverride> {
@@ -115,6 +128,8 @@ export function overridesFromRows(rows: BusbarOverrideRow[]): Record<string, Bus
       barThicknessMm: r.bar_thickness_mm != null ? Number(r.bar_thickness_mm) : null,
       runsPerPhase: r.runs_per_phase,
       lengthMm: r.length_mm != null ? Number(r.length_mm) : null,
+      startExtMm: r.start_ext_mm != null ? Number(r.start_ext_mm) : null,
+      endExtMm: r.end_ext_mm != null ? Number(r.end_ext_mm) : null,
     };
     overrides[overrideKey(o)] = o;
   }

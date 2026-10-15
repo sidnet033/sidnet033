@@ -300,9 +300,14 @@ export function HowItWorks() {
               </>,
               <>
                 To change a bar, click it in the drawing (or a row in the <b>Busbar Schedule</b>) and pick a size, runs per phase or
-                length. Use the schedule&apos;s bulk edit for several bars at once, and <b>Reset to auto</b> to go back to the automatic size.
+                length — or drag the square handles at its ends to stretch or shorten it. Use the schedule&apos;s bulk edit for several bars
+                at once, and <b>Reset to auto</b> to go back to the automatic size. <b>Esc</b> clears any selection.
               </>,
-              <>Bar sizes and lengths flow into the BOM&apos;s busbar lines and the costing automatically.</>,
+              <>
+                The <b>Side View</b> menu shows one bay at a time: its devices, their rear terminals and every bar serving them (riser, cable
+                link, dropper, feeder links, main bar end-on), each drawn as phases × runs with its size and current.
+              </>,
+              <>Bar sizes and lengths flow into the BOM&apos;s busbar lines and the costing once the GA is saved.</>,
             ]}
           />
         </Section>
@@ -391,7 +396,7 @@ export function HowItWorks() {
                 [<Bar key="5" color="#ea580c" />, "Copper feeder / ACB links."],
                 [<Bar key="6" color="#475569" />, "Aluminium main bar, risers and droppers."],
                 [<Bar key="7" color="#64748b" />, "Aluminium feeder / ACB links."],
-                [<Bar key="8" color="#1d4ed8" />, "Incomer cable link (customer's incoming cables)."],
+                [<Bar key="8" color="#dc2626" />, "Side view: phase R (Y yellow, B blue, N black) — one line per bar run."],
                 [<Bar key="9" color="#dc2626" />, "Undersized bar — too small for its current."],
                 [<Bar key="10" color="#006194" />, "The bar you've selected."],
               ]}
