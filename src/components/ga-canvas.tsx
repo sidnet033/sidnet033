@@ -333,6 +333,8 @@ export function GaCanvas({
   const [hover, setHover] = useState<HoverExtent>(null);
   const [selectedBayId, setSelectedBayId] = useState<string | null>(null);
   const [selectedPlacedId, setSelectedPlacedId] = useState<string | null>(null);
+  // which unit of a multi-qty row is selected (a row of 4 MCCBs is 4 units)
+  const [selectedUnitIndex, setSelectedUnitIndex] = useState(0);
   const [busbarSelected, setBusbarSelected] = useState(false);
   // bay shown in the side view: the bay last clicked in the front view.
   // Selecting one of its busbars keeps it; deselecting the bay (Esc, click
@@ -745,71 +747,55 @@ export function GaCanvas({
   // dummy's own unit index shifts along with whichever half of that pair
   // it's nested in, so it stays visually in the same place relative to the
   // units around it instead of jumping.
-  function moveFeeder(bayId: string, placedId: string, direction: "up" | "down") {
+  function moveFeeder(bayId: string, placedId: string, unitIndex: number, direction: "up" | "down") {
     const bay = verticals.find((v) => v.id === bayId);
     if (!bay) return;
-    const sorted = [...bay.placed].sort((a, b) => a.tier_number - b.tier_number || a.sort_order - b.sort_order);
     const dummyId = `${bayId}::dummy`;
-    const totalUnits = sorted.reduce((sum, p) => sum + p.qty, 0);
-    const dummyIndex = Math.min(Math.max(bay.dummy_slot ?? totalUnits, 0), totalUnits);
 
-    if (placedId === dummyId) {
-      const next = direction === "up" ? dummyIndex - 1 : dummyIndex + 1;
-      if (next < 0 || next > totalUnits) return;
-      setVerticals(verticals.map((v) => (v.id === bayId ? { ...v, dummy_slot: next } : v)));
-      return;
+    // The bay as drawn, one entry per physical unit (plus the blank space
+    // when it shows). Moving swaps ONE unit with its neighbour -- so one of
+    // four merged MCCBs can leave the group -- then the rows are rebuilt:
+    // runs of identical adjacent units merge back into one row, a split row
+    // keeps its id on its first run and the rest get new rows.
+    const seq = computeCompartments(bay, panelHeight).map((c) => ({ isBlank: c.isBlank, placedId: c.placedId!, unitIndex: c.unitIndex ?? 0 }));
+    const pos = seq.findIndex((e) => (placedId === dummyId ? e.isBlank : !e.isBlank && e.placedId === placedId && e.unitIndex === unitIndex));
+    const target = direction === "up" ? pos - 1 : pos + 1;
+    if (pos === -1 || target < 0 || target >= seq.length) return;
+    [seq[pos], seq[target]] = [seq[target], seq[pos]];
+
+    const rowsById = new Map(bay.placed.map((p) => [p.id, p]));
+    const groups: { row: PlacedWithFeeder; units: { placedId: string; unitIndex: number }[] }[] = [];
+    let dummySlot = bay.dummy_slot;
+    let unitsSoFar = 0;
+    for (const e of seq) {
+      if (e.isBlank) {
+        dummySlot = unitsSoFar;
+        continue;
+      }
+      const row = rowsById.get(e.placedId)!;
+      const last = groups[groups.length - 1];
+      if (last && last.row.feeder_id === row.feeder_id && last.row.label_override === row.label_override) last.units.push(e);
+      else groups.push({ row, units: [e] });
+      unitsSoFar++;
     }
 
-    const rowIdx = sorted.findIndex((p) => p.id === placedId);
-    if (rowIdx === -1) return;
-    const row = sorted[rowIdx];
-    let start = 0;
-    for (let i = 0; i < rowIdx; i++) start += sorted[i].qty;
-    const end = start + row.qty;
+    const usedIds = new Set<string>();
+    let selection = { placedId, unitIndex };
+    const rebuilt = groups.map((g, i) => {
+      const preferred = g.units.map((u) => u.placedId).find((id) => !usedIds.has(id));
+      const id = preferred ?? newId();
+      usedIds.add(id);
+      g.units.forEach((u, k) => {
+        if (u.placedId === placedId && u.unitIndex === unitIndex) selection = { placedId: id, unitIndex: k };
+      });
+      return { ...g.row, id, qty: g.units.length, tier_number: i + 1, sort_order: i };
+    });
 
-    // The dummy sitting exactly at this row's near edge just steps to its
-    // far edge -- the row itself doesn't need to move for that.
-    if (direction === "up" && dummyIndex === start) {
-      setVerticals(verticals.map((v) => (v.id === bayId ? { ...v, dummy_slot: end } : v)));
-      return;
+    setVerticals(verticals.map((v) => (v.id === bayId ? { ...v, placed: rebuilt, dummy_slot: dummySlot } : v)));
+    if (placedId !== dummyId) {
+      setSelectedPlacedId(selection.placedId);
+      setSelectedUnitIndex(selection.unitIndex);
     }
-    if (direction === "down" && dummyIndex === end) {
-      setVerticals(verticals.map((v) => (v.id === bayId ? { ...v, dummy_slot: start } : v)));
-      return;
-    }
-
-    const otherIdx = direction === "up" ? rowIdx - 1 : rowIdx + 1;
-    if (otherIdx < 0 || otherIdx >= sorted.length) return;
-    const other = sorted[otherIdx];
-
-    let newDummyIndex: number | null = null;
-    if (dummyIndex > start && dummyIndex < end) {
-      // Nested inside the row being moved -- travels with it.
-      newDummyIndex = dummyIndex + (direction === "up" ? -other.qty : other.qty);
-    } else if (direction === "up" && dummyIndex > start - other.qty && dummyIndex < start) {
-      // Nested inside the row it's swapping with.
-      newDummyIndex = dummyIndex + row.qty;
-    } else if (direction === "down" && dummyIndex > end && dummyIndex < end + other.qty) {
-      newDummyIndex = dummyIndex - row.qty;
-    }
-
-    setVerticals(
-      verticals.map((v) =>
-        v.id !== bayId
-          ? v
-          : {
-              ...v,
-              dummy_slot: newDummyIndex ?? v.dummy_slot,
-              placed: v.placed.map((p) =>
-                p.id === row.id
-                  ? { ...p, tier_number: other.tier_number, sort_order: other.sort_order }
-                  : p.id === other.id
-                    ? { ...p, tier_number: row.tier_number, sort_order: row.sort_order }
-                    : p
-              ),
-            }
-      )
-    );
   }
 
   // A unit dropped from the available-feeders list moves exactly one unit
@@ -929,6 +915,7 @@ export function GaCanvas({
           const fieldPatch: Partial<PlacedFeeder> = {};
           if (!prevVertical || prevVertical.id !== v.id) fieldPatch.vertical_id = realVerticalId;
           if (!prev || prev.sort_order !== p.sort_order) fieldPatch.sort_order = p.sort_order;
+          if (!prev || prev.tier_number !== p.tier_number) fieldPatch.tier_number = p.tier_number;
           if (!prev || prev.qty !== p.qty) fieldPatch.qty = p.qty;
           if (Object.keys(fieldPatch).length === 0) continue;
           const { error } = await supabase.from("placed_feeders").update(fieldPatch).eq("id", p.id);
@@ -1025,9 +1012,9 @@ export function GaCanvas({
   // selected bay, Up/Down moves the selected feeder within its bay (same
   // action as the overlay arrow buttons on the drawing). Ignored while
   // typing in a text field, and while read-only.
-  const keyboardMoveRef = useRef({ readOnly, selectedBayId, selectedPlacedId, moveBay, moveFeeder });
+  const keyboardMoveRef = useRef({ readOnly, selectedBayId, selectedPlacedId, selectedUnitIndex, moveBay, moveFeeder });
   useEffect(() => {
-    keyboardMoveRef.current = { readOnly, selectedBayId, selectedPlacedId, moveBay, moveFeeder };
+    keyboardMoveRef.current = { readOnly, selectedBayId, selectedPlacedId, selectedUnitIndex, moveBay, moveFeeder };
   });
 
   useEffect(() => {
@@ -1035,14 +1022,14 @@ export function GaCanvas({
       if (!e.key.startsWith("Arrow")) return;
       const tag = (document.activeElement?.tagName ?? "").toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select") return;
-      const { readOnly, selectedBayId, selectedPlacedId, moveBay, moveFeeder } = keyboardMoveRef.current;
+      const { readOnly, selectedBayId, selectedPlacedId, selectedUnitIndex, moveBay, moveFeeder } = keyboardMoveRef.current;
       if (readOnly || !selectedBayId) return;
       if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         e.preventDefault();
         moveBay(selectedBayId, e.key === "ArrowLeft" ? "left" : "right");
       } else if (selectedPlacedId && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
         e.preventDefault();
-        moveFeeder(selectedBayId, selectedPlacedId, e.key === "ArrowUp" ? "up" : "down");
+        moveFeeder(selectedBayId, selectedPlacedId, selectedUnitIndex, e.key === "ArrowUp" ? "up" : "down");
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -1394,6 +1381,7 @@ export function GaCanvas({
                               bayLeftMm={bayOffsets[i]}
                               isSelected={selectedBayId === v.id}
                               selectedPlacedId={selectedBayId === v.id ? selectedPlacedId : null}
+                              selectedUnitIndex={selectedUnitIndex}
                               cableEntry={sb.cable_entry}
                               cableExit={sb.cable_exit}
                               onSelectBay={() => {
@@ -1403,15 +1391,16 @@ export function GaCanvas({
                                 setBusbarSelected(false);
                                 setSelectedSegmentKey(null);
                               }}
-                              onSelectFeeder={(placedId) => {
+                              onSelectFeeder={(placedId, unitIndex) => {
                                 setSelectedBayId(v.id);
                                 setSideBayId(v.id);
                                 setSelectedPlacedId(placedId);
+                                setSelectedUnitIndex(unitIndex);
                                 setBusbarSelected(false);
                                 setSelectedSegmentKey(null);
                               }}
                               onMoveBay={(direction) => moveBay(v.id, direction)}
-                              onMoveFeeder={(placedId, direction) => moveFeeder(v.id, placedId, direction)}
+                              onMoveFeeder={(placedId, unitIndex, direction) => moveFeeder(v.id, placedId, unitIndex, direction)}
                               onHover={setHover}
                               onHoverEnd={() => setHover(null)}
                               onRemove={(placedId) => removeFromBay(v.id, placedId)}
@@ -1872,6 +1861,7 @@ function BayColumn({
   bayLeftMm,
   isSelected,
   selectedPlacedId,
+  selectedUnitIndex,
   cableEntry,
   cableExit,
   onSelectBay,
@@ -1889,12 +1879,13 @@ function BayColumn({
   bayLeftMm: number;
   isSelected: boolean;
   selectedPlacedId: string | null;
+  selectedUnitIndex: number;
   cableEntry: "Top" | "Bottom" | null;
   cableExit: "Top" | "Bottom" | null;
   onSelectBay: () => void;
-  onSelectFeeder: (placedId: string) => void;
+  onSelectFeeder: (placedId: string, unitIndex: number) => void;
   onMoveBay: (direction: "left" | "right") => void;
-  onMoveFeeder: (placedId: string, direction: "up" | "down") => void;
+  onMoveFeeder: (placedId: string, unitIndex: number, direction: "up" | "down") => void;
   onHover: (extent: HoverExtent) => void;
   onHoverEnd: () => void;
   onRemove: (placedId: string) => void;
@@ -1938,13 +1929,14 @@ function BayColumn({
         </>
       )}
       {compartments.map((c) => {
-        const isFeederSelected = c.placedId === selectedPlacedId;
+        // one unit at a time: a row of 4 merged MCCBs is 4 separate units
+        const isFeederSelected = c.placedId === selectedPlacedId && (c.isBlank || (c.unitIndex ?? 0) === selectedUnitIndex);
         return (
           <div
             key={c.id}
             onClick={(e) => {
               e.stopPropagation();
-              onSelectFeeder(c.placedId!);
+              onSelectFeeder(c.placedId!, c.unitIndex ?? 0);
             }}
             onMouseEnter={() => onHover({ topMm: c.topMm, heightMm: c.heightMm, bayLeftMm, bayWidthMm: widthMm, label: c.label })}
             onMouseLeave={onHoverEnd}
@@ -1972,7 +1964,7 @@ function BayColumn({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    onMoveFeeder(c.placedId!, "up");
+                    onMoveFeeder(c.placedId!, c.unitIndex ?? 0, "up");
                   }}
                   title="Move feeder up"
                   className="absolute -top-3 left-1/2 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-primary bg-surface-container-lowest text-primary shadow-sm hover:bg-primary/10"
@@ -1982,7 +1974,7 @@ function BayColumn({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    onMoveFeeder(c.placedId!, "down");
+                    onMoveFeeder(c.placedId!, c.unitIndex ?? 0, "down");
                   }}
                   title="Move feeder down"
                   className="absolute -bottom-3 left-1/2 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-primary bg-surface-container-lowest text-primary shadow-sm hover:bg-primary/10"
