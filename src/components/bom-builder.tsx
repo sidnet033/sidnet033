@@ -12,7 +12,7 @@ import { effectiveNetRate } from "@/lib/feeder-cost";
 import { computeFeederTag } from "@/lib/feeder-tag";
 import { DEVICE_TYPE_LABELS, MOTOR_STARTER_TYPES } from "@/lib/artuk-sizing";
 import { itemCode, itemRowClass } from "@/lib/item-display";
-import { numericKeyGuard } from "@/lib/numeric-input";
+import { numericGridKeys, numericKeyGuard } from "@/lib/numeric-input";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { formatMoney } from "@/lib/money";
@@ -255,6 +255,8 @@ export function BomBuilder({
   const [resetKey, setResetKey] = useState(0);
   const [items, setItems] = useState(allItems);
   const [busbarTakeoff, setBusbarTakeoff] = useState<BusbarTakeoff | null>(null);
+  // the warnings box starts collapsed -- just its one-line summary shows
+  const [warningsOpen, setWarningsOpen] = useState(false);
 
   // Creating a new item from within the BOM Builder (e.g. next to "Add Item
   // to Feeder") should be searchable immediately across every feeder module
@@ -939,11 +941,16 @@ export function BomBuilder({
       )}
 
       {kaWarnings.length > 0 && sb && (
-        <div className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-4 py-3 text-sm text-on-surface">
-          <div className="flex items-center gap-2 font-semibold text-amber-800">
+        <div className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-4 py-2 text-sm text-on-surface">
+          <button onClick={() => setWarningsOpen((o) => !o)} className="flex w-full items-center gap-2 text-left font-semibold text-amber-800">
             <Icon name="warning" size={18} /> Warning: {kaWarnings.length} item{kaWarnings.length === 1 ? "" : "s"} rated below the switchboard&apos;s {sb.ka}kA
             fault level
-          </div>
+            <span className="ml-auto flex items-center gap-1 text-xs font-medium">
+              {warningsOpen ? "Hide" : "Show"} <Icon name={warningsOpen ? "expand_less" : "expand_more"} size={16} />
+            </span>
+          </button>
+          {warningsOpen && (
+          <>
           <ul className="mt-1 list-disc pl-6 text-xs">
             {kaWarnings.map((w) => (
               <li key={w.key}>
@@ -954,6 +961,8 @@ export function BomBuilder({
           <p className="mt-1 text-xs text-on-surface-variant">
             You can still save. If these aren&apos;t protected by an upstream device (cascading), pick a higher-kA item or check the switchboard&apos;s kA in Project Detail.
           </p>
+          </>
+          )}
         </div>
       )}
 
@@ -1344,7 +1353,8 @@ function FeederModuleCard({
                 {canEditLines && <th className="px-2 py-1" />}
               </tr>
             </thead>
-            <tbody>
+            {/* data-grid: arrow keys / Enter move between this feeder's qty, list price and discount cells */}
+            <tbody data-grid>
               {mod.lines.map((line, i) => {
                 const listPrice = line.list_price_override ?? line.item.list_price;
                 const discountPct = line.discount_pct_override ?? line.item.discount_pct;
@@ -1370,8 +1380,11 @@ function FeederModuleCard({
                           type="text"
                           inputMode="decimal"
                           value={line.qty}
+                          data-row={i}
+                          data-col={0}
+                          onFocus={(e) => e.currentTarget.select()}
                           onChange={(e) => onLineQtyChange(line.id, Number(e.target.value) || 0)}
-                          onKeyDown={numericKeyGuard()}
+                          onKeyDown={numericGridKeys()}
                           className="w-16 rounded border border-surface-container-high px-1 py-0.5 text-right"
                         />
                       ) : (
@@ -1385,8 +1398,11 @@ function FeederModuleCard({
                           inputMode="decimal"
                           value={listPrice ?? ""}
                           placeholder="—"
+                          data-row={i}
+                          data-col={1}
+                          onFocus={(e) => e.currentTarget.select()}
                           onChange={(e) => onLineOverrideChange(line.id, "list_price_override", e.target.value === "" ? null : Number(e.target.value))}
-                          onKeyDown={numericKeyGuard()}
+                          onKeyDown={numericGridKeys()}
                           className="w-20 rounded border border-surface-container-high px-1 py-0.5 text-right"
                         />
                       ) : listPrice != null ? (
@@ -1402,8 +1418,11 @@ function FeederModuleCard({
                           inputMode="decimal"
                           value={discountPct ?? ""}
                           placeholder="—"
+                          data-row={i}
+                          data-col={2}
+                          onFocus={(e) => e.currentTarget.select()}
                           onChange={(e) => onLineOverrideChange(line.id, "discount_pct_override", e.target.value === "" ? null : Number(e.target.value))}
-                          onKeyDown={numericKeyGuard()}
+                          onKeyDown={numericGridKeys()}
                           className="w-16 rounded border border-surface-container-high px-1 py-0.5 text-right"
                         />
                       ) : discountPct != null ? (

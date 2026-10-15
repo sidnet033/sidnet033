@@ -239,7 +239,8 @@ export function CostingMatrix({
                     value={pctFor(c.switchboard.id)}
                     onChange={(e) => updateProfitPct(c.switchboard.id, Number(e.target.value) || 0)}
                     onKeyDown={numericKeyGuard()}
-                    className="w-16 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
+                    title="Profit margin % for this switchboard"
+                    className="w-16 rounded border border-yellow-300 bg-yellow-50 px-1 py-0.5 text-right focus:bg-yellow-100 disabled:border-transparent disabled:bg-transparent"
                   />
                 </td>
               ))}

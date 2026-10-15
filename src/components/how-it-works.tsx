@@ -249,7 +249,8 @@ export function HowItWorks() {
               </>,
               <>
                 <b>Discounts</b>: every item line can override its list price or discount % for this BOM only. To discount a whole category at once
-                (e.g. all MCCBs at 42%), use <b>Bulk Discount — Category</b> at the top.
+                (e.g. all MCCBs at 42%), use <b>Bulk Discount — Category</b> at the top. Inside a feeder, the qty, list price and discount boxes work like
+                a spreadsheet: arrow keys and Enter move between them, and typing replaces the value.
               </>,
               <>
                 <b>Busbars</b>: the &ldquo;Auto&rdquo; lines come straight from the GA busbar plan — one line per bar size, in kg, priced at the
@@ -321,7 +322,8 @@ export function HowItWorks() {
               </>,
               <>
                 The <b>Costing</b> tab lays all switchboards side by side × their quantity. Set the profit margin per switchboard, and add freight,
-                installation and commissioning to reach the <b>final price</b>.
+                installation and commissioning to reach the <b>final price</b>. The margin boxes are shaded yellow; a switchboard with a BOM but
+                no margin shows as a warning in Project Detail.
               </>,
               <>Totals show in INR and, if the project uses another currency, converted at the project&apos;s exchange rate.</>,
             ]}

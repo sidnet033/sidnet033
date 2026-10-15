@@ -1480,7 +1480,6 @@ export function GaCanvas({
 
                   <div className="inline-block">
                     <ViewLabel>Side View{sideBay ? ` — ${sideBay.name}` : ""}</ViewLabel>
-                    {!sideBay && <p className="mb-1 max-w-[220px] text-[10px] text-on-surface-variant">Select a bay in the front view to see its devices and busbars here.</p>}
                     {sb.std === "ArTuK" && (
                       <div
                         className="flex items-center justify-center bg-red-600 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-white"

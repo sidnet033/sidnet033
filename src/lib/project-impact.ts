@@ -6,6 +6,7 @@ import type {
   Vertical,
 } from "@/types/database";
 import { lookupAcbBaySpec, suggestAcbFrame } from "@/lib/artuk-sizing";
+import { effectiveNetRate } from "@/lib/feeder-cost";
 import {
   KIND_LABELS,
   barArea,
@@ -39,7 +40,9 @@ type Supabase = ReturnType<typeof createClient>;
 
 export type Densities = Record<BusbarMaterial, number>;
 
-export type FeederItemRating = { itemId: string; description: string; ka: number | null };
+// unpriced: the line's effective net rate is zero (no list price, line
+// override or net cost) -- it adds nothing to the cost
+export type FeederItemRating = { itemId: string; description: string; ka: number | null; unpriced: boolean };
 
 export type BoardData = {
   revision: { id: string; label: string };
@@ -171,12 +174,31 @@ export async function loadProjectData(
 
   const feederIds = [...new Set(placed.map((p) => p.feeder_id))];
   const { data: fiRows } = feederIds.length
-    ? await supabase.from("feeder_items").select("feeder_id, item:item_master(id, description, ka)").in("feeder_id", feederIds)
+    ? await supabase
+        .from("feeder_items")
+        .select("feeder_id, list_price_override, discount_pct_override, item:item_master(id, description, ka, unit_cost, list_price, discount_pct)")
+        .in("feeder_id", feederIds)
     : { data: [] };
   const feederItems: Record<string, FeederItemRating[]> = {};
-  for (const r of (fiRows ?? []) as unknown as { feeder_id: string; item: { id: string; description: string; ka: number | null } | null }[]) {
+  type FiRow = {
+    feeder_id: string;
+    list_price_override: number | null;
+    discount_pct_override: number | null;
+    item: { id: string; description: string; ka: number | null; unit_cost: number; list_price: number | null; discount_pct: number | null } | null;
+  };
+  for (const r of (fiRows ?? []) as unknown as FiRow[]) {
     if (!r.item) continue;
-    (feederItems[r.feeder_id] ??= []).push({ itemId: r.item.id, description: r.item.description, ka: r.item.ka != null ? Number(r.item.ka) : null });
+    const net = effectiveNetRate(
+      { unit_cost: Number(r.item.unit_cost ?? 0), list_price: r.item.list_price != null ? Number(r.item.list_price) : null, discount_pct: r.item.discount_pct != null ? Number(r.item.discount_pct) : null },
+      r.list_price_override != null ? Number(r.list_price_override) : null,
+      r.discount_pct_override != null ? Number(r.discount_pct_override) : null
+    );
+    (feederItems[r.feeder_id] ??= []).push({
+      itemId: r.item.id,
+      description: r.item.description,
+      ka: r.item.ka != null ? Number(r.item.ka) : null,
+      unpriced: !(net > 0),
+    });
   }
 
   const multipleNames = new Set(revs.map((r) => r.name)).size > 1;
@@ -285,6 +307,39 @@ export function auditBoard(
   const placedBays = board.verticals.filter(
     (v) => v.bay_type !== "unassigned" && v.placed.length > 0,
   );
+  // every feeder in the BOM (placed in a bay or still unallocated) with an
+  // item that has no price -- a warning naming just the feeder
+  const pricedChecked = new Set<string>();
+  for (const v of board.verticals) {
+    for (const p of v.placed) {
+      if (pricedChecked.has(p.feeder.id)) continue;
+      pricedChecked.add(p.feeder.id);
+      if ((board.feederItems[p.feeder.id] ?? []).some((it) => it.unpriced)) {
+        items.push({
+          ...base,
+          id: `${sb.id}|unpriced|${p.feeder.id}`,
+          area: "BOM",
+          severity: "warning",
+          message: `"${p.feeder.name}" has items with no price.`,
+          apply: null,
+          applyLabel: null,
+        });
+      }
+    }
+  }
+  // a switchboard with a BOM but no profit margin set (Costing tab)
+  if (pricedChecked.size > 0 && !(Number(sb.profit_pct) > 0)) {
+    items.push({
+      ...base,
+      id: `${sb.id}|no-margin`,
+      area: "BOM",
+      severity: "warning",
+      message: "Profit margin not set — enter it on the Costing tab.",
+      apply: null,
+      applyLabel: null,
+    });
+  }
+
   if (placedBays.length === 0) return items;
 
   const plan = planOf(board, densities);
