@@ -16,7 +16,7 @@ export type BarSize = { widthMm: number; thicknessMm: number };
 export type Point = { x: number; y: number };
 
 export const KIND_LABELS: Record<BusbarKind, string> = {
-  incomer_cable_link: "Incomer cable link",
+  incomer_cable_link: "Cable link",
   incomer_riser: "Incomer riser",
   main: "Main busbar",
   dropper: "Dropper",
@@ -336,6 +336,26 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
           notes: ["Outgoing ACB fed straight off the main busbar — no dropper needed."],
           warnings: [...noRating, ...(fn === "bus_coupler" ? ["Bus coupler: busbar sectioning isn't modelled yet — drawn as a single link."] : [])],
         });
+        if (f.device_type === "ACB" && fn !== "bus_coupler") {
+          // the outgoing ACB's other terminal, where the outgoing cables land
+          const depth = bay.depthMm ?? input.defaultDepthMm;
+          const cableY = awayFromChamberY(c);
+          drafts.push({
+            kind: "incomer_cable_link",
+            verticalId: null,
+            placedFeederId: c.placedId,
+            unitIndex: c.unitIndex,
+            title: `${KIND_LABELS.incomer_cable_link} — ${unitName}`,
+            fromLabel: `${unitName} (outgoing terminal)`,
+            toLabel: "Outgoing cables",
+            path: [{ x: centreX, y: cableY }],
+            side: { y: cableY, x1: depth * 0.15, x2: depth * (0.15 + INCOMER_CABLE_LINK_DEPTH_FRACTION) },
+            designCurrentA: f.rated_current,
+            autoLengthMm: Math.round(depth * INCOMER_CABLE_LINK_DEPTH_FRACTION),
+            notes: [`Cable-termination bar, ${INCOMER_CABLE_LINK_DEPTH_FRACTION * 100}% of the ${depth}mm bay depth, for lugging the outgoing cables.`],
+            warnings: [...noRating, ...(bay.depthMm == null ? [`Bay depth not set — assumed ${input.defaultDepthMm}mm.`] : [])],
+          });
+        }
         continue;
       }
 

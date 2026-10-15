@@ -111,9 +111,22 @@ export function BusbarFrontOverlay({
         };
         const tooltip = `${seg.title}: ${formatBar(seg.bar, seg.runs)} ${material}${seg.designCurrentA != null ? ` · ${seg.designCurrentA}A` : ""}`;
 
-        // The incomer cable link runs straight back into the panel, so the
-        // front view can't show it -- it's drawn in the side view instead.
-        if (seg.path.length === 1) return null;
+        // An ACB's cable link runs straight back into the panel, so the front
+        // view shows it end-on: a marker at the terminal the cables land on
+        // (the bar itself is drawn in the side view).
+        if (seg.path.length === 1) {
+          const cx = xPx(seg.path[0].x);
+          const cy = yPx(seg.path[0].y);
+          return (
+            <g key={seg.key} onClick={select} style={{ pointerEvents: "all", cursor: "pointer" }}>
+              <title>{`${tooltip} — runs ${seg.lengthMm}mm front-to-back (see side view)`}</title>
+              <rect x={cx - 7} y={cy - 4} width={14} height={8} fill={color} stroke={selected ? PRIMARY : "#ffffff"} strokeWidth={selected ? 2 : 1} />
+              <text x={cx + 10} y={cy + 3} fontSize={8} fontFamily="ui-monospace, monospace" fill={color} style={textHalo}>
+                CABLE LINK {formatBar(seg.bar, seg.runs)}
+              </text>
+            </g>
+          );
+        }
 
         const dragging = drag && drag.key === seg.key ? drag : null;
         const path = dragging ? stretchPath(seg.path, dragging.end === "start" ? dragging.deltaMm : 0, dragging.end === "end" ? dragging.deltaMm : 0) : seg.path;
@@ -373,8 +386,8 @@ export type SideBay = {
 // terminals, and every bar that serves them -- riser / ACB link / dropper /
 // feeder links, plus the main busbar end-on -- each drawn as phases × runs
 // and labelled with size and current, so the routing and sizing can be
-// followed. (The incomer's cable-termination bar isn't drawn: it's in the
-// schedule and costing.)
+// followed -- including each ACB's cable link, the bar running back from
+// the terminal its cables land on.
 export function BusbarSideOverlay({
   plan,
   widthPx,
@@ -455,6 +468,24 @@ export function BusbarSideOverlay({
         <g key={seg.key}>
           <PhaseBars seg={seg} pts={pts} hasNeutral={hasNeutral} color={colorOf(seg)} selected={sel} onSelect={select(seg.key)} title={tip(seg)} />
           {tag(seg, { x: x(mainX) - 8, y: (ty + chamberY) / 2 }, "end", 0)}
+        </g>
+      );
+    } else if (seg.kind === "incomer_cable_link") {
+      // from the ACB's cable-side terminal straight back into the panel
+      const ty = yPx(seg.side?.y ?? seg.path[0].y);
+      terminals.push({ x: termX, y: ty });
+      const end = Math.min(deviceDepth + seg.lengthMm, depthMm - 10);
+      const pts = [
+        { x: termX, y: ty },
+        { x: x(end), y: ty },
+      ];
+      drawn.push(
+        <g key={seg.key}>
+          <PhaseBars seg={seg} pts={pts} hasNeutral={hasNeutral} color={colorOf(seg)} selected={sel} onSelect={select(seg.key)} title={tip(seg)} />
+          <text x={(pts[0].x + pts[1].x) / 2} y={ty + 14} fontSize={7} fontFamily="ui-monospace, monospace" fill={colorOf(seg)} textAnchor="middle" style={textHalo}>
+            CABLE LINK {seg.lengthMm}mm
+          </text>
+          {tag(seg, { x: (pts[0].x + pts[1].x) / 2, y: ty - 8 })}
         </g>
       );
     } else if (seg.kind === "feeder_link") {

@@ -290,8 +290,8 @@ export function HowItWorks() {
           <Steps
             items={[
               <>
-                Turn on the <b>Busbars</b> layer in GA Builder. The app draws the route automatically: the <b>incomer cable link</b> (75% of panel
-                depth, for the customer&apos;s incoming cables) → <b>incomer riser</b> → <b>main busbar</b> along the chamber → a <b>dropper</b> down
+                Turn on the <b>Busbars</b> layer in GA Builder. The app draws the route automatically: each ACB&apos;s <b>cable link</b> (75% of
+                bay depth, from the terminal the incoming or outgoing cables land on) → <b>incomer riser</b> → <b>main busbar</b> along the chamber → a <b>dropper</b> down
                 each busbar alley → <b>feeder links</b> to each outgoing feeder (ACBs get an ACB link straight from the main bar).
               </>,
               <>
@@ -305,7 +305,7 @@ export function HowItWorks() {
               </>,
               <>
                 Click a bay in the front view and the <b>Side View</b> (panel front on the right) shows that bay: its devices, their rear
-                terminals and every bar serving them (riser, dropper, feeder links, main bar end-on), each drawn as phases × runs with its size
+                terminals and every bar serving them (riser, ACB cable links, dropper, feeder links, main bar end-on), each drawn as phases × runs with its size
                 and current. With no bay selected, the side view shows no busbars.
               </>,
               <>Bar sizes and lengths flow into the BOM&apos;s busbar lines and the costing once the GA is saved.</>,

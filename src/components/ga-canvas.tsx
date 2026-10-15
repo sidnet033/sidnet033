@@ -621,6 +621,7 @@ export function GaCanvas({
       dummy_slot: null,
       placed: [],
     };
+    created.sort_order = nextBaySortOrder();
     setVerticals([...verticals, created]);
   }
 
@@ -680,15 +681,15 @@ export function GaCanvas({
   // feeders into by hand, same as any other bay template.
   function addMccFrontAccessPair() {
     if (!sb || readOnly) return;
-    const primary = makeVertical(sb.id, "MCC Front Access", "outgoing", MCC_FRONT_ACCESS_PAIR.primary.widthMm, MCC_FRONT_ACCESS_PAIR.primary.depthMm, bays.length);
-    const paired = makeVertical(sb.id, "MCC Front Access", "outgoing", MCC_FRONT_ACCESS_PAIR.paired.widthMm, MCC_FRONT_ACCESS_PAIR.paired.depthMm, bays.length + 1);
+    const primary = makeVertical(sb.id, "MCC Front Access", "outgoing", MCC_FRONT_ACCESS_PAIR.primary.widthMm, MCC_FRONT_ACCESS_PAIR.primary.depthMm, nextBaySortOrder());
+    const paired = makeVertical(sb.id, "MCC Front Access", "outgoing", MCC_FRONT_ACCESS_PAIR.paired.widthMm, MCC_FRONT_ACCESS_PAIR.paired.depthMm, nextBaySortOrder() + 1);
     setVerticals([...verticals, primary, paired]);
   }
 
   function add2TierOutgoingE12() {
     if (!sb || readOnly) return;
-    const primary = makeVertical(sb.id, "Outgoing (E1.2 2-Tier)", "outgoing", ACB_2TIER_OUTGOING_E12.primary.widthMm, ACB_2TIER_OUTGOING_E12.primary.depthMm, bays.length);
-    const paired = makeVertical(sb.id, "Outgoing (E1.2 2-Tier)", "outgoing", ACB_2TIER_OUTGOING_E12.paired.widthMm, ACB_2TIER_OUTGOING_E12.paired.depthMm, bays.length + 1);
+    const primary = makeVertical(sb.id, "Outgoing (E1.2 2-Tier)", "outgoing", ACB_2TIER_OUTGOING_E12.primary.widthMm, ACB_2TIER_OUTGOING_E12.primary.depthMm, nextBaySortOrder());
+    const paired = makeVertical(sb.id, "Outgoing (E1.2 2-Tier)", "outgoing", ACB_2TIER_OUTGOING_E12.paired.widthMm, ACB_2TIER_OUTGOING_E12.paired.depthMm, nextBaySortOrder() + 1);
     setVerticals([...verticals, primary, paired]);
   }
 
@@ -711,15 +712,25 @@ export function GaCanvas({
     );
   }
 
-  // Swaps sort_order with the bay to the left/right -- how the left/right
-  // arrow overlay (and ArrowLeft/ArrowRight keys) reposition a selected bay.
+  // sort_order for a bay added at the right-hand end (gaps left by deleted
+  // bays mean bays.length isn't always past the last one)
+  function nextBaySortOrder() {
+    return Math.max(-1, ...bays.map((b) => b.sort_order)) + 1;
+  }
+
+  // Swaps the bay with its left/right neighbour -- how the left/right arrow
+  // overlay (and ArrowLeft/ArrowRight keys) reposition a selected bay. Every
+  // bay is renumbered 0..n-1 in the new order rather than just swapping the
+  // two sort_orders: after bays are deleted/added, two can share a
+  // sort_order, and swapping equal values would never move anything.
   function moveBay(bayId: string, direction: "left" | "right") {
     const idx = bays.findIndex((v) => v.id === bayId);
     const swapIdx = direction === "left" ? idx - 1 : idx + 1;
     if (idx === -1 || swapIdx < 0 || swapIdx >= bays.length) return;
-    const a = bays[idx];
-    const b = bays[swapIdx];
-    setVerticals(verticals.map((v) => (v.id === a.id ? { ...v, sort_order: b.sort_order } : v.id === b.id ? { ...v, sort_order: a.sort_order } : v)));
+    const order = bays.map((v) => v.id);
+    [order[idx], order[swapIdx]] = [order[swapIdx], order[idx]];
+    const position = new Map(order.map((id, i) => [id, i]));
+    setVerticals(verticals.map((v) => (position.has(v.id) ? { ...v, sort_order: position.get(v.id)! } : v)));
   }
 
   // Swaps tier_number (and sort_order) with the feeder stacked above/below
