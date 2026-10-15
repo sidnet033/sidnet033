@@ -376,6 +376,7 @@ export function HowItWorks() {
                 [<Chip key="4" className="border border-emerald-100 bg-emerald-50 text-on-surface">Feeder</Chip>, "Green header: a custom feeder for this switchboard only."],
                 [<Chip key="5" className="border border-error text-error ring-2 ring-error/40">Feeder</Chip>, "Red outline: feeder rated above the switchboard's Amps."],
                 [<Chip key="6" className="bg-primary/10 text-primary">AUTO</Chip>, "Busbar line calculated from the GA busbar plan."],
+                [<Chip key="8" className="bg-red-50 text-on-surface">Item row</Chip>, "Faded red row: the item has no price yet — it adds nothing to the cost."],
                 [<Chip key="7" className="border border-amber-300/70 bg-amber-50/70 text-amber-800">Warning</Chip>, "Amber box: a warning (e.g. item kA below the switchboard's) — you can still save."],
               ]}
             />

@@ -1349,10 +1349,14 @@ function FeederModuleCard({
                 const listPrice = line.list_price_override ?? line.item.list_price;
                 const discountPct = line.discount_pct_override ?? line.item.discount_pct;
                 const netRate = effectiveNetRate(line.item, line.list_price_override, line.discount_pct_override);
+                // no price anywhere (list price, override or net cost) -- the
+                // line adds nothing to the cost, so flag it in faded red
+                const unpriced = !(netRate > 0);
                 return (
                   <tr
                     key={line.id}
-                    className={`border-t border-surface-container ${itemRowClass(line.item)}`}
+                    title={unpriced ? "No price for this item — set a list price in Item Master or override it on this line" : undefined}
+                    className={`border-t border-surface-container ${unpriced ? "bg-red-50" : ""} ${itemRowClass(line.item)}`}
                   >
                     <td className="px-2 py-1.5 text-on-surface-variant">{i + 1}</td>
                     <td className="px-2 py-1.5 font-mono">{line.item.sku || "—"}</td>
