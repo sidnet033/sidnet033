@@ -5,10 +5,9 @@
 alter table placed_feeders add column unit_heights jsonb;
 
 update placed_feeders pf
-set unit_heights = (select jsonb_agg(sb.feeder_heights -> pf.feeder_id::text) from generate_series(1, pf.qty))
-from verticals v
-join switchboards sb on sb.id = v.switchboard_id
-where pf.vertical_id = v.id and sb.feeder_heights ? pf.feeder_id::text;
+set unit_heights = to_jsonb(array_fill((sb.feeder_heights ->> pf.feeder_id::text)::numeric, array[pf.qty]))
+from verticals v, switchboards sb
+where pf.vertical_id = v.id and sb.id = v.switchboard_id and sb.feeder_heights ? pf.feeder_id::text;
 
 update switchboards set feeder_heights = '{}'::jsonb where feeder_heights <> '{}'::jsonb;
 
