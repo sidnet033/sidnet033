@@ -53,11 +53,12 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
         setSaving(false);
         return;
       }
-      const { data: customer, error: customerError } = await supabase
-        .from("customers")
-        .insert({ name: newCustomerName.trim() })
-        .select("id, name")
-        .single();
+      // reuse a customer that already has this name (e.g. one created by an
+      // earlier attempt that failed further on) instead of duplicating it
+      const { data: existing } = await supabase.from("customers").select("id, name").ilike("name", newCustomerName.trim()).limit(1);
+      const { data: customer, error: customerError } = existing?.length
+        ? { data: existing[0], error: null }
+        : await supabase.from("customers").insert({ name: newCustomerName.trim() }).select("id, name").single();
       if (customerError || !customer) {
         setError(customerError?.message ?? "Could not create customer.");
         setSaving(false);
