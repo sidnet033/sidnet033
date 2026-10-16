@@ -36,6 +36,7 @@ const NAV: NavItem[] = [
   { id: "busbars", label: "6. Busbar routing & sizing" },
   { id: "costing", label: "7. Costing" },
   { id: "checks", label: "Checks & alerts" },
+  { id: "shortcuts", label: "Keyboard shortcuts" },
   { id: "colors", label: "What the colors mean" },
   {
     id: "dimensions",
@@ -365,6 +366,50 @@ export function HowItWorks() {
           />
         </Section>
 
+        <Section id="shortcuts" title="Keyboard shortcuts" note="On a Mac, use Cmd in place of Ctrl.">
+          <div className="grid gap-5 md:grid-cols-2">
+            <ShortcutGroup
+              title="Everywhere you edit"
+              rows={[
+                [["Ctrl", "S"], "Save changes — Project Detail, BOM Builder, GA Builder."],
+              ]}
+            />
+            <ShortcutGroup
+              title="Item Master"
+              rows={[[["Ctrl", "K"], "Jump to the search box."]]}
+            />
+            <ShortcutGroup
+              title="BOM Builder"
+              rows={[
+                [["↑"], ["↓"], "Qty / list price / discount boxes in a feeder: move to the row above / below."],
+                [["Enter"], "Same as ↓ (Shift + Enter: same as ↑)."],
+                [["←"], ["→"], "Move to the neighbouring box once the cursor is at the edge of the text."],
+                [["Enter"], "In the “Add Item to Feeder” search: add the top match."],
+              ]}
+            />
+            <ShortcutGroup
+              title="GA Builder"
+              rows={[
+                [["←"], ["→"], "Selected bay: move it left / right."],
+                [["↑"], ["↓"], "Selected feeder: move that one unit up / down in its bay."],
+                [["Esc"], "Clear every selection (bay, feeder, busbar, busbar chamber)."],
+                [["F"], "Toggle full screen."],
+              ]}
+            />
+            <ShortcutGroup
+              title="Project Detail"
+              rows={[
+                [["Enter"], "Renaming a switchboard: confirm."],
+                [["Esc"], "Renaming a switchboard: cancel."],
+              ]}
+            />
+          </div>
+          <p className="mt-3 text-xs text-secondary">
+            Shortcuts that move things (arrows, F) don&apos;t fire while you&apos;re typing in a box, except in BOM Builder&apos;s numeric boxes where the arrows move
+            between boxes.
+          </p>
+        </Section>
+
         <Section id="colors" title="What the colors mean">
           <div className="grid gap-5 md:grid-cols-2">
             <ColorGroup
@@ -447,6 +492,48 @@ function Steps({ items }: { items: React.ReactNode[] }) {
         </li>
       ))}
     </ol>
+  );
+}
+
+function Key({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd className="inline-flex min-w-[1.6rem] items-center justify-center rounded border border-surface-container-high border-b-2 bg-surface-container-low px-1.5 py-0.5 font-mono text-[11px] text-on-surface">
+      {children}
+    </kbd>
+  );
+}
+
+// rows: one or more key combos (each an array of keys pressed together),
+// then the description
+function ShortcutGroup({ title, rows }: { title: string; rows: (string[] | string)[][] }) {
+  return (
+    <div>
+      <p className="mb-2 text-xs font-bold uppercase tracking-wide text-secondary">{title}</p>
+      <ul className="space-y-2">
+        {rows.map((row, i) => {
+          const combos = row.slice(0, -1) as string[][];
+          const text = row[row.length - 1] as string;
+          return (
+            <li key={i} className="flex items-start gap-3 text-sm">
+              <span className="flex w-32 shrink-0 flex-wrap items-center gap-1">
+                {combos.map((combo, ci) => (
+                  <span key={ci} className="flex items-center gap-0.5">
+                    {ci > 0 && <span className="px-0.5 text-xs text-secondary">/</span>}
+                    {combo.map((k, ki) => (
+                      <span key={ki} className="flex items-center gap-0.5">
+                        {ki > 0 && <span className="text-xs text-secondary">+</span>}
+                        <Key>{k}</Key>
+                      </span>
+                    ))}
+                  </span>
+                ))}
+              </span>
+              <span className="text-on-surface">{text}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
