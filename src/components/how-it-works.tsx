@@ -282,6 +282,15 @@ export function HowItWorks() {
                 Click a bay to rename it, change its type or size it by hand. Click the busbar chamber to set its height; panel and plinth heights are
                 in the switchboard properties panel. Unused height becomes a &ldquo;dummy&rdquo; blank space you can move.
               </>,
+              <>
+                Bays are numbered as on a GA drawing: switchgear verticals are <b>1F, 2F, 3F…</b> left to right (cable and busbar alleys aren&apos;t
+                numbered), and each compartment is tagged top to bottom — <b>1F1, 1F2…</b>, dummies included — with its height in modules
+                (1M = 100mm).
+              </>,
+              <>
+                The summary table under the side view gives the overall size (W × D × H), cable entry and exit (set <b>Cable Access</b> Front/Rear
+                in the parameters bar for e.g. &ldquo;REAR TOP&rdquo;), and the form and standard.
+              </>,
               <>Front and side views, dimensions and the &ldquo;Sizing Logic&rdquo; panel explain how each size was reached.</>,
             ]}
           />

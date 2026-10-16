@@ -197,6 +197,7 @@ export type Switchboard = {
   cable_exit: "Top" | "Bottom" | null;
   busbar: "Cu" | "Al" | null;
   neutral_size_pct: number;
+  cable_access: "Front" | "Rear" | null;
   std: "ArTuK" | "61439" | "60439" | null;
   qty: number;
   sort_order: number;

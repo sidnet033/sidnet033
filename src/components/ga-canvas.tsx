@@ -315,6 +315,10 @@ export function GaCanvas({
   const [savedVerticals, setSavedVerticals] = useState<VerticalWithFeeders[]>([]);
   const [plinthHeight, setPlinthHeight] = useState(100);
   const [savedPlinthHeight, setSavedPlinthHeight] = useState(100);
+  // side of the panel cables come in/out from (Front / Rear) -- shown with
+  // cable entry/exit in the summary table, e.g. "CABLE ENTRY – REAR TOP"
+  const [cableAccess, setCableAccess] = useState<Switchboard["cable_access"]>(null);
+  const [savedCableAccess, setSavedCableAccess] = useState<Switchboard["cable_access"]>(null);
   const [panelHeight, setPanelHeight] = useState(2100);
   const [savedPanelHeight, setSavedPanelHeight] = useState(2100);
   const [busbarHeight, setBusbarHeight] = useState(BUSBAR_CHAMBER_HEIGHT_MM);
@@ -425,6 +429,8 @@ export function GaCanvas({
     const busbar = data.switchboard.busbar_chamber_height_mm ?? BUSBAR_CHAMBER_HEIGHT_MM;
     setPlinthHeight(plinth);
     setSavedPlinthHeight(plinth);
+    setCableAccess(data.switchboard.cable_access ?? null);
+    setSavedCableAccess(data.switchboard.cable_access ?? null);
     setPanelHeight(panel);
     setSavedPanelHeight(panel);
     setBusbarHeight(busbar);
@@ -448,6 +454,8 @@ export function GaCanvas({
       const busbar = data.switchboard.busbar_chamber_height_mm ?? BUSBAR_CHAMBER_HEIGHT_MM;
       setPlinthHeight(plinth);
       setSavedPlinthHeight(plinth);
+      setCableAccess(data.switchboard.cable_access ?? null);
+      setSavedCableAccess(data.switchboard.cable_access ?? null);
       setPanelHeight(panel);
       setSavedPanelHeight(panel);
       setBusbarHeight(busbar);
@@ -467,6 +475,7 @@ export function GaCanvas({
   const dirty =
     JSON.stringify(verticals) !== JSON.stringify(savedVerticals) ||
     plinthHeight !== savedPlinthHeight ||
+    cableAccess !== savedCableAccess ||
     panelHeight !== savedPanelHeight ||
     busbarHeight !== savedBusbarHeight ||
     JSON.stringify(busbarOverrides) !== JSON.stringify(savedBusbarOverrides);
@@ -492,6 +501,13 @@ export function GaCanvas({
   // + panel, excluding the plinth (a separate structural base, not part of
   // the bay housing itself).
   const bayHeightMm = busbarHeight + panelHeight;
+  // Vertical numbers as on a GA drawing: switchgear bays are 1F, 2F, 3F...
+  // left to right; cable/busbar alleys aren't numbered.
+  const bayNumbers = new Map<string, number>();
+  for (const v of bays) {
+    if (v.bay_type === "cable_alley" || v.bay_type === "busbar_alley") continue;
+    bayNumbers.set(v.id, bayNumbers.size + 1);
+  }
   const pxPerMm = computePxPerMm(totalHeightMm);
   const selectedBay = bays.find((v) => v.id === selectedBayId) ?? null;
 
@@ -830,6 +846,7 @@ export function GaCanvas({
   function handleCancel() {
     setVerticals(structuredClone(savedVerticals));
     setPlinthHeight(savedPlinthHeight);
+    setCableAccess(savedCableAccess);
     setPanelHeight(savedPanelHeight);
     setBusbarHeight(savedBusbarHeight);
     setBusbarOverrides(savedBusbarOverrides);
@@ -970,6 +987,7 @@ export function GaCanvas({
 
       const paramPatch: Partial<Switchboard> = {};
       if (plinthHeight !== savedPlinthHeight) paramPatch.plinth_height_mm = plinthHeight;
+      if (cableAccess !== savedCableAccess) paramPatch.cable_access = cableAccess;
       if (panelHeight !== savedPanelHeight) paramPatch.panel_height_mm = panelHeight;
       if (busbarHeight !== savedBusbarHeight) paramPatch.busbar_chamber_height_mm = busbarHeight;
       if (Object.keys(paramPatch).length > 0) {
@@ -1150,6 +1168,18 @@ export function GaCanvas({
           <ReadOnlyField label="Form of Separation" value={sb.form_of_separation} />
           <ReadOnlyField label="Amps" value={sb.amps != null ? `${sb.amps}A` : null} />
           <ReadOnlyField label="kA" value={sb.ka != null ? `${sb.ka}kA` : null} />
+          <Field label="Cable Access">
+            <select
+              disabled={readOnly}
+              value={cableAccess ?? ""}
+              onChange={(e) => setCableAccess((e.target.value || null) as Switchboard["cable_access"])}
+              className="rounded border border-surface-container-high px-1.5 py-1"
+            >
+              <option value="">—</option>
+              <option value="Front">Front</option>
+              <option value="Rear">Rear</option>
+            </select>
+          </Field>
           <ReadOnlyField label="Cable Entry" value={sb.cable_entry} />
           <ReadOnlyField label="Cable Exit" value={sb.cable_exit} />
         </div>
@@ -1375,6 +1405,7 @@ export function GaCanvas({
                             <BayColumn
                               key={`${v.id}-${resetKey}`}
                               vertical={v}
+                              bayNumber={bayNumbers.get(v.id) ?? null}
                               readOnly={readOnly}
                               pxPerMm={pxPerMm}
                               panelHeightMm={panelHeight}
@@ -1462,6 +1493,18 @@ export function GaCanvas({
                       <HorizontalRuler bayOffsets={bayOffsets} totalWidth={totalWidth} pxPerMm={pxPerMm} hover={hover} />
                     </div>
 
+                    {/* Vertical numbers (1F, 2F...) under each switchgear bay */}
+                    <div className="flex">
+                      <div style={{ width: RULER_WIDTH_PX + VERTICAL_DIM_WIDTH_PX }} />
+                      <div className="flex">
+                        {bays.map((v) => (
+                          <div key={v.id} className="py-0.5 text-center font-display text-sm font-bold text-black" style={{ width: (v.width_mm ?? 0) * pxPerMm }}>
+                            {bayNumbers.has(v.id) ? `${bayNumbers.get(v.id)}F` : ""}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
                     {/* Per-bay width dimensions, then one overall dimension beneath --
                         same nesting convention as a real elevation drawing. */}
                     <div className="flex">
@@ -1521,6 +1564,16 @@ export function GaCanvas({
                     </div>
                     <DrawingBar label={`PLINTH · ${plinthHeight}mm`} heightPx={plinthHeight * pxPerMm} widthPx={sideViewWidthPx} />
                     <HorizontalDimension widthPx={sideViewWidthPx} label={`${sideViewDepthMm}mm`} />
+                    <PanelSummaryTable
+                      widthMm={totalWidth}
+                      depthMm={bays.some((v) => v.depth_mm != null) ? deepestBayMm : null}
+                      heightMm={plinthHeight + bayHeightMm}
+                      cableAccess={cableAccess}
+                      cableEntry={sb.cable_entry}
+                      cableExit={sb.cable_exit}
+                      form={sb.form_of_separation}
+                      std={sb.std}
+                    />
                   </div>
                 </div>
               )}
@@ -1852,8 +1905,75 @@ function HorizontalRuler({
 // throw off alignment with the ruler since it had its own minimum width
 // independent of the drawing's scale). Clicking the bay selects it, and
 // its name/type/width/depth become editable in the right sidebar instead.
+// The drawing's summary block, as on a GA sheet: overall size (W x D x H,
+// H = plinth + panel + busbar chamber), cable entry/exit with the side
+// cables come from, and form of separation + standard.
+function PanelSummaryTable({
+  widthMm,
+  depthMm,
+  heightMm,
+  cableAccess,
+  cableEntry,
+  cableExit,
+  form,
+  std,
+}: {
+  widthMm: number;
+  depthMm: number | null;
+  heightMm: number;
+  cableAccess: Switchboard["cable_access"];
+  cableEntry: Switchboard["cable_entry"];
+  cableExit: Switchboard["cable_exit"];
+  form: string | null;
+  std: Switchboard["std"];
+}) {
+  const route = (dir: "Top" | "Bottom" | null) => (dir ? [cableAccess, dir].filter(Boolean).join(" ").toUpperCase() : "—");
+  const formText = form ? form.replace(/^form\s*/i, "").toUpperCase() : null;
+  const stdText = std === "ArTuK" ? "ARTU-K, IEC 61439" : std ? `IEC ${std}` : null;
+  const cell = "border border-black/70 px-2 py-1";
+  return (
+    <table className="mt-4 border-collapse font-mono text-[11px] text-black" style={{ minWidth: 220 }}>
+      <tbody>
+        <tr>
+          <td colSpan={3} className={`${cell} text-center tracking-wider`}>
+            SIZE OF PANEL ( MM )
+          </td>
+        </tr>
+        <tr>
+          <td className={`${cell} text-center`}>W</td>
+          <td className={`${cell} text-center`}>D</td>
+          <td className={`${cell} text-center`}>H</td>
+        </tr>
+        <tr>
+          <td className={`${cell} text-center`}>{widthMm || "—"}</td>
+          <td className={`${cell} text-center`} title={depthMm == null ? "No bay depth set yet" : undefined}>
+            {depthMm ?? "—"}
+          </td>
+          <td className={`${cell} text-center`}>{heightMm}</td>
+        </tr>
+        <tr>
+          <td colSpan={3} className={cell}>
+            CABLE ENTRY – <span className="text-red-600">{route(cableEntry)}</span>
+          </td>
+        </tr>
+        <tr>
+          <td colSpan={3} className={cell}>
+            CABLE EXIT – <span className="text-red-600">{route(cableExit)}</span>
+          </td>
+        </tr>
+        <tr>
+          <td colSpan={3} className={cell}>
+            {[formText ? `FORM ${formText}` : null, stdText].filter(Boolean).join(", ") || "—"}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
 function BayColumn({
   vertical,
+  bayNumber,
   readOnly,
   pxPerMm,
   panelHeightMm,
@@ -1872,6 +1992,7 @@ function BayColumn({
   onRemove,
 }: {
   vertical: VerticalWithFeeders;
+  bayNumber: number | null;
   readOnly: boolean;
   pxPerMm: number;
   panelHeightMm: number;
@@ -1927,7 +2048,11 @@ function BayColumn({
           </button>
         </>
       )}
-      {compartments.map((c) => {
+      {compartments.map((c, ci) => {
+        // compartment tag as on a GA drawing: <bay>F<n> top to bottom
+        // (blank/dummy spaces included), with its height in modules (1M = 100mm)
+        const tag = bayNumber != null ? `${bayNumber}F${ci + 1}` : null;
+        const modules = c.heightMm % 100 === 0 ? `${c.heightMm / 100}M` : `${c.heightMm}mm`;
         // one unit at a time: a row of 4 merged MCCBs is 4 separate units
         const isFeederSelected = c.placedId === selectedPlacedId && (c.isBlank || (c.unitIndex ?? 0) === selectedUnitIndex);
         return (
@@ -1946,6 +2071,12 @@ function BayColumn({
             style={{ height: Math.max(c.heightMm * pxPerMm, 1) }}
           >
             <span className="truncate font-telemetry-md text-[9px] uppercase tracking-wide text-black">{c.label}</span>
+            {tag && c.heightMm * pxPerMm >= 14 && (
+              <>
+                <span className="pointer-events-none absolute bottom-0 left-0.5 font-mono text-[8px] font-bold leading-none text-black">{tag}</span>
+                <span className="pointer-events-none absolute bottom-0 right-0.5 font-mono text-[8px] leading-none text-black/70">{modules}</span>
+              </>
+            )}
             {!c.isBlank && !readOnly && (
               <button
                 onClick={(e) => {
