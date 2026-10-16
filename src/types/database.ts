@@ -198,8 +198,6 @@ export type Switchboard = {
   busbar: "Cu" | "Al" | null;
   neutral_size_pct: number;
   cable_access: "Front" | "Rear" | null;
-  // GA Builder: user-set compartment height (mm) per feeder id, this switchboard only
-  feeder_heights: Record<string, number>;
   std: "ArTuK" | "61439" | "60439" | null;
   qty: number;
   sort_order: number;
@@ -263,6 +261,9 @@ export type PlacedFeeder = {
   sort_order: number;
   tier_number: number;
   created_at: string;
+  // GA Builder: user-set height (mm) of each unit of this row, by unit
+  // index; null / missing = the standard height
+  unit_heights?: (number | null)[] | null;
 };
 
 // Minimal placeholder so @supabase/ssr's generic client type-checks.

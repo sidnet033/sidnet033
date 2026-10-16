@@ -294,9 +294,10 @@ export function HowItWorks() {
                 in the parameters bar for e.g. &ldquo;REAR TOP&rdquo;), and the form and standard.
               </>,
               <>
-                Click a feeder in a bay to open its panel on the right: change its <b>height</b> (applies to every unit of that feeder in this
-                switchboard, and is remembered if it goes back to the feeder list) or <b>Remove from bay</b> (also the Delete key) to send that unit
-                back to the available list. Click the DUMMY / blank space to give it a fixed height too.
+                Click a feeder in a bay to open its panel on the right (the bay&apos;s own name/width/depth stay below it): change that unit&apos;s{" "}
+                <b>height</b> (each unit has its own — other units of the same feeder are unaffected — and it&apos;s remembered if the unit goes back
+                to the feeder list) or <b>Remove from bay</b> (also the Delete key) to send that unit back to the available list. Click the DUMMY /
+                blank space to give it a fixed height too. Click empty canvas (outside the front and side views) to deselect.
               </>,
               <>Front and side views, dimensions and the &ldquo;Sizing Logic&rdquo; panel explain how each size was reached.</>,
             ]}

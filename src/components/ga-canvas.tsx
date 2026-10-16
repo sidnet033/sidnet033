@@ -230,11 +230,35 @@ function withUnassigned(verts: VerticalWithFeeders[], switchboardId: string): { 
 // feeder into one bay one at a time left them as separate placed_feeders
 // rows, which then showed up in BOM Builder as separate feeder cards
 // instead of one feeder at its real qty.
-function mergeQtyInto(verts: VerticalWithFeeders[], targetVerticalId: string, feederId: string, feeder: Feeder, qty: number): VerticalWithFeeders[] {
+// Per-unit heights of a row as a full-length array (null = standard).
+function unitHeightsOf(p: Pick<PlacedWithFeeder, "qty" | "unit_heights">): (number | null)[] {
+  return Array.from({ length: p.qty }, (_, i) => p.unit_heights?.[i] ?? null);
+}
+// Stored form: null when every unit is at its standard height.
+function packHeights(h: (number | null)[]): (number | null)[] | null {
+  return h.some((x) => x != null) ? h : null;
+}
+
+// heights: the moved units' own heights (carried with them), else standard.
+function mergeQtyInto(
+  verts: VerticalWithFeeders[],
+  targetVerticalId: string,
+  feederId: string,
+  feeder: Feeder,
+  qty: number,
+  heights: (number | null)[] = []
+): VerticalWithFeeders[] {
+  const incoming = Array.from({ length: qty }, (_, i) => heights[i] ?? null);
   return verts.map((v) => {
     if (v.id !== targetVerticalId) return v;
     const existing = v.placed.find((p) => p.feeder_id === feederId);
-    if (existing) return { ...v, placed: v.placed.map((p) => (p.id === existing.id ? { ...p, qty: p.qty + qty } : p)) };
+    if (existing)
+      return {
+        ...v,
+        placed: v.placed.map((p) =>
+          p.id === existing.id ? { ...p, qty: p.qty + qty, unit_heights: packHeights([...unitHeightsOf(p), ...incoming]) } : p
+        ),
+      };
     const newRow: PlacedWithFeeder = {
       id: newId(),
       vertical_id: targetVerticalId,
@@ -245,6 +269,7 @@ function mergeQtyInto(verts: VerticalWithFeeders[], targetVerticalId: string, fe
       tier_number: 1,
       created_at: new Date().toISOString(),
       feeder,
+      unit_heights: packHeights(incoming),
     };
     return { ...v, placed: [...v.placed, newRow] };
   });
@@ -252,13 +277,16 @@ function mergeQtyInto(verts: VerticalWithFeeders[], targetVerticalId: string, fe
 
 // The inverse of mergeQtyInto for a single unit: takes exactly one unit's worth off the
 // matching row in a vertical, dropping the row once it reaches zero.
-function removeUnitFrom(verts: VerticalWithFeeders[], sourceVerticalId: string, feederId: string): VerticalWithFeeders[] {
+// Takes unit `unitIndex` out of a row (dropping its height entry too).
+function takeUnit(verts: VerticalWithFeeders[], verticalId: string, placedId: string, unitIndex: number): VerticalWithFeeders[] {
   return verts.map((v) => {
-    if (v.id !== sourceVerticalId) return v;
-    const existing = v.placed.find((p) => p.feeder_id === feederId);
-    if (!existing) return v;
-    if (existing.qty > 1) return { ...v, placed: v.placed.map((p) => (p.id === existing.id ? { ...p, qty: p.qty - 1 } : p)) };
-    return { ...v, placed: v.placed.filter((p) => p.id !== existing.id) };
+    if (v.id !== verticalId) return v;
+    const row = v.placed.find((p) => p.id === placedId);
+    if (!row) return v;
+    if (row.qty <= 1) return { ...v, placed: v.placed.filter((p) => p.id !== placedId) };
+    const h = unitHeightsOf(row);
+    h.splice(Math.min(Math.max(unitIndex, 0), row.qty - 1), 1);
+    return { ...v, placed: v.placed.map((p) => (p.id === placedId ? { ...p, qty: p.qty - 1, unit_heights: packHeights(h) } : p)) };
   });
 }
 
@@ -322,10 +350,6 @@ export function GaCanvas({
   // side of the panel cables come in/out from (Front / Rear) -- shown with
   // cable entry/exit in the summary table, e.g. "CABLE ENTRY – REAR TOP"
   const [cableAccess, setCableAccess] = useState<Switchboard["cable_access"]>(null);
-  // user-set unit heights per feeder for this switchboard (mm) -- kept when a
-  // feeder goes back to the available list, so placing it again keeps them
-  const [feederHeights, setFeederHeights] = useState<Record<string, number>>({});
-  const [savedFeederHeights, setSavedFeederHeights] = useState<Record<string, number>>({});
   const [savedCableAccess, setSavedCableAccess] = useState<Switchboard["cable_access"]>(null);
   const [panelHeight, setPanelHeight] = useState(2100);
   const [savedPanelHeight, setSavedPanelHeight] = useState(2100);
@@ -439,8 +463,6 @@ export function GaCanvas({
     setSavedPlinthHeight(plinth);
     setCableAccess(data.switchboard.cable_access ?? null);
     setSavedCableAccess(data.switchboard.cable_access ?? null);
-    setFeederHeights(data.switchboard.feeder_heights ?? {});
-    setSavedFeederHeights(data.switchboard.feeder_heights ?? {});
     setPanelHeight(panel);
     setSavedPanelHeight(panel);
     setBusbarHeight(busbar);
@@ -466,8 +488,6 @@ export function GaCanvas({
       setSavedPlinthHeight(plinth);
       setCableAccess(data.switchboard.cable_access ?? null);
       setSavedCableAccess(data.switchboard.cable_access ?? null);
-      setFeederHeights(data.switchboard.feeder_heights ?? {});
-      setSavedFeederHeights(data.switchboard.feeder_heights ?? {});
       setPanelHeight(panel);
       setSavedPanelHeight(panel);
       setBusbarHeight(busbar);
@@ -488,7 +508,6 @@ export function GaCanvas({
     JSON.stringify(verticals) !== JSON.stringify(savedVerticals) ||
     plinthHeight !== savedPlinthHeight ||
     cableAccess !== savedCableAccess ||
-    JSON.stringify(feederHeights) !== JSON.stringify(savedFeederHeights) ||
     panelHeight !== savedPanelHeight ||
     busbarHeight !== savedBusbarHeight ||
     JSON.stringify(busbarOverrides) !== JSON.stringify(savedBusbarOverrides);
@@ -543,7 +562,7 @@ export function GaCanvas({
   const busbarMaterial: "Cu" | "Al" = sb?.busbar ?? "Cu";
   const busbarPlan: BusbarPlan | null = sb
     ? planForSwitchboard({
-        params: { ...sb, feeder_heights: feederHeights },
+        params: sb,
         verticals: bays,
         overrides: busbarOverrides,
         densities,
@@ -679,7 +698,7 @@ export function GaCanvas({
     const { unassigned, verts } = withUnassigned(verticals, sb.id);
     let next = verts;
     for (const p of vertical.placed) {
-      next = mergeQtyInto(next, unassigned.id, p.feeder_id, p.feeder, p.qty);
+      next = mergeQtyInto(next, unassigned.id, p.feeder_id, p.feeder, p.qty, unitHeightsOf(p));
     }
     setVerticals(next.filter((v) => v.id !== id));
   }
@@ -787,7 +806,7 @@ export function GaCanvas({
     // four merged MCCBs can leave the group -- then the rows are rebuilt:
     // runs of identical adjacent units merge back into one row, a split row
     // keeps its id on its first run and the rest get new rows.
-    const seq = computeCompartments(bay, panelHeight, feederHeights).map((c) => ({ isBlank: c.isBlank, placedId: c.placedId!, unitIndex: c.unitIndex ?? 0 }));
+    const seq = computeCompartments(bay, panelHeight).map((c) => ({ isBlank: c.isBlank, placedId: c.placedId!, unitIndex: c.unitIndex ?? 0 }));
     const pos = seq.findIndex((e) => (placedId === dummyId ? e.isBlank : !e.isBlank && e.placedId === placedId && e.unitIndex === unitIndex));
     const target = direction === "up" ? pos - 1 : pos + 1;
     if (pos === -1 || target < 0 || target >= seq.length) return;
@@ -795,6 +814,7 @@ export function GaCanvas({
 
     const rowsById = new Map(bay.placed.map((p) => [p.id, p]));
     const groups: { row: PlacedWithFeeder; units: { placedId: string; unitIndex: number }[] }[] = [];
+    const heightOfUnit = (u: { placedId: string; unitIndex: number }) => rowsById.get(u.placedId)?.unit_heights?.[u.unitIndex] ?? null;
     let dummySlot = bay.dummy_slot;
     let unitsSoFar = 0;
     for (const e of seq) {
@@ -818,7 +838,7 @@ export function GaCanvas({
       g.units.forEach((u, k) => {
         if (u.placedId === placedId && u.unitIndex === unitIndex) selection = { placedId: id, unitIndex: k };
       });
-      return { ...g.row, id, qty: g.units.length, tier_number: i + 1, sort_order: i };
+      return { ...g.row, id, qty: g.units.length, tier_number: i + 1, sort_order: i, unit_heights: packHeights(g.units.map(heightOfUnit)) };
     });
 
     setVerticals(verticals.map((v) => (v.id === bayId ? { ...v, placed: rebuilt, dummy_slot: dummySlot } : v)));
@@ -832,12 +852,15 @@ export function GaCanvas({
   // of that placement into the target bay. If the target bay already holds
   // a placement of the same feeder, it merges into it (qty+1) instead of
   // creating a second row for the same feeder in the same bay.
-  function allocateUnit(placedId: string, toVerticalId: string) {
+  // The dragged unit keeps its own height (one set earlier, before it was
+  // sent back to the list).
+  function allocateUnit(placedId: string, unitIndex: number, toVerticalId: string) {
     if (!unallocated) return;
     const placedRow = unallocated.placed.find((p) => p.id === placedId);
     if (!placedRow) return;
-    const afterRemove = removeUnitFrom(verticals, unallocated.id, placedRow.feeder_id);
-    setVerticals(mergeQtyInto(afterRemove, toVerticalId, placedRow.feeder_id, placedRow.feeder, 1));
+    const height = unitHeightsOf(placedRow)[unitIndex] ?? null;
+    const afterRemove = takeUnit(verticals, unallocated.id, placedId, unitIndex);
+    setVerticals(mergeQtyInto(afterRemove, toVerticalId, placedRow.feeder_id, placedRow.feeder, 1, [height]));
   }
 
   // "Removing" a feeder from a bay sends its whole placement (however many
@@ -847,30 +870,37 @@ export function GaCanvas({
   // whatever's already unassigned for that feeder rather than creating a
   // duplicate row there.
   // Sends ONE unit of a placed row back to the available-feeders list (a row
-  // of 4 merged MCCBs keeps the other 3). Its user-set height stays in
-  // feederHeights, so it comes back at that height when placed again.
-  function removeUnitFromBay(verticalId: string, placedId: string) {
+  // of 4 merged MCCBs keeps the other 3). The unit carries its own height,
+  // so it comes back at that height when placed again.
+  function removeUnitFromBay(verticalId: string, placedId: string, unitIndex: number) {
     if (!sb) return;
     const vertical = verticals.find((v) => v.id === verticalId);
     const placedRow = vertical?.placed.find((p) => p.id === placedId);
     if (!placedRow) return;
+    const height = unitHeightsOf(placedRow)[unitIndex] ?? null;
     const { unassigned, verts } = withUnassigned(verticals, sb.id);
-    const shrunk = verts.map((v) =>
-      v.id !== verticalId
-        ? v
-        : { ...v, placed: placedRow.qty > 1 ? v.placed.map((p) => (p.id === placedId ? { ...p, qty: p.qty - 1 } : p)) : v.placed.filter((p) => p.id !== placedId) }
-    );
-    setVerticals(mergeQtyInto(shrunk, unassigned.id, placedRow.feeder_id, placedRow.feeder, 1));
-    if (placedRow.qty <= 1 || selectedUnitIndex >= placedRow.qty - 1) setSelectedPlacedId(null);
+    const shrunk = takeUnit(verts, verticalId, placedId, unitIndex);
+    setVerticals(mergeQtyInto(shrunk, unassigned.id, placedRow.feeder_id, placedRow.feeder, 1, [height]));
+    setSelectedPlacedId(null);
   }
 
-  function setFeederHeight(feederId: string, heightMm: number | null) {
-    setFeederHeights((prev) => {
-      const next = { ...prev };
-      if (heightMm == null) delete next[feederId];
-      else next[feederId] = heightMm;
-      return next;
-    });
+  // Height of one unit only -- other units of the same feeder keep theirs.
+  function setUnitHeight(verticalId: string, placedId: string, unitIndex: number, heightMm: number | null) {
+    setVerticals(
+      verticals.map((v) =>
+        v.id !== verticalId
+          ? v
+          : {
+              ...v,
+              placed: v.placed.map((p) => {
+                if (p.id !== placedId) return p;
+                const h = unitHeightsOf(p);
+                h[unitIndex] = heightMm;
+                return { ...p, unit_heights: packHeights(h) };
+              }),
+            }
+      )
+    );
   }
 
   function setDummyHeight(verticalId: string, heightMm: number | null) {
@@ -881,7 +911,6 @@ export function GaCanvas({
     setVerticals(structuredClone(savedVerticals));
     setPlinthHeight(savedPlinthHeight);
     setCableAccess(savedCableAccess);
-    setFeederHeights(savedFeederHeights);
     setPanelHeight(savedPanelHeight);
     setBusbarHeight(savedBusbarHeight);
     setBusbarOverrides(savedBusbarOverrides);
@@ -956,7 +985,14 @@ export function GaCanvas({
           if (p.id.startsWith("new-")) {
             const { data, error } = await supabase
               .from("placed_feeders")
-              .insert({ vertical_id: realVerticalId, feeder_id: realFeederId, qty: p.qty, sort_order: p.sort_order, tier_number: p.tier_number })
+              .insert({
+                vertical_id: realVerticalId,
+                feeder_id: realFeederId,
+                qty: p.qty,
+                sort_order: p.sort_order,
+                tier_number: p.tier_number,
+                unit_heights: p.unit_heights ?? null,
+              })
               .select("id")
               .single();
             if (error || !data) throw new Error(error?.message ?? "Could not place feeder.");
@@ -970,6 +1006,7 @@ export function GaCanvas({
           if (!prevVertical || prevVertical.id !== v.id) fieldPatch.vertical_id = realVerticalId;
           if (!prev || prev.sort_order !== p.sort_order) fieldPatch.sort_order = p.sort_order;
           if (!prev || prev.tier_number !== p.tier_number) fieldPatch.tier_number = p.tier_number;
+          if (JSON.stringify(prev?.unit_heights ?? null) !== JSON.stringify(p.unit_heights ?? null)) fieldPatch.unit_heights = p.unit_heights ?? null;
           if (!prev || prev.qty !== p.qty) fieldPatch.qty = p.qty;
           if (Object.keys(fieldPatch).length === 0) continue;
           const { error } = await supabase.from("placed_feeders").update(fieldPatch).eq("id", p.id);
@@ -1025,10 +1062,6 @@ export function GaCanvas({
       const paramPatch: Partial<Switchboard> = {};
       if (plinthHeight !== savedPlinthHeight) paramPatch.plinth_height_mm = plinthHeight;
       if (cableAccess !== savedCableAccess) paramPatch.cable_access = cableAccess;
-      if (JSON.stringify(feederHeights) !== JSON.stringify(savedFeederHeights)) {
-        // keys of feeders created during this save (spares) mapped to real ids
-        paramPatch.feeder_heights = Object.fromEntries(Object.entries(feederHeights).map(([id, h]) => [tempFeederIdMap.get(id) ?? id, h]));
-      }
       if (panelHeight !== savedPanelHeight) paramPatch.panel_height_mm = panelHeight;
       if (busbarHeight !== savedBusbarHeight) paramPatch.busbar_chamber_height_mm = busbarHeight;
       if (Object.keys(paramPatch).length > 0) {
@@ -1087,7 +1120,7 @@ export function GaCanvas({
       if (e.key === "Delete" || e.key === "Backspace") {
         if (selectedPlacedId && !selectedPlacedId.endsWith("::dummy")) {
           e.preventDefault();
-          removeUnitFromBay(selectedBayId, selectedPlacedId);
+          removeUnitFromBay(selectedBayId, selectedPlacedId, selectedUnitIndex);
         }
         return;
       }
@@ -1147,8 +1180,8 @@ export function GaCanvas({
     const verticalId = overId.replace("bay-", "");
 
     if (activeId.startsWith("unit-") && unallocated) {
-      const placedId = activeId.replace("unit-", "").split("::")[0];
-      allocateUnit(placedId, verticalId);
+      const [placedId, unit] = activeId.replace("unit-", "").split("::");
+      allocateUnit(placedId, Number(unit) || 0, verticalId);
     }
   }
 
@@ -1389,14 +1422,26 @@ export function GaCanvas({
               </div>
             )}
 
-            <div className="flex-1 overflow-auto rounded-xl border border-surface-container-high bg-surface-container-low/40 p-4">
+            <div
+              className="flex-1 overflow-auto rounded-xl border border-surface-container-high bg-surface-container-low/40 p-4"
+              onClick={(e) => {
+                // a click on empty canvas (not on a bay, feeder, busbar, the
+                // busbar chamber or the busbar schedule) clears the selection
+                if ((e.target as Element).closest("[data-ga-selectable]")) return;
+                setSelectedBayId(null);
+                setSideBayId(null);
+                setSelectedPlacedId(null);
+                setSelectedSegmentKey(null);
+                setBusbarSelected(false);
+              }}
+            >
               {bays.length === 0 ? (
                 <p className="w-full py-10 text-center text-sm text-on-surface-variant">
                   No bays yet — add one from the Modular Bay Templates above.
                 </p>
               ) : (
                 <div ref={drawingRef} className="flex items-start gap-10">
-                  <div className="inline-block">
+                  <div className="inline-block" data-ga-selectable="">
                     <div className="flex">
                       <div style={{ width: RULER_WIDTH_PX + VERTICAL_DIM_WIDTH_PX }} />
                       <div style={{ width: Math.max(totalWidth * pxPerMm, 1) }}>
@@ -1455,7 +1500,6 @@ export function GaCanvas({
                               key={`${v.id}-${resetKey}`}
                               vertical={v}
                               bayNumber={bayNumbers.get(v.id) ?? null}
-                              feederHeights={feederHeights}
                               readOnly={readOnly}
                               pxPerMm={pxPerMm}
                               panelHeightMm={panelHeight}
@@ -1484,7 +1528,7 @@ export function GaCanvas({
                               onMoveFeeder={(placedId, unitIndex, direction) => moveFeeder(v.id, placedId, unitIndex, direction)}
                               onHover={setHover}
                               onHoverEnd={() => setHover(null)}
-                              onRemove={(placedId) => removeUnitFromBay(v.id, placedId)}
+                              onRemove={(placedId, unitIndex) => removeUnitFromBay(v.id, placedId, unitIndex)}
                             />
                           ))}
                         </div>
@@ -1571,7 +1615,7 @@ export function GaCanvas({
                     </div>
                   </div>
 
-                  <div className="inline-block">
+                  <div className="inline-block" data-ga-selectable="">
                     <ViewLabel>Side View{sideBay ? ` — ${sideBay.name}` : ""}</ViewLabel>
                     {sb.std === "ArTuK" && (
                       <div
@@ -1602,7 +1646,7 @@ export function GaCanvas({
                               ? {
                                   id: sideBay.id,
                                   name: sideBay.name,
-                                  compartments: computeCompartments(sideBay, panelHeight, feederHeights),
+                                  compartments: computeCompartments(sideBay, panelHeight),
                                   panelTopMm: busbarPosition === "top" ? busbarHeight : 0,
                                 }
                               : null
@@ -1628,6 +1672,7 @@ export function GaCanvas({
                 </div>
               )}
               {showBusbars && busbarPlan && bays.length > 0 && (
+                <div data-ga-selectable="">
                 <BusbarSchedule
                   plan={busbarPlan}
                   material={busbarMaterial}
@@ -1642,6 +1687,7 @@ export function GaCanvas({
                   }
                   onReset={resetSegmentOverrides}
                 />
+                </div>
               )}
             </div>
           </div>
@@ -1684,21 +1730,24 @@ export function GaCanvas({
                     onHeightChange={setBusbarHeight}
                     onClose={() => setBusbarSelected(false)}
                   />
-                ) : selectedBay && selectedPlacedId ? (
+                ) : (
+                  <>
+                  {/* a clicked feeder / blank space gets its own panel; the
+                      bay's own details (name, width, depth) stay below it */}
+                  {selectedBay && selectedPlacedId && (
                   <PlacedItemPanel
                     key={`${selectedPlacedId}-${selectedUnitIndex}-${resetKey}`}
                     bay={selectedBay}
                     placedId={selectedPlacedId}
                     unitIndex={selectedUnitIndex}
                     panelHeightMm={panelHeight}
-                    feederHeights={feederHeights}
                     readOnly={readOnly}
-                    onFeederHeight={setFeederHeight}
+                    onUnitHeight={(h) => setUnitHeight(selectedBay.id, selectedPlacedId, selectedUnitIndex, h)}
                     onDummyHeight={(h) => setDummyHeight(selectedBay.id, h)}
-                    onRemove={() => removeUnitFromBay(selectedBay.id, selectedPlacedId)}
+                    onRemove={() => removeUnitFromBay(selectedBay.id, selectedPlacedId, selectedUnitIndex)}
                     onClose={() => setSelectedPlacedId(null)}
                   />
-                ) : (
+                  )}
                   <BayDetailsPanel
                     key={selectedBay?.id ?? "none"}
                     vertical={selectedBay}
@@ -1718,6 +1767,7 @@ export function GaCanvas({
                       setSelectedPlacedId(null);
                     }}
                   />
+                  </>
                 )}
 
                 <div className="mt-4 border-t border-surface-container-high pt-3">
@@ -1830,6 +1880,7 @@ function DrawingBar({
   return (
     <div
       onClick={onClick}
+      data-ga-selectable={onClick ? "" : undefined}
       className={`flex shrink-0 items-center justify-center overflow-hidden border bg-white px-2 text-center font-telemetry-md text-[9px] font-semibold uppercase tracking-wide text-black ${
         isSelected ? "border-2 border-primary" : "border-black/70"
       } ${onClick ? "cursor-pointer hover:bg-amber-50" : ""}`}
@@ -2038,7 +2089,6 @@ function PanelSummaryTable({
 function BayColumn({
   vertical,
   bayNumber,
-  feederHeights,
   readOnly,
   pxPerMm,
   panelHeightMm,
@@ -2058,7 +2108,6 @@ function BayColumn({
 }: {
   vertical: VerticalWithFeeders;
   bayNumber: number | null;
-  feederHeights: Record<string, number>;
   readOnly: boolean;
   pxPerMm: number;
   panelHeightMm: number;
@@ -2074,19 +2123,20 @@ function BayColumn({
   onMoveFeeder: (placedId: string, unitIndex: number, direction: "up" | "down") => void;
   onHover: (extent: HoverExtent) => void;
   onHoverEnd: () => void;
-  onRemove: (placedId: string) => void;
+  onRemove: (placedId: string, unitIndex: number) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `bay-${vertical.id}`, disabled: readOnly });
 
   const widthMm = vertical.width_mm ?? 0;
   const widthPx = widthMm * pxPerMm;
   const heightPx = panelHeightMm * pxPerMm;
-  const compartments = computeCompartments(vertical, panelHeightMm, feederHeights);
+  const compartments = computeCompartments(vertical, panelHeightMm);
 
   return (
     <div
       ref={setNodeRef}
       onClick={onSelectBay}
+      data-ga-selectable=""
       className={`relative shrink-0 cursor-pointer border bg-white ${isOver ? "border-primary" : isSelected ? "border-2 border-primary" : "border-black/70"}`}
       style={{ width: Math.max(widthPx, 2), height: Math.max(heightPx, 2) }}
     >
@@ -2147,7 +2197,7 @@ function BayColumn({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  onRemove(c.placedId!);
+                  onRemove(c.placedId!, c.unitIndex ?? 0);
                 }}
                 title="Move back to available feeders"
                 className="absolute right-0.5 top-0.5 text-error opacity-0 group-hover:opacity-100"
@@ -2260,9 +2310,8 @@ function PlacedItemPanel({
   placedId,
   unitIndex,
   panelHeightMm,
-  feederHeights,
   readOnly,
-  onFeederHeight,
+  onUnitHeight,
   onDummyHeight,
   onRemove,
   onClose,
@@ -2271,18 +2320,17 @@ function PlacedItemPanel({
   placedId: string;
   unitIndex: number;
   panelHeightMm: number;
-  feederHeights: Record<string, number>;
   readOnly: boolean;
-  onFeederHeight: (feederId: string, heightMm: number | null) => void;
+  onUnitHeight: (heightMm: number | null) => void;
   onDummyHeight: (heightMm: number | null) => void;
   onRemove: () => void;
   onClose: () => void;
 }) {
   const isDummy = placedId.endsWith("::dummy");
   const row = bay.placed.find((p) => p.id === placedId) ?? null;
-  const compartments = computeCompartments(bay, panelHeightMm, feederHeights);
+  const compartments = computeCompartments(bay, panelHeightMm);
   const current = compartments.find((c) => (isDummy ? c.isBlank : c.placedId === placedId && (c.unitIndex ?? 0) === unitIndex));
-  const custom = isDummy ? bay.dummy_height_mm : row ? (feederHeights[row.feeder_id] ?? null) : null;
+  const custom = isDummy ? bay.dummy_height_mm : (row?.unit_heights?.[unitIndex] ?? null);
   const standard = row ? compartmentHeightFor(row.feeder) : null;
   const [local, setLocal] = useState(custom != null ? String(custom) : "");
   const usedMm = compartments.reduce((s, c) => s + c.heightMm, 0);
@@ -2292,7 +2340,7 @@ function PlacedItemPanel({
     const n = Math.round(Number(local));
     const value = local.trim() === "" || !(n > 0) ? null : n;
     if (isDummy) onDummyHeight(value);
-    else if (row) onFeederHeight(row.feeder_id, value === standard ? null : value);
+    else if (row) onUnitHeight(value === standard ? null : value);
   }
 
   if (!isDummy && !row) return null;
@@ -2331,14 +2379,14 @@ function PlacedItemPanel({
       <p className="mb-2 text-[11px] leading-snug text-on-surface-variant">
         {isDummy
           ? "Leave empty to fill whatever height the feeders leave."
-          : `Applies to every unit of this feeder in this switchboard and is remembered if you send it back to the feeder list. Standard: ${standard}mm.`}
+          : `This unit only — other units of the same feeder keep their own height. Remembered if you send it back to the feeder list. Standard: ${standard}mm.`}
       </p>
       {!readOnly && custom != null && (
         <button
           onClick={() => {
             setLocal("");
             if (isDummy) onDummyHeight(null);
-            else onFeederHeight(row!.feeder_id, null);
+            else onUnitHeight(null);
           }}
           className="btn btn-outline btn-sm mb-2 w-full"
         >
