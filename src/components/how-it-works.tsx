@@ -274,7 +274,8 @@ export function HowItWorks() {
             items={[
               <>
                 Feeders added in the BOM first appear in the <b>Unassigned</b> bucket. Add bays (incomer, outgoing, bus coupler, cable alley, busbar
-                alley…) and drag feeders into them; reorder them inside a bay to set the top-to-bottom order.
+                alley…) and drag feeders into them; reorder them inside a bay to set the top-to-bottom order. A feeder already in a bay can be
+                dragged to another bay (just that unit moves, with its height), or dragged back onto the available-feeders list.
               </>,
               <>
                 On ArTuK switchboards, <b>Update GA</b> sizes every bay&apos;s width, depth and compartment heights from its feeders, using the tables

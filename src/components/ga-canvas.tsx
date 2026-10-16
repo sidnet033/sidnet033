@@ -884,6 +884,24 @@ export function GaCanvas({
     setSelectedPlacedId(null);
   }
 
+  // Drag-and-drop between bays: one unit leaves its row (the rest stay) and
+  // joins the target bay at the bottom, merging with a row of the same
+  // feeder there; its height goes with it. It stays selected in its new bay.
+  function moveUnitToBay(fromVerticalId: string, placedId: string, unitIndex: number, toVerticalId: string) {
+    const row = verticals.find((v) => v.id === fromVerticalId)?.placed.find((p) => p.id === placedId);
+    if (!row) return;
+    const height = unitHeightsOf(row)[unitIndex] ?? null;
+    const next = mergeQtyInto(takeUnit(verticals, fromVerticalId, placedId, unitIndex), toVerticalId, row.feeder_id, row.feeder, 1, [height]);
+    setVerticals(next);
+    const target = next.find((v) => v.id === toVerticalId)?.placed.find((p) => p.feeder_id === row.feeder_id);
+    if (target) {
+      setSelectedBayId(toVerticalId);
+      setSideBayId(toVerticalId);
+      setSelectedPlacedId(target.id);
+      setSelectedUnitIndex(target.qty - 1);
+    }
+  }
+
   // Height of one unit only -- other units of the same feeder keep theirs.
   function setUnitHeight(verticalId: string, placedId: string, unitIndex: number, heightMm: number | null) {
     setVerticals(
@@ -1162,6 +1180,12 @@ export function GaCanvas({
 
   function handleDragStart(event: DragStartEvent) {
     const id = String(event.active.id);
+    if (id.startsWith("placed-")) {
+      const [verticalId, placedId] = id.replace("placed-", "").split("::");
+      const placed = verticals.find((v) => v.id === verticalId)?.placed.find((p) => p.id === placedId);
+      if (placed) setDraggingFeeder(placed.feeder);
+      return;
+    }
     if (id.startsWith("unit-")) {
       const placedId = id.replace("unit-", "").split("::")[0];
       const placed = unallocated?.placed.find((p) => p.id === placedId);
@@ -1176,6 +1200,23 @@ export function GaCanvas({
 
     const activeId = String(active.id);
     const overId = String(over.id);
+
+    // a feeder unit dragged out of a bay: onto another bay moves just that
+    // unit there (keeping its own height); onto the available-feeders list
+    // sends it back
+    if (activeId.startsWith("placed-")) {
+      const [fromVerticalId, placedId, unit] = activeId.replace("placed-", "").split("::");
+      const unitIndex = Number(unit) || 0;
+      if (overId === "available-feeders") {
+        removeUnitFromBay(fromVerticalId, placedId, unitIndex);
+        return;
+      }
+      if (!overId.startsWith("bay-")) return;
+      const toVerticalId = overId.replace("bay-", "");
+      if (toVerticalId !== fromVerticalId) moveUnitToBay(fromVerticalId, placedId, unitIndex, toVerticalId);
+      return;
+    }
+
     if (!overId.startsWith("bay-")) return;
     const verticalId = overId.replace("bay-", "");
 
@@ -1310,6 +1351,7 @@ export function GaCanvas({
                 <p className="mb-2 text-xs text-on-surface-variant">
                   {readOnly ? "Read only — lock this switchboard to edit." : "Drag a feeder onto a bay →"}
                 </p>
+                <AvailableDropZone disabled={readOnly}>
                 <div className="space-y-2">
                   {filteredUnits.map((u) => (
                     <AvailableFeederCard key={u.unitId} unit={u} disabled={readOnly} />
@@ -1320,6 +1362,7 @@ export function GaCanvas({
                     </p>
                   )}
                 </div>
+                </AvailableDropZone>
               </>
             )}
           </aside>
@@ -1836,6 +1879,41 @@ function ReadOnlyField({ label, value }: { label: string; value: string | null }
   );
 }
 
+// A bay compartment that can be dragged to another bay (or back onto the
+// available-feeders list). A plain click still selects it: dragging only
+// starts after the pointer moves a few px (PointerSensor's distance).
+function DraggableCell({
+  dragId,
+  disabled,
+  className,
+  children,
+  ...rest
+}: { dragId: string; disabled: boolean; className: string; children: React.ReactNode } & Omit<React.HTMLAttributes<HTMLDivElement>, "className">) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: dragId, disabled });
+  return (
+    <div
+      ref={setNodeRef}
+      {...rest}
+      {...(disabled ? {} : listeners)}
+      {...(disabled ? {} : attributes)}
+      className={`${className} ${disabled ? "" : "cursor-grab active:cursor-grabbing"} ${isDragging ? "opacity-40" : ""}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+// The available-feeders list doubles as a drop target: a unit dragged out
+// of a bay and dropped here goes back to the list.
+function AvailableDropZone({ disabled, children }: { disabled: boolean; children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: "available-feeders", disabled });
+  return (
+    <div ref={setNodeRef} className={`min-h-16 rounded-lg ${isOver ? "bg-primary/5 ring-2 ring-primary/40" : ""}`}>
+      {children}
+    </div>
+  );
+}
+
 function AvailableFeederCard({ unit, disabled = false }: { unit: AvailableUnit; disabled?: boolean }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `unit-${unit.unitId}`,
@@ -2172,8 +2250,10 @@ function BayColumn({
         // one unit at a time: a row of 4 merged MCCBs is 4 separate units
         const isFeederSelected = c.placedId === selectedPlacedId && (c.isBlank || (c.unitIndex ?? 0) === selectedUnitIndex);
         return (
-          <div
+          <DraggableCell
             key={c.id}
+            dragId={`placed-${vertical.id}::${c.placedId}::${c.unitIndex ?? 0}`}
+            disabled={readOnly || c.isBlank}
             onClick={(e) => {
               e.stopPropagation();
               onSelectFeeder(c.placedId!, c.unitIndex ?? 0);
@@ -2229,7 +2309,7 @@ function BayColumn({
                 </button>
               </>
             )}
-          </div>
+          </DraggableCell>
         );
       })}
       {vertical.bay_type === "incomer" && cableEntry && (
