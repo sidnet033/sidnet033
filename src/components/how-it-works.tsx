@@ -249,7 +249,8 @@ export function HowItWorks() {
               </>,
               <>
                 <b>Discounts</b>: every item line can override its list price or discount % for this BOM only. To discount a whole category at once
-                (e.g. all MCCBs at 42%), use <b>Bulk Discount — Category</b> at the top. Inside a feeder, the qty, list price and discount boxes work like
+                (e.g. all MCCBs at 42%), use <b>Bulk Discount — Category</b> at the top. To add many items at once, use <b>Paste Item Codes</b> on a feeder: paste SKUs or catalogue numbers
+                (with quantities, straight from Excel), check which ones were found, then add them. Inside a feeder, the qty, list price and discount boxes work like
                 a spreadsheet: arrow keys and Enter move between them, and typing replaces the value.
               </>,
               <>

@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { CostBreakdownCard } from "@/components/cost-breakdown-card";
 import { AdHocFeederPanel } from "@/components/ad-hoc-feeder-panel";
 import { CreateItemDialog } from "@/components/create-item-dialog";
+import { BulkAddItemsDialog } from "@/components/bulk-add-items-dialog";
 import { findDuplicateLibraryFeeder } from "@/lib/feeder-duplicate";
 import { ensureUnassignedVertical } from "@/lib/switchboard-bom";
 import { effectiveNetRate } from "@/lib/feeder-cost";
@@ -513,6 +514,27 @@ export function BomBuilder({
     setDraft((d) => (d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, lines: [...m.lines, line] } : m)) } : d));
   }
 
+  // Bulk add from the "Paste item codes" dialog: an item already in the
+  // feeder gets its qty increased instead of a second line.
+  function addLines(mod: DraftModule, entries: { item: ItemMaster; qty: number }[]) {
+    setDraft((d) => {
+      if (!d) return d;
+      return {
+        ...d,
+        modules: d.modules.map((m) => {
+          if (m.feeder.id !== mod.feeder.id) return m;
+          let lines = [...m.lines];
+          for (const { item, qty } of entries) {
+            const existing = lines.find((l) => l.item_id === item.id);
+            if (existing) lines = lines.map((l) => (l === existing ? { ...l, qty: l.qty + qty } : l));
+            else lines.push({ id: newId(), item_id: item.id, item, qty, list_price_override: null, discount_pct_override: null });
+          }
+          return { ...m, lines };
+        }),
+      };
+    });
+  }
+
   function updateLineQty(mod: DraftModule, lineId: string, qty: number) {
     setDraft((d) =>
       d
@@ -991,6 +1013,7 @@ export function BomBuilder({
             onRatingChange={(field, value) => updateFeederRating(mod, field, value)}
             onQtyChange={(qty) => updateModuleQty(mod, qty)}
             onAddLine={(item, qty) => addLine(mod, item, qty)}
+            onAddLines={(entries) => addLines(mod, entries)}
             onItemCreated={handleItemCreated}
             onLineQtyChange={(lineId, qty) => updateLineQty(mod, lineId, qty)}
             onLineOverrideChange={(lineId, field, value) => updateLineOverride(mod, lineId, field, value)}
@@ -1149,6 +1172,7 @@ function FeederModuleCard({
   onRatingChange,
   onQtyChange,
   onAddLine,
+  onAddLines,
   onItemCreated,
   onLineQtyChange,
   onLineOverrideChange,
@@ -1166,6 +1190,7 @@ function FeederModuleCard({
   onRatingChange: (field: "rated_current" | "rated_kw", value: string) => void;
   onQtyChange: (qty: number) => void;
   onAddLine: (item: ItemMaster, qty: number) => void;
+  onAddLines: (entries: { item: ItemMaster; qty: number }[]) => void;
   onItemCreated: (item: ItemMaster) => void;
   onLineQtyChange: (lineId: string, qty: number) => void;
   onLineOverrideChange: (lineId: string, field: "list_price_override" | "discount_pct_override", value: number | null) => void;
@@ -1177,6 +1202,7 @@ function FeederModuleCard({
   const [expanded, setExpanded] = useState(true);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [createItemOpen, setCreateItemOpen] = useState(false);
+  const [bulkAddOpen, setBulkAddOpen] = useState(false);
   const [itemSearch, setItemSearch] = useState("");
   const [categoryChip, setCategoryChip] = useState<string | null>(null);
   const [justAdded, setJustAdded] = useState<{ id: string; label: string }[]>([]);
@@ -1454,10 +1480,26 @@ function FeederModuleCard({
             </tbody>
           </table>
 
+          {bulkAddOpen && (
+            <BulkAddItemsDialog
+              feederName={mod.feeder.name}
+              allItems={allItems}
+              existingItemIds={new Set(mod.lines.map((l) => l.item_id))}
+              onAdd={(entries) => {
+                onAddLines(entries);
+                setBulkAddOpen(false);
+              }}
+              onClose={() => setBulkAddOpen(false)}
+            />
+          )}
+
           {canEditLines && (
             <div className="mt-2 flex flex-wrap gap-2">
               <button type="button" onClick={() => setAddDialogOpen(true)} className="btn btn-primary btn-sm">
                 <Icon name="add" size={14} /> Add Item to Feeder
+              </button>
+              <button type="button" onClick={() => setBulkAddOpen(true)} className="btn btn-secondary btn-sm" title="Paste a list of SKUs / catalogue numbers from Excel or Notepad">
+                <Icon name="content_paste" size={14} /> Paste Item Codes
               </button>
               <button type="button" onClick={() => setCreateItemOpen(true)} className="btn btn-secondary btn-sm">
                 <Icon name="add_circle" size={14} /> Create New Item in Master &amp; Add
