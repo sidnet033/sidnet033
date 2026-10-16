@@ -198,6 +198,8 @@ export type Switchboard = {
   busbar: "Cu" | "Al" | null;
   neutral_size_pct: number;
   cable_access: "Front" | "Rear" | null;
+  // GA Builder: user-set compartment height (mm) per feeder id, this switchboard only
+  feeder_heights: Record<string, number>;
   std: "ArTuK" | "61439" | "60439" | null;
   qty: number;
   sort_order: number;
@@ -247,6 +249,8 @@ export type Vertical = {
   sort_order: number;
   created_at: string;
   dummy_slot: number | null;
+  // the blank/DUMMY space's height when set by hand; null = fills what's left
+  dummy_height_mm: number | null;
 };
 
 // a feeder placed inside a bay, stacked into a tier

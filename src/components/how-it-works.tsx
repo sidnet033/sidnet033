@@ -293,6 +293,11 @@ export function HowItWorks() {
                 The summary table under the side view gives the overall size (W × D × H), cable entry and exit (set <b>Cable Access</b> Front/Rear
                 in the parameters bar for e.g. &ldquo;REAR TOP&rdquo;), and the form and standard.
               </>,
+              <>
+                Click a feeder in a bay to open its panel on the right: change its <b>height</b> (applies to every unit of that feeder in this
+                switchboard, and is remembered if it goes back to the feeder list) or <b>Remove from bay</b> (also the Delete key) to send that unit
+                back to the available list. Click the DUMMY / blank space to give it a fixed height too.
+              </>,
               <>Front and side views, dimensions and the &ldquo;Sizing Logic&rdquo; panel explain how each size was reached.</>,
             ]}
           />
@@ -392,6 +397,7 @@ export function HowItWorks() {
               rows={[
                 [["←"], ["→"], "Selected bay: move it left / right."],
                 [["↑"], ["↓"], "Selected feeder: move that one unit up / down in its bay."],
+                [["Delete"], "Selected feeder: send that unit back to the available feeder list."],
                 [["Esc"], "Clear every selection (bay, feeder, busbar, busbar chamber)."],
                 [["F"], "Toggle full screen."],
               ]}

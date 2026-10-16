@@ -44,10 +44,22 @@ export function compartmentHeightFor(feeder: Feeder): number {
   return lookupFeederBoxHeight(feeder) ?? DEFAULT_COMPARTMENT_HEIGHT_MM;
 }
 
-export function computeCompartments(vertical: VerticalWithFeeders, panelHeightMm: number): Compartment[] {
+// A unit's height in this switchboard: the user's own height for that
+// feeder when set (GA Builder), else the catalogue height.
+export function unitHeightFor(feeder: Feeder, heights?: Record<string, number> | null): number {
+  const custom = heights?.[feeder.id];
+  return custom != null && Number(custom) > 0 ? Number(custom) : compartmentHeightFor(feeder);
+}
+
+// heights: the switchboard's user-set feeder heights (switchboards.feeder_heights).
+// The blank/DUMMY space fills whatever height is left, unless the bay has
+// its own dummy_height_mm -- then it's that tall and any height still left
+// over simply stays empty at the bottom.
+export function computeCompartments(vertical: VerticalWithFeeders, panelHeightMm: number, heights?: Record<string, number> | null): Compartment[] {
   const sorted = [...vertical.placed].sort((a, b) => a.tier_number - b.tier_number || a.sort_order - b.sort_order);
-  const usedByRows = sorted.reduce((sum, p) => sum + compartmentHeightFor(p.feeder) * p.qty, 0);
-  const dummyHeight = panelHeightMm - usedByRows;
+  const usedByRows = sorted.reduce((sum, p) => sum + unitHeightFor(p.feeder, heights) * p.qty, 0);
+  const customDummy = vertical.dummy_height_mm != null ? Number(vertical.dummy_height_mm) : null;
+  const dummyHeight = customDummy ?? panelHeightMm - usedByRows;
   const totalUnits = sorted.reduce((sum, p) => sum + p.qty, 0);
   const dummySlot = Math.min(Math.max(vertical.dummy_slot ?? totalUnits, 0), totalUnits);
   const dummyId = `${vertical.id}::dummy`;
@@ -62,7 +74,7 @@ export function computeCompartments(vertical: VerticalWithFeeders, panelHeightMm
     }
   };
   for (const p of sorted) {
-    const heightMm = compartmentHeightFor(p.feeder);
+    const heightMm = unitHeightFor(p.feeder, heights);
     // A placed_feeders row with qty > 1 (several units of the same feeder
     // merged into one bay) is that many separate physical devices -- each
     // gets its own compartment, not one compartment for the whole row.
@@ -136,7 +148,9 @@ export function overridesFromRows(rows: BusbarOverrideRow[]): Record<string, Bus
   return overrides;
 }
 
-export type BusbarParams = Pick<Switchboard, "busbar" | "amps" | "poles" | "neutral_size_pct" | "cable_entry">;
+export type BusbarParams = Pick<Switchboard, "busbar" | "amps" | "poles" | "neutral_size_pct" | "cable_entry"> & {
+  feeder_heights?: Switchboard["feeder_heights"] | null;
+};
 
 // Physically the busbar chamber sits away from wherever cables enter the
 // panel (more room to route cable near the entry side).
@@ -167,7 +181,7 @@ export function planForSwitchboard(args: {
         depthMm: v.depth_mm,
         leftMm,
         placed: v.placed.map((p) => ({ id: p.id, qty: p.qty, feeder: p.feeder as Feeder })),
-        compartments: computeCompartments(v, args.panelHeightMm)
+        compartments: computeCompartments(v, args.panelHeightMm, args.params.feeder_heights)
           .filter((c) => !c.isBlank && c.placedId)
           .map((c) => ({ placedId: c.placedId!, unitIndex: c.unitIndex ?? 0, topMm: c.topMm, heightMm: c.heightMm })),
       };
