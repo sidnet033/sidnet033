@@ -312,7 +312,8 @@ export function HowItWorks() {
                 the height without the baseframe. In the side view each device sits at the front, as deep as the device; the vertical busbars
                 are at the rear and the horizontal main busbar in the front part of the chamber. <b>Fit width</b> zooms out so the whole panel
                 fits the screen; <b>Standard zoom</b> goes back. Export PNG / PDF always saves the whole drawing (front view, side view and the
-                summary table), whatever is scrolled into view.
+                summary table), whatever is scrolled into view. Hover over the busbar chamber, a bay or a feeder for a quick tooltip with its dimensions; the 60mm empty
+                spaces around feeders are shaded light grey.
               </>,
               <>Front and side views, dimensions and the &ldquo;Sizing Logic&rdquo; panel explain how each size was reached.</>,
             ]}

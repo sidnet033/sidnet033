@@ -413,6 +413,30 @@ export function GaCanvas({
   // so the whole panel width, front + side view, fits the canvas).
   const [zoomMode, setZoomMode] = useState<"standard" | "fit">("standard");
   const [canvasEl, setCanvasEl] = useState<HTMLDivElement | null>(null);
+  // Hover tooltip with dimensions: anything in the drawing carrying a
+  // data-ga-tip shows it after a short pause (faster than the browser's
+  // own title tooltip, and it doesn't show up in exports).
+  const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
+  const tipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function onCanvasMouseMove(e: React.MouseEvent) {
+    const text = (e.target as Element).closest("[data-ga-tip]")?.getAttribute("data-ga-tip") ?? null;
+    const { clientX: x, clientY: y } = e;
+    if (tipTimer.current) clearTimeout(tipTimer.current);
+    if (!text) {
+      setTooltip(null);
+      return;
+    }
+    if (tooltip && tooltip.text === text) {
+      setTooltip({ text, x, y });
+      return;
+    }
+    setTooltip(null);
+    tipTimer.current = setTimeout(() => setTooltip({ text, x, y }), 400);
+  }
+  function onCanvasMouseLeave() {
+    if (tipTimer.current) clearTimeout(tipTimer.current);
+    setTooltip(null);
+  }
   const [canvasWidthPx, setCanvasWidthPx] = useState(0);
   useEffect(() => {
     if (!canvasEl) return;
@@ -1584,6 +1608,8 @@ export function GaCanvas({
 
             <div
               ref={setCanvasEl}
+              onMouseMove={onCanvasMouseMove}
+              onMouseLeave={onCanvasMouseLeave}
               className="flex-1 overflow-auto rounded-xl border border-surface-container-high bg-surface-container-low/40 p-4"
               onClick={(e) => {
                 // a click on empty canvas (not on a bay, feeder, busbar, the
@@ -1596,6 +1622,14 @@ export function GaCanvas({
                 setBusbarSelected(false);
               }}
             >
+              {tooltip && (
+                <div
+                  className="pointer-events-none fixed z-50 whitespace-nowrap rounded bg-inverse-surface px-2 py-1 font-mono text-[11px] text-inverse-on-surface shadow"
+                  style={{ left: tooltip.x + 12, top: tooltip.y + 14 }}
+                >
+                  {tooltip.text}
+                </div>
+              )}
               {bays.length === 0 ? (
                 <p className="w-full py-10 text-center text-sm text-on-surface-variant">
                   No bays yet — add one from the Modular Bay Templates above.
@@ -1657,6 +1691,7 @@ export function GaCanvas({
                             label={chamberCaption}
                             heightPx={busbarHeight * pxPerMm}
                             widthPx={totalWidth * pxPerMm}
+                            tip={`Busbar chamber — ${totalWidth}mm W × ${busbarHeight}mm H`}
                             isSelected={busbarSelected}
                             onClick={
                               readOnly
@@ -1710,6 +1745,7 @@ export function GaCanvas({
                               onHover={setHover}
                               onHoverEnd={() => setHover(null)}
                               onRemove={(placedId, unitIndex) => removeUnitFromBay(v.id, placedId, unitIndex)}
+                              tip={`${v.name} — ${v.width_mm ?? 0}mm W × ${heightNoBaseMm}mm H (excl. base)${v.depth_mm ? ` × ${v.depth_mm}mm D` : ""}`}
                             />
                           ))}
                         </div>
@@ -1722,6 +1758,7 @@ export function GaCanvas({
                             label={chamberCaption}
                             heightPx={busbarHeight * pxPerMm}
                             widthPx={totalWidth * pxPerMm}
+                            tip={`Busbar chamber — ${totalWidth}mm W × ${busbarHeight}mm H`}
                             isSelected={busbarSelected}
                             onClick={
                               readOnly
@@ -1766,14 +1803,9 @@ export function GaCanvas({
                     )}
                     <div className="flex">
                       <div style={{ width: RULER_WIDTH_PX }} />
-                      <DrawingBar label={`BASEFRAME · ${plinthHeight}mm`} heightPx={plinthHeight * pxPerMm} widthPx={totalWidth * pxPerMm} />
+                      <DrawingBar label={`BASEFRAME · ${plinthHeight}mm`} heightPx={plinthHeight * pxPerMm} widthPx={totalWidth * pxPerMm} tip={`Baseframe — ${totalWidth}mm W × ${plinthHeight}mm H`} />
                     </div>
                       </div>
-                    </div>
-
-                    <div className="flex">
-                      <div style={{ width: RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX }} />
-                      <HorizontalRuler bayOffsets={bayOffsets} totalWidth={totalWidth} pxPerMm={pxPerMm} hover={hover} />
                     </div>
 
                     {/* Vertical numbers (1F, 2F...) under each switchgear bay */}
@@ -1793,13 +1825,15 @@ export function GaCanvas({
                     <div className="flex">
                       <div style={{ width: RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX }} />
                       <div className="flex">
-                        {bays.map((v) => (
-                          <HorizontalDimension
-                            key={v.id}
-                            widthPx={(v.width_mm ?? 0) * pxPerMm}
-                            label={`${Math.max((v.width_mm ?? 0) - 2 * FEEDER_SIDE_GAP_MM, 0)}`}
-                          />
-                        ))}
+                        {bays.map((v) => {
+                          const w = v.width_mm ?? 0;
+                          const gap = w <= 2 * FEEDER_SIDE_GAP_MM ? 0 : FEEDER_SIDE_GAP_MM;
+                          return (
+                            <div key={v.id} className="shrink-0" style={{ width: w * pxPerMm, paddingLeft: gap * pxPerMm, paddingRight: gap * pxPerMm }}>
+                              <HorizontalDimension widthPx={(w - 2 * gap) * pxPerMm} label={`${w - 2 * gap}`} />
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                     <div className="flex">
@@ -1821,9 +1855,9 @@ export function GaCanvas({
                       </>
                     )}
                     <div className="relative">
-                      {busbarPosition === "top" && <DrawingBar label={chamberCaption} heightPx={busbarHeight * pxPerMm} widthPx={sideViewWidthPx} />}
+                      {busbarPosition === "top" && <DrawingBar label={chamberCaption} heightPx={busbarHeight * pxPerMm} widthPx={sideViewWidthPx} tip={`Busbar chamber — ${sideViewDepthMm}mm D × ${busbarHeight}mm H`} />}
                       <div className="border border-black/70 bg-white" style={{ width: sideViewWidthPx, height: Math.max(panelHeight * pxPerMm, 2) }} />
-                      {busbarPosition === "bottom" && <DrawingBar label={chamberCaption} heightPx={busbarHeight * pxPerMm} widthPx={sideViewWidthPx} />}
+                      {busbarPosition === "bottom" && <DrawingBar label={chamberCaption} heightPx={busbarHeight * pxPerMm} widthPx={sideViewWidthPx} tip={`Busbar chamber — ${sideViewDepthMm}mm D × ${busbarHeight}mm H`} />}
                       {sideBay && (
                         <BusbarSideOverlay
                           plan={busbarPlan}
@@ -2104,16 +2138,19 @@ function DrawingBar({
   widthPx,
   onClick,
   isSelected,
+  tip,
 }: {
   label: string;
   heightPx: number;
   widthPx: number;
   onClick?: () => void;
   isSelected?: boolean;
+  tip?: string;
 }) {
   return (
     <div
       onClick={onClick}
+      data-ga-tip={tip}
       data-ga-selectable={onClick ? "" : undefined}
       className={`flex shrink-0 items-center justify-center overflow-hidden border bg-white px-2 text-center font-telemetry-md text-[9px] font-semibold uppercase tracking-wide text-black ${
         isSelected ? "border-2 border-primary" : "border-black/70"
@@ -2216,40 +2253,6 @@ function VerticalRuler({ totalHeightMm, pxPerMm, hover }: { totalHeightMm: numbe
   );
 }
 
-// Bottom mm scale across the bays' cumulative width, one tick per bay
-// boundary.
-function HorizontalRuler({
-  bayOffsets,
-  totalWidth,
-  pxPerMm,
-  hover,
-}: {
-  bayOffsets: number[];
-  totalWidth: number;
-  pxPerMm: number;
-  hover: HoverExtent;
-}) {
-  const widthPx = totalWidth * pxPerMm;
-  const boundaries = Array.from(new Set([...bayOffsets, totalWidth]));
-
-  return (
-    <div className="relative shrink-0 border-t border-black/40" style={{ width: Math.max(widthPx, 1), height: 24 }}>
-      {hover && (
-        <div
-          className="absolute top-0 h-full bg-amber-300/50"
-          style={{ left: hover.bayLeftMm * pxPerMm, width: Math.max(hover.bayWidthMm * pxPerMm, 1) }}
-        />
-      )}
-      {boundaries.map((mm) => (
-        <div key={mm} className="absolute top-0 flex flex-col items-center" style={{ left: mm * pxPerMm }}>
-          <span className="h-2 w-px bg-black/50" />
-          <span className="mt-0.5 font-mono text-[8px] leading-none text-on-surface-variant">{mm}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // The bay's own outline -- to-scale, no header box above it (that used to
 // throw off alignment with the ruler since it had its own minimum width
 // independent of the drawing's scale). Clicking the bay selects it, and
@@ -2276,7 +2279,7 @@ function ArtukLevelRow({ widths, heightPx }: { widths: number[]; heightPx: numbe
   return (
     <div className="flex">
       {widths.map((w, i) => (
-        <div key={i} className="border-x border-black/70 bg-white" style={{ width: w, height: heightPx }} />
+        <div key={i} className="border-x border-black/70 bg-neutral-100" style={{ width: w, height: heightPx }} />
       ))}
     </div>
   );
@@ -2364,6 +2367,7 @@ function BayColumn({
   onHover,
   onHoverEnd,
   onRemove,
+  tip,
 }: {
   vertical: VerticalWithFeeders;
   bayNumber: number | null;
@@ -2383,6 +2387,7 @@ function BayColumn({
   onHover: (extent: HoverExtent) => void;
   onHoverEnd: () => void;
   onRemove: (placedId: string, unitIndex: number) => void;
+  tip?: string;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `bay-${vertical.id}`, disabled: readOnly });
 
@@ -2392,13 +2397,15 @@ function BayColumn({
   const compartments = computeCompartments(vertical, panelHeightMm);
   // the 60mm side gaps -- every bay, cable/busbar alleys included
   const gapPx = widthMm <= 2 * FEEDER_SIDE_GAP_MM ? 0 : FEEDER_SIDE_GAP_MM * pxPerMm;
+  const feederWidthMm = widthMm <= 2 * FEEDER_SIDE_GAP_MM ? widthMm : widthMm - 2 * FEEDER_SIDE_GAP_MM;
 
   return (
     <div
       ref={setNodeRef}
       onClick={onSelectBay}
       data-ga-selectable=""
-      className={`relative shrink-0 cursor-pointer border bg-white ${isOver ? "border-primary" : isSelected ? "border-2 border-primary" : "border-black/70"}`}
+      data-ga-tip={tip}
+      className={`relative shrink-0 cursor-pointer border bg-neutral-100 ${isOver ? "border-primary" : isSelected ? "border-2 border-primary" : "border-black/70"}`}
       style={{ width: Math.max(widthPx, 2), height: Math.max(heightPx, 2) }}
     >
       {isSelected && !readOnly && (
@@ -2428,7 +2435,7 @@ function BayColumn({
       {/* feeders sit 60mm in from each side of the bay; their left/right
           edges are the dotted lines */}
       <div
-        className={gapPx > 0 ? "h-full border-x border-dashed border-black/50" : "h-full"}
+        className={gapPx > 0 ? "h-full border-x border-dashed border-black/50 bg-white" : "h-full bg-white"}
         style={gapPx > 0 ? { marginLeft: gapPx, marginRight: gapPx } : undefined}
       >
       {compartments.map((c, ci) => {
@@ -2449,7 +2456,7 @@ function BayColumn({
             }}
             onMouseEnter={() => onHover({ topMm: c.topMm, heightMm: c.heightMm, bayLeftMm, bayWidthMm: widthMm, label: c.label })}
             onMouseLeave={onHoverEnd}
-            title={`${c.label} — ${widthMm}mm × ${c.heightMm}mm`}
+            data-ga-tip={`${c.label} — ${feederWidthMm}mm W × ${c.heightMm}mm H`}
             className={`group relative flex items-center justify-center border-b px-1 text-center last:border-b-0 ${
               isFeederSelected ? "border-2 border-primary" : "border-black/40"
             } ${c.isBlank ? "bg-surface-container-low/50" : "bg-white hover:bg-amber-50"}`}
