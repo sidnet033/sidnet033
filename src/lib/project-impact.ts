@@ -22,7 +22,7 @@ import {
 } from "@/lib/busbar-plan";
 import {
   BUSBAR_CHAMBER_HEIGHT_MM,
-  DEFAULT_PANEL_HEIGHT_MM,
+  effectivePanelHeight,
   artukBaySize,
   overridesFromRows,
   planForSwitchboard,
@@ -239,7 +239,7 @@ function planOf(board: BoardData, densities: Densities) {
     verticals: board.verticals,
     overrides: board.overrides,
     densities,
-    panelHeightMm: sb.panel_height_mm ?? DEFAULT_PANEL_HEIGHT_MM,
+    panelHeightMm: effectivePanelHeight(sb),
     chamberHeightMm: sb.busbar_chamber_height_mm ?? BUSBAR_CHAMBER_HEIGHT_MM,
   });
 }

@@ -375,7 +375,8 @@ export type SideBay = {
   id: string;
   name: string;
   // compartments in panel coordinates (mm from the top of the panel block)
-  compartments: { id: string; label: string; topMm: number; heightMm: number; isBlank: boolean; placedId?: string }[];
+  // deviceDepthMm: how deep the device in it is, from the front
+  compartments: { id: string; label: string; topMm: number; heightMm: number; isBlank: boolean; placedId?: string; deviceDepthMm?: number }[];
   // y (plan mm) where the panel itself starts -- below the chamber when the
   // chamber is on top
   panelTopMm: number;
@@ -440,11 +441,14 @@ export function BusbarSideOverlay({
   if (!bay) return null;
 
   // ---- one bay -----------------------------------------------------------
-  // Depth zones (mm from the front): devices at the front, their rear
-  // terminals, then the main busbar / dropper zone at the back.
-  const deviceDepth = Math.min(depthMm * 0.35, 400);
-  const mainX = depthMm * 0.72;
-  const termX = x(deviceDepth);
+  // Across the depth (mm from the front): each device occupies the front
+  // part, as deep as that device is; the horizontal main busbar runs in the
+  // front part of the chamber; the vertical droppers -- and the feeder links
+  // to them -- are at the rear, behind the devices.
+  const mainX = depthMm * 0.22;
+  const dropX = depthMm * 0.85;
+  const devDepth = (placedId: string | undefined) =>
+    Math.min(bay.compartments.find((c) => c.placedId === placedId)?.deviceDepthMm ?? depthMm * 0.35, depthMm * 0.6);
   const placedIds = new Set(bay.compartments.map((c) => c.placedId).filter(Boolean) as string[]);
   const own = segs.filter((seg) => seg.placedFeederId && placedIds.has(seg.placedFeederId));
   const feederLinks = own.filter((seg) => seg.kind === "feeder_link");
@@ -456,25 +460,31 @@ export function BusbarSideOverlay({
   const drawn: React.ReactNode[] = [];
   for (const seg of own) {
     const sel = seg.key === selectedKey;
+    const dDepth = devDepth(seg.placedFeederId ?? undefined);
+    const termX = x(dDepth);
     if (seg.kind === "incomer_riser" || seg.kind === "acb_link") {
+      // from the device's rear terminal, back behind it, up/down to the
+      // chamber, then forward to the main busbar
       const ty = yPx(seg.kind === "incomer_riser" ? seg.path[0].y : seg.path[seg.path.length - 1].y);
+      const riseX = x(Math.min(dDepth + 60, depthMm - 20));
       terminals.push({ x: termX, y: ty });
       const pts = [
         { x: termX, y: ty },
-        { x: x(mainX), y: ty },
+        { x: riseX, y: ty },
+        { x: riseX, y: chamberY },
         { x: x(mainX), y: chamberY },
       ];
       drawn.push(
         <g key={seg.key}>
           <PhaseBars seg={seg} pts={pts} hasNeutral={hasNeutral} color={colorOf(seg)} selected={sel} onSelect={select(seg.key)} title={tip(seg)} />
-          {tag(seg, { x: x(mainX) - 8, y: (ty + chamberY) / 2 }, "end", 0)}
+          {tag(seg, { x: riseX - 8, y: (ty + chamberY) / 2 }, "end", 0)}
         </g>
       );
     } else if (seg.kind === "incomer_cable_link") {
       // from the ACB's cable-side terminal straight back into the panel
       const ty = yPx(seg.side?.y ?? seg.path[0].y);
       terminals.push({ x: termX, y: ty });
-      const end = Math.min(deviceDepth + seg.lengthMm, depthMm - 10);
+      const end = Math.min(dDepth + seg.lengthMm, depthMm - 10);
       const pts = [
         { x: termX, y: ty },
         { x: x(end), y: ty },
@@ -489,10 +499,11 @@ export function BusbarSideOverlay({
         </g>
       );
     } else if (seg.kind === "feeder_link") {
+      // from the rear dropper forward to the device's rear terminal
       const ty = yPx(seg.path[0].y);
       terminals.push({ x: termX, y: ty });
       const pts = [
-        { x: x(mainX), y: ty },
+        { x: x(dropX), y: ty },
         { x: termX, y: ty },
       ];
       drawn.push(
@@ -504,31 +515,35 @@ export function BusbarSideOverlay({
     }
   }
   for (const seg of droppers) {
+    // off the main busbar (front), back along the chamber to the rear, then
+    // down/up the rear of the bay
     const farY = yPx(seg.path[seg.path.length - 1].y);
     const pts = [
       { x: x(mainX), y: chamberY },
-      { x: x(mainX), y: farY },
+      { x: x(dropX), y: chamberY },
+      { x: x(dropX), y: farY },
     ];
     drawn.push(
       <g key={seg.key}>
         <PhaseBars seg={seg} pts={pts} hasNeutral={hasNeutral} color={colorOf(seg)} selected={seg.key === selectedKey} onSelect={select(seg.key)} title={tip(seg)} />
-        {tag(seg, { x: x(mainX) - 10, y: (chamberY + farY) / 2 }, "end", 0)}
+        {tag(seg, { x: x(dropX) + 10, y: (chamberY + farY) / 2 }, "start", 0)}
       </g>
     );
   }
 
   return (
     <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" style={{ width: Math.max(widthPx, 1), height: Math.max(heightPx, 1) }}>
-      {/* devices (front zone) */}
+      {/* devices: each from the front as deep as the device itself */}
       {bay.compartments.map((c) => {
         const top = yPx(bay.panelTopMm + c.topMm);
         const h = yPx(bay.panelTopMm + c.topMm + c.heightMm) - top;
+        const back = c.isBlank ? x(depthMm * 0.35) : x(devDepth(c.placedId));
         return (
           <g key={c.id}>
             <rect
-              x={termX + 2}
+              x={back + 2}
               y={top + 1}
-              width={Math.max(widthPx - termX - 4, 2)}
+              width={Math.max(widthPx - back - 4, 2)}
               height={Math.max(h - 2, 1)}
               fill={c.isBlank ? "none" : "#f1f5f9"}
               stroke={c.isBlank ? "#cbd5e1" : "#64748b"}
@@ -543,10 +558,8 @@ export function BusbarSideOverlay({
           </g>
         );
       })}
-      {/* device rear face (terminal plane) */}
-      <line x1={termX} y1={0} x2={termX} y2={heightPx} stroke="#94a3b8" strokeWidth={0.6} strokeDasharray="2 3" />
-      <text x={termX - 2} y={heightPx - 3} fontSize={6.5} fill="#64748b" textAnchor="end">
-        terminals
+      <text x={x(dropX)} y={heightPx - 3} fontSize={6.5} fill="#64748b" textAnchor="middle">
+        rear
       </text>
       <text x={widthPx - 3} y={heightPx - 3} fontSize={7} fontWeight={700} fill="#334155" textAnchor="end">
         FRONT →

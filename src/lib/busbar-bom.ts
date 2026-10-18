@@ -3,7 +3,7 @@ import type { Feeder, PlacedFeeder, Switchboard, Vertical } from "@/types/databa
 import { MATERIAL_DENSITY, barArea, type BarSize, type BusbarMaterial, type BusbarPlan } from "@/lib/busbar-plan";
 import {
   BUSBAR_CHAMBER_HEIGHT_MM,
-  DEFAULT_PANEL_HEIGHT_MM,
+  effectivePanelHeight,
   overridesFromRows,
   planForSwitchboard,
   type BusbarOverrideRow,
@@ -102,7 +102,7 @@ export async function loadBusbarTakeoff(supabase: SupabaseClient, sb: Switchboar
     verticals: verticals.map((v) => ({ ...v, placed: placed.filter((p) => p.vertical_id === v.id) })),
     overrides: overridesFromRows((oRows ?? []) as BusbarOverrideRow[]),
     densities: { Cu: Number(project?.busbar_density_cu ?? 1.6), Al: Number(project?.busbar_density_al ?? 1.0) },
-    panelHeightMm: sb.panel_height_mm ?? DEFAULT_PANEL_HEIGHT_MM,
+    panelHeightMm: effectivePanelHeight(sb),
     chamberHeightMm: sb.busbar_chamber_height_mm ?? BUSBAR_CHAMBER_HEIGHT_MM,
   });
   const rate = Number(material === "Cu" ? (project?.busbar_rate_cu ?? 0) : (project?.busbar_rate_al ?? 0));

@@ -1,5 +1,5 @@
 import type { BayType, Feeder, PlacedFeeder, Switchboard, Vertical } from "@/types/database";
-import { ACB_SIZES, OUTGOING_MCC_BAY, lookupAcbBaySpec, lookupFeederBoxHeight, suggestAcbFrame } from "@/lib/artuk-sizing";
+import { ACB_SIZES, MCCB_SIZES, OUTGOING_MCC_BAY, lookupAcbBaySpec, lookupFeederBoxHeight, suggestAcbFrame } from "@/lib/artuk-sizing";
 import { bayFunctionOf, overrideKey, planBusbars, type BusbarMaterial, type BusbarOverride, type BusbarPlan } from "@/lib/busbar-plan";
 
 // GA layout rules shared by GA Builder (drawing, Update GA, busbar layer)
@@ -15,6 +15,73 @@ export const BUSBAR_CHAMBER_HEIGHT_MM = 100;
 export const DEFAULT_PANEL_HEIGHT_MM = 2100;
 export const DEFAULT_COMPARTMENT_HEIGHT_MM = 150;
 export const DEFAULT_BAY_DEPTH_MM = 600;
+
+// Every switchgear bay leaves a 60mm gap each side of its feeders: a 600mm
+// wide feeder sits in a 720mm bay (drawn as dotted lines inside the bay).
+export const FEEDER_SIDE_GAP_MM = 60;
+// ArTuK: the red ArTuK strip on top is 25mm, and strip + feeders (busbar
+// chamber + panel) + baseframe add up to 2231mm.
+export const ARTUK_TOTAL_HEIGHT_MM = 2231;
+export const ARTUK_STRIP_MM = 25;
+
+// Panel (feeder) height actually used for a switchboard: on ArTuK it's
+// whatever's left of 2231mm after the strip, baseframe and busbar chamber;
+// otherwise the panel height set on the switchboard.
+export function effectivePanelHeight(
+  sb: Pick<Switchboard, "std" | "panel_height_mm" | "plinth_height_mm" | "busbar_chamber_height_mm">,
+  plinthMm: number = sb.plinth_height_mm ?? 100,
+  chamberMm: number = sb.busbar_chamber_height_mm ?? BUSBAR_CHAMBER_HEIGHT_MM
+): number {
+  if (sb.std === "ArTuK") return ARTUK_TOTAL_HEIGHT_MM - ARTUK_STRIP_MM - plinthMm - chamberMm;
+  return sb.panel_height_mm ?? DEFAULT_PANEL_HEIGHT_MM;
+}
+
+// A feeder's own width (without the side gaps): an ACB is its ArTuK bay
+// width less the gaps (E1.2/E2.2 600, E4.2 800...); an MCCB its rear
+// mounting width; anything else the standard 600mm module.
+export function feederWidthFor(feeder: Feeder): number {
+  if (feeder.device_type === "ACB" && feeder.rated_current != null) {
+    const frame = suggestAcbFrame(feeder.rated_current);
+    const spec = lookupAcbBaySpec(frame, bayFunctionOf(feeder) ?? "outgoing");
+    if (spec) return spec.widthMm - 2 * FEEDER_SIDE_GAP_MM;
+    const bracket = ACB_SIZES.find((b) => b.frame === frame);
+    if (bracket) return bracket.width4P100;
+  }
+  if (feeder.device_type === "MCCB" && feeder.rated_current != null) {
+    const bracket = MCCB_SIZES.find((b) => feeder.rated_current! <= b.uptoAmps) ?? MCCB_SIZES[MCCB_SIZES.length - 1];
+    return bracket.rearWidth;
+  }
+  return OUTGOING_MCC_BAY.widthMm - 2 * FEEDER_SIDE_GAP_MM;
+}
+
+// Typical depth a device takes up from the panel front (mm) -- the side
+// view draws it this deep, with the busbars behind it.
+export function deviceDepthFor(feeder: Feeder): number {
+  switch (feeder.device_type) {
+    case "ACB":
+      return 450;
+    case "MCCB":
+      return 250;
+    case "MCB":
+      return 150;
+    case "VFD":
+    case "SOFT_STARTER":
+      return 350;
+    default:
+      return 300;
+  }
+}
+
+export function isAlley(bayType: BayType | null): boolean {
+  return bayType === "cable_alley" || bayType === "busbar_alley";
+}
+
+// A bay's width is set by its widest feeder plus the two side gaps; null
+// for alleys and empty bays (nothing to size from).
+export function bayWidthFor(v: Pick<VerticalWithFeeders, "bay_type" | "placed">): number | null {
+  if (isAlley(v.bay_type) || v.bay_type === "unassigned" || v.placed.length === 0) return null;
+  return Math.max(...v.placed.map((p) => feederWidthFor(p.feeder))) + 2 * FEEDER_SIDE_GAP_MM;
+}
 
 export type Compartment = { id: string; label: string; heightMm: number; topMm: number; isBlank: boolean; placedId?: string; unitIndex?: number };
 

@@ -30,8 +30,13 @@ import {
 } from "@/lib/artuk-sizing";
 import { bayFunctionOf, type BusbarOverride, type BusbarPlan, type BusbarSegment } from "@/lib/busbar-plan";
 import {
+  ARTUK_STRIP_MM,
   BUSBAR_CHAMBER_HEIGHT_MM,
   DEFAULT_BAY_DEPTH_MM,
+  FEEDER_SIDE_GAP_MM,
+  bayWidthFor,
+  deviceDepthFor,
+  effectivePanelHeight,
   DEFAULT_COMPARTMENT_HEIGHT_MM,
   artukBaySize,
   blankCompartmentLabel,
@@ -230,6 +235,16 @@ function withUnassigned(verts: VerticalWithFeeders[], switchboardId: string): { 
 // feeder into one bay one at a time left them as separate placed_feeders
 // rows, which then showed up in BOM Builder as separate feeder cards
 // instead of one feeder at its real qty.
+// A bay whose contents changed takes the width of its widest feeder plus
+// the side gaps (alleys and bays left empty keep their width).
+function withAutoWidths(verts: VerticalWithFeeders[], ids: string[]): VerticalWithFeeders[] {
+  return verts.map((v) => {
+    if (!ids.includes(v.id)) return v;
+    const w = bayWidthFor(v);
+    return w != null && w !== v.width_mm ? { ...v, width_mm: w } : v;
+  });
+}
+
 // Per-unit heights of a row as a full-length array (null = standard).
 function unitHeightsOf(p: Pick<PlacedWithFeeder, "qty" | "unit_heights">): (number | null)[] {
   return Array.from({ length: p.qty }, (_, i) => p.unit_heights?.[i] ?? null);
@@ -351,10 +366,16 @@ export function GaCanvas({
   // cable entry/exit in the summary table, e.g. "CABLE ENTRY – REAR TOP"
   const [cableAccess, setCableAccess] = useState<Switchboard["cable_access"]>(null);
   const [savedCableAccess, setSavedCableAccess] = useState<Switchboard["cable_access"]>(null);
-  const [panelHeight, setPanelHeight] = useState(2100);
+  const [panelHeightSetting, setPanelHeight] = useState(2100);
   const [savedPanelHeight, setSavedPanelHeight] = useState(2100);
   const [busbarHeight, setBusbarHeight] = useState(BUSBAR_CHAMBER_HEIGHT_MM);
   const [savedBusbarHeight, setSavedBusbarHeight] = useState(BUSBAR_CHAMBER_HEIGHT_MM);
+  // ArTuK: panel height isn't chosen -- strip + chamber + panel + baseframe
+  // must add up to 2231mm, so it's whatever that leaves.
+  const isArtuk = sb?.std === "ArTuK";
+  const panelHeight = sb
+    ? effectivePanelHeight({ std: sb.std, panel_height_mm: panelHeightSetting, plinth_height_mm: null, busbar_chamber_height_mm: null }, plinthHeight, busbarHeight)
+    : panelHeightSetting;
   const [busbarOverrides, setBusbarOverrides] = useState<Record<string, BusbarOverride>>({});
   const [savedBusbarOverrides, setSavedBusbarOverrides] = useState<Record<string, BusbarOverride>>({});
   const [densities, setDensities] = useState<{ Cu: number; Al: number }>({ Cu: 1.6, Al: 1.0 });
@@ -508,7 +529,7 @@ export function GaCanvas({
     JSON.stringify(verticals) !== JSON.stringify(savedVerticals) ||
     plinthHeight !== savedPlinthHeight ||
     cableAccess !== savedCableAccess ||
-    panelHeight !== savedPanelHeight ||
+    (!isArtuk && panelHeightSetting !== savedPanelHeight) ||
     busbarHeight !== savedBusbarHeight ||
     JSON.stringify(busbarOverrides) !== JSON.stringify(savedBusbarOverrides);
 
@@ -664,7 +685,8 @@ export function GaCanvas({
       switchboard_id: sb.id,
       name: `${template.namePrefix} ${count}`,
       bay_type: template.bay_type,
-      width_mm: 600,
+      // a 600mm feeder + 60mm each side; alleys are narrower
+      width_mm: template.bay_type === "cable_alley" || template.bay_type === "busbar_alley" ? 300 : 600 + 2 * FEEDER_SIDE_GAP_MM,
       depth_mm: null,
       sort_order: bays.length,
       created_at: new Date().toISOString(),
@@ -860,7 +882,7 @@ export function GaCanvas({
     if (!placedRow) return;
     const height = unitHeightsOf(placedRow)[unitIndex] ?? null;
     const afterRemove = takeUnit(verticals, unallocated.id, placedId, unitIndex);
-    setVerticals(mergeQtyInto(afterRemove, toVerticalId, placedRow.feeder_id, placedRow.feeder, 1, [height]));
+    setVerticals(withAutoWidths(mergeQtyInto(afterRemove, toVerticalId, placedRow.feeder_id, placedRow.feeder, 1, [height]), [toVerticalId]));
   }
 
   // "Removing" a feeder from a bay sends its whole placement (however many
@@ -880,7 +902,7 @@ export function GaCanvas({
     const height = unitHeightsOf(placedRow)[unitIndex] ?? null;
     const { unassigned, verts } = withUnassigned(verticals, sb.id);
     const shrunk = takeUnit(verts, verticalId, placedId, unitIndex);
-    setVerticals(mergeQtyInto(shrunk, unassigned.id, placedRow.feeder_id, placedRow.feeder, 1, [height]));
+    setVerticals(withAutoWidths(mergeQtyInto(shrunk, unassigned.id, placedRow.feeder_id, placedRow.feeder, 1, [height]), [verticalId]));
     setSelectedPlacedId(null);
   }
 
@@ -891,7 +913,10 @@ export function GaCanvas({
     const row = verticals.find((v) => v.id === fromVerticalId)?.placed.find((p) => p.id === placedId);
     if (!row) return;
     const height = unitHeightsOf(row)[unitIndex] ?? null;
-    const next = mergeQtyInto(takeUnit(verticals, fromVerticalId, placedId, unitIndex), toVerticalId, row.feeder_id, row.feeder, 1, [height]);
+    const next = withAutoWidths(
+      mergeQtyInto(takeUnit(verticals, fromVerticalId, placedId, unitIndex), toVerticalId, row.feeder_id, row.feeder, 1, [height]),
+      [fromVerticalId, toVerticalId]
+    );
     setVerticals(next);
     const target = next.find((v) => v.id === toVerticalId)?.placed.find((p) => p.feeder_id === row.feeder_id);
     if (target) {
@@ -1274,6 +1299,9 @@ export function GaCanvas({
               ))}
             </select>
           </Field>
+          {isArtuk ? (
+            <ReadOnlyField label="Panel Height (ArTuK)" value={`${panelHeight}mm`} />
+          ) : (
           <Field label="Panel Height">
             <select
               disabled={readOnly}
@@ -1288,6 +1316,7 @@ export function GaCanvas({
               ))}
             </select>
           </Field>
+          )}
           <ReadOnlyField label="Form of Separation" value={sb.form_of_separation} />
           <ReadOnlyField label="Amps" value={sb.amps != null ? `${sb.amps}A` : null} />
           <ReadOnlyField label="kA" value={sb.ka != null ? `${sb.ka}kA` : null} />
@@ -1496,8 +1525,8 @@ export function GaCanvas({
                       <div className="flex">
                         <div style={{ width: RULER_WIDTH_PX + VERTICAL_DIM_WIDTH_PX }} />
                         <div
-                          className="flex items-center justify-center bg-red-600 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-white"
-                          style={{ width: totalWidth * pxPerMm }}
+                          className="flex items-center justify-center overflow-hidden bg-red-600 font-bold uppercase leading-none tracking-[0.2em] text-white"
+                          style={{ width: totalWidth * pxPerMm, height: ARTUK_STRIP_MM * pxPerMm, fontSize: Math.max(5, ARTUK_STRIP_MM * pxPerMm * 0.75) }}
                         >
                           ArTuK
                         </div>
@@ -1662,8 +1691,8 @@ export function GaCanvas({
                     <ViewLabel>Side View{sideBay ? ` — ${sideBay.name}` : ""}</ViewLabel>
                     {sb.std === "ArTuK" && (
                       <div
-                        className="flex items-center justify-center bg-red-600 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-white"
-                        style={{ width: sideViewWidthPx }}
+                        className="flex items-center justify-center overflow-hidden bg-red-600 font-bold uppercase leading-none tracking-[0.2em] text-white"
+                        style={{ width: sideViewWidthPx, height: ARTUK_STRIP_MM * pxPerMm, fontSize: Math.max(5, ARTUK_STRIP_MM * pxPerMm * 0.75) }}
                       >
                         ArTuK
                       </div>
@@ -1689,7 +1718,10 @@ export function GaCanvas({
                               ? {
                                   id: sideBay.id,
                                   name: sideBay.name,
-                                  compartments: computeCompartments(sideBay, panelHeight),
+                                  compartments: computeCompartments(sideBay, panelHeight).map((c) => {
+                                    const f = sideBay.placed.find((p) => p.id === c.placedId)?.feeder;
+                                    return { ...c, deviceDepthMm: f ? deviceDepthFor(f) : undefined };
+                                  }),
                                   panelTopMm: busbarPosition === "top" ? busbarHeight : 0,
                                 }
                               : null
@@ -1704,7 +1736,7 @@ export function GaCanvas({
                     <PanelSummaryTable
                       widthMm={totalWidth}
                       depthMm={bays.some((v) => v.depth_mm != null) ? deepestBayMm : null}
-                      heightMm={plinthHeight + bayHeightMm}
+                      heightMm={plinthHeight + bayHeightMm + (isArtuk ? ARTUK_STRIP_MM : 0)}
                       cableAccess={cableAccess}
                       cableEntry={sb.cable_entry}
                       cableExit={sb.cable_exit}
@@ -2209,6 +2241,8 @@ function BayColumn({
   const widthPx = widthMm * pxPerMm;
   const heightPx = panelHeightMm * pxPerMm;
   const compartments = computeCompartments(vertical, panelHeightMm);
+  // the 60mm side gaps, only in bays that hold feeders (not alleys)
+  const gapPx = vertical.bay_type === "cable_alley" || vertical.bay_type === "busbar_alley" || widthMm <= 2 * FEEDER_SIDE_GAP_MM ? 0 : FEEDER_SIDE_GAP_MM * pxPerMm;
 
   return (
     <div
@@ -2242,6 +2276,12 @@ function BayColumn({
           </button>
         </>
       )}
+      {/* feeders sit 60mm in from each side of the bay; their left/right
+          edges are the dotted lines (alleys use the full width) */}
+      <div
+        className={gapPx > 0 ? "h-full border-x border-dashed border-black/50" : "h-full"}
+        style={gapPx > 0 ? { marginLeft: gapPx, marginRight: gapPx } : undefined}
+      >
       {compartments.map((c, ci) => {
         // compartment tag as on a GA drawing: <bay>F<n> top to bottom
         // (blank/dummy spaces included), with its height in modules (1M = 100mm)
@@ -2312,6 +2352,7 @@ function BayColumn({
           </DraggableCell>
         );
       })}
+      </div>
       {vertical.bay_type === "incomer" && cableEntry && (
         <div
           title={`Cable entry — ${cableEntry.toLowerCase()}`}
