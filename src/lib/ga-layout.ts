@@ -24,13 +24,20 @@ export const FEEDER_SIDE_GAP_MM = 60;
 // feeder -- strip + busbar chamber + feeders -- and does NOT include the
 // baseframe: a 2131 board on a 100mm baseframe stands 2231mm from the floor.
 export const ARTUK_STRIP_MM = 25;
+// ...and there's a 60mm level between the strip and the topmost contents,
+// and between the bottommost contents and the baseframe.
+export const ARTUK_LEVEL_GAP_MM = 60;
 export const ARTUK_HEIGHTS_MM = [2131, 2231];
 export const DEFAULT_ARTUK_HEIGHT_MM = 2231;
 
+// Everything inside an ArTuK height other than the busbar chamber and the
+// feeders: the strip and the two 60mm levels.
+export const ARTUK_FIXED_MM = ARTUK_STRIP_MM + 2 * ARTUK_LEVEL_GAP_MM;
+
 // The ArTuK height a switchboard was saved at (stored as its panel height,
-// so recovered as panel + chamber + strip), snapped to an allowed height.
+// so recovered as panel + chamber + strip + levels), snapped to an allowed height.
 export function artukHeightOf(panelMm: number | null, chamberMm: number): number {
-  const h = panelMm != null ? panelMm + chamberMm + ARTUK_STRIP_MM : null;
+  const h = panelMm != null ? panelMm + chamberMm + ARTUK_FIXED_MM : null;
   return h != null && ARTUK_HEIGHTS_MM.includes(h) ? h : DEFAULT_ARTUK_HEIGHT_MM;
 }
 
@@ -41,7 +48,7 @@ export function effectivePanelHeight(
   sb: Pick<Switchboard, "std" | "panel_height_mm" | "busbar_chamber_height_mm">,
   chamberMm: number = sb.busbar_chamber_height_mm ?? BUSBAR_CHAMBER_HEIGHT_MM
 ): number {
-  if (sb.std === "ArTuK") return artukHeightOf(sb.panel_height_mm, chamberMm) - ARTUK_STRIP_MM - chamberMm;
+  if (sb.std === "ArTuK") return artukHeightOf(sb.panel_height_mm, chamberMm) - ARTUK_FIXED_MM - chamberMm;
   return sb.panel_height_mm ?? DEFAULT_PANEL_HEIGHT_MM;
 }
 

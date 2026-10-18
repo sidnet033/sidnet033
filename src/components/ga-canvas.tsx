@@ -30,7 +30,9 @@ import {
 } from "@/lib/artuk-sizing";
 import { bayFunctionOf, type BusbarOverride, type BusbarPlan, type BusbarSegment } from "@/lib/busbar-plan";
 import {
+  ARTUK_FIXED_MM,
   ARTUK_HEIGHTS_MM,
+  ARTUK_LEVEL_GAP_MM,
   ARTUK_STRIP_MM,
   BUSBAR_CHAMBER_HEIGHT_MM,
   DEFAULT_ARTUK_HEIGHT_MM,
@@ -81,6 +83,7 @@ const MIN_PX_PER_MM = 0.12;
 const MAX_PX_PER_MM = 0.6;
 const RULER_WIDTH_PX = 44;
 const VERTICAL_DIM_WIDTH_PX = 20;
+const SUMMARY_TABLE_MIN_PX = 240;
 
 function computePxPerMm(totalHeightMm: number): number {
   if (totalHeightMm <= 0) return MIN_PX_PER_MM;
@@ -372,13 +375,13 @@ export function GaCanvas({
   const [savedPanelHeight, setSavedPanelHeight] = useState(2100);
   const [busbarHeight, setBusbarHeight] = useState(BUSBAR_CHAMBER_HEIGHT_MM);
   const [savedBusbarHeight, setSavedBusbarHeight] = useState(BUSBAR_CHAMBER_HEIGHT_MM);
-  // ArTuK: you pick an ArTuK height (top of the strip to the bottom of the
-  // lowest feeder, baseframe NOT included); the feeders get whatever's left
-  // after the 25mm strip and the busbar chamber.
+  // ArTuK: you pick an ArTuK height (top of the strip to the top of the
+  // baseframe, baseframe NOT included); the feeders get whatever's left after
+  // the 25mm strip, the two 60mm levels and the busbar chamber.
   const [artukHeight, setArtukHeight] = useState(DEFAULT_ARTUK_HEIGHT_MM);
   const [savedArtukHeight, setSavedArtukHeight] = useState(DEFAULT_ARTUK_HEIGHT_MM);
   const isArtuk = sb?.std === "ArTuK";
-  const panelHeight = isArtuk ? artukHeight - ARTUK_STRIP_MM - busbarHeight : panelHeightSetting;
+  const panelHeight = isArtuk ? artukHeight - ARTUK_FIXED_MM - busbarHeight : panelHeightSetting;
   const [busbarOverrides, setBusbarOverrides] = useState<Record<string, BusbarOverride>>({});
   const [savedBusbarOverrides, setSavedBusbarOverrides] = useState<Record<string, BusbarOverride>>({});
   const [densities, setDensities] = useState<{ Cu: number; Al: number }>({ Cu: 1.6, Al: 1.0 });
@@ -406,6 +409,17 @@ export function GaCanvas({
   const fullscreenRef = useRef<HTMLDivElement>(null);
   const drawingRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
+  // Two zoom levels: "standard" (fits the panel height) and "fit" (zooms out
+  // so the whole panel width, front + side view, fits the canvas).
+  const [zoomMode, setZoomMode] = useState<"standard" | "fit">("standard");
+  const [canvasEl, setCanvasEl] = useState<HTMLDivElement | null>(null);
+  const [canvasWidthPx, setCanvasWidthPx] = useState(0);
+  useEffect(() => {
+    if (!canvasEl) return;
+    const ro = new ResizeObserver(() => setCanvasWidthPx(canvasEl.clientWidth));
+    ro.observe(canvasEl);
+    return () => ro.disconnect();
+  }, [canvasEl]);
 
   useEffect(() => {
     function onFullscreenChange() {
@@ -433,7 +447,30 @@ export function GaCanvas({
   async function captureDrawing() {
     if (!drawingRef.current) return null;
     const { default: html2canvas } = await import("html2canvas-pro");
-    return html2canvas(drawingRef.current, { backgroundColor: "#ffffff", scale: 2 });
+    // Capture the whole drawing, not just the part scrolled into view: size
+    // the capture to the drawing's full scroll size and, in the cloned
+    // document, let every scrolling ancestor overflow so nothing is clipped.
+    const el = drawingRef.current;
+    const width = el.scrollWidth;
+    const height = el.scrollHeight;
+    return html2canvas(el, {
+      backgroundColor: "#ffffff",
+      scale: 2,
+      width,
+      height,
+      windowWidth: Math.max(width + 64, document.documentElement.clientWidth),
+      windowHeight: Math.max(height + 64, document.documentElement.clientHeight),
+      scrollX: 0,
+      scrollY: 0,
+      onclone: (_doc, clone) => {
+        clone.style.padding = "16px";
+        for (let a = clone.parentElement; a; a = a.parentElement) {
+          a.style.overflow = "visible";
+          a.style.maxWidth = "none";
+          a.style.maxHeight = "none";
+        }
+      },
+    });
   }
 
   function downloadFileName(ext: string) {
@@ -568,7 +605,7 @@ export function GaCanvas({
     if (v.bay_type === "cable_alley" || v.bay_type === "busbar_alley") continue;
     bayNumbers.set(v.id, bayNumbers.size + 1);
   }
-  const pxPerMm = computePxPerMm(totalHeightMm);
+  const standardPxPerMm = computePxPerMm(totalHeightMm);
   const selectedBay = bays.find((v) => v.id === selectedBayId) ?? null;
 
   // Side view: the whole switchboard uses the deepest bay's depth (so the
@@ -577,6 +614,16 @@ export function GaCanvas({
   const sideBay = bays.find((v) => v.id === sideBayId) ?? null;
   const deepestBayMm = Math.max(0, ...bays.map((v) => v.depth_mm ?? 0)) || DEFAULT_BAY_DEPTH_MM;
   const sideViewDepthMm = sideBay ? (sideBay.depth_mm ?? deepestBayMm) : deepestBayMm;
+  // "Fit width": the scale at which front view + side view (+ the fixed-size
+  // rulers, dimension columns, gap and padding) fill the canvas width. The
+  // side column is never narrower than the summary table under it.
+  let pxPerMm = standardPxPerMm;
+  if (zoomMode === "fit" && canvasWidthPx > 0 && totalWidth > 0) {
+    const fixedPx = RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX + 40 + 32 + 8;
+    let fit = (canvasWidthPx - fixedPx) / (totalWidth + sideViewDepthMm);
+    if (sideViewDepthMm * fit < SUMMARY_TABLE_MIN_PX) fit = (canvasWidthPx - fixedPx - SUMMARY_TABLE_MIN_PX) / totalWidth;
+    pxPerMm = Math.max(0.02, Math.min(standardPxPerMm, fit));
+  }
   const sideViewWidthPx = Math.max(sideViewDepthMm * pxPerMm, 1);
 
   // Physically, the busbar chamber sits away from wherever cables enter the
@@ -1274,9 +1321,11 @@ export function GaCanvas({
 
   // left-hand height dimensions (px match what's drawn: DrawingBar has a
   // 16px minimum)
-  const frontStripPx = isArtuk ? ARTUK_STRIP_MM * pxPerMm : 0;
+  // ArTuK: red strip, then a 60mm level above the topmost feeder, and a 60mm
+  // level between the bottommost feeder and the baseframe.
+  const frontStripPx = isArtuk ? ARTUK_FIXED_MM * pxPerMm : 0;
   const plinthPx = Math.max(plinthHeight * pxPerMm, 16);
-  const heightNoBaseMm = bayHeightMm + (isArtuk ? ARTUK_STRIP_MM : 0);
+  const heightNoBaseMm = bayHeightMm + (isArtuk ? ARTUK_FIXED_MM : 0);
 
   const busbarLabel = `BUSBAR CHAMBER${sb.amps ? ` · ${sb.amps}A` : ""}${sb.ka ? ` · ${sb.ka}kA` : ""} · ${sb.busbar ?? "Cu"}`;
   // With the busbar layer on, the main bar's own label (size + rating)
@@ -1460,6 +1509,14 @@ export function GaCanvas({
                 <Icon name="download" size={14} /> {exporting ? "Exporting..." : "Export PDF"}
               </button>
               <button
+                onClick={() => setZoomMode((z) => (z === "standard" ? "fit" : "standard"))}
+                disabled={bays.length === 0}
+                title={zoomMode === "standard" ? "Zoom out to see the whole panel width" : "Back to the standard zoom"}
+                className="btn btn-outline btn-sm"
+              >
+                <Icon name={zoomMode === "standard" ? "zoom_out" : "zoom_in"} size={14} /> {zoomMode === "standard" ? "Fit width" : "Standard zoom"}
+              </button>
+              <button
                 onClick={() => {
                   setShowBusbars((v) => !v);
                   setSelectedSegmentKey(null);
@@ -1526,6 +1583,7 @@ export function GaCanvas({
             )}
 
             <div
+              ref={setCanvasEl}
               className="flex-1 overflow-auto rounded-xl border border-surface-container-high bg-surface-container-low/40 p-4"
               onClick={(e) => {
                 // a click on empty canvas (not on a bay, feeder, busbar, the
@@ -1543,7 +1601,7 @@ export function GaCanvas({
                   No bays yet — add one from the Modular Bay Templates above.
                 </p>
               ) : (
-                <div ref={drawingRef} className="flex items-start gap-10">
+                <div ref={drawingRef} className="flex w-max items-start gap-10 bg-white">
                   <div className="inline-block" data-ga-selectable="">
                     <div className="flex">
                       <div style={{ width: RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX }} />
@@ -1569,15 +1627,20 @@ export function GaCanvas({
                       <VerticalDimension heightPx={frontStripPx + chamberPx + panelPx} label={`${heightNoBaseMm}mm excl. base`} />
                       <div>
                     {sb.std === "ArTuK" && (
-                      <div className="flex">
-                        <div style={{ width: RULER_WIDTH_PX }} />
-                        <div
-                          className="flex items-center justify-center overflow-hidden bg-red-600 font-bold uppercase leading-none tracking-[0.2em] text-white"
-                          style={{ width: totalWidth * pxPerMm, height: ARTUK_STRIP_MM * pxPerMm, fontSize: Math.max(5, ARTUK_STRIP_MM * pxPerMm * 0.75) }}
-                        >
-                          ArTuK
+                      <>
+                        <div className="flex">
+                          <div style={{ width: RULER_WIDTH_PX }} />
+                          <div className="flex bg-red-600" style={{ width: totalWidth * pxPerMm, height: ARTUK_STRIP_MM * pxPerMm }}>
+                            {bays.map((v) => (
+                              <ArtukStripSegment key={v.id} widthPx={(v.width_mm ?? 0) * pxPerMm} heightPx={ARTUK_STRIP_MM * pxPerMm} />
+                            ))}
+                          </div>
                         </div>
-                      </div>
+                        <div className="flex">
+                          <div style={{ width: RULER_WIDTH_PX }} />
+                          <ArtukLevelRow widths={bays.map((v) => (v.width_mm ?? 0) * pxPerMm)} heightPx={ARTUK_LEVEL_GAP_MM * pxPerMm} />
+                        </div>
+                      </>
                     )}
 
                     {/* An ArTuK bay's own height runs from just above the plinth to just
@@ -1695,6 +1758,12 @@ export function GaCanvas({
                       </div>
                     </div>
 
+                    {sb.std === "ArTuK" && (
+                      <div className="flex">
+                        <div style={{ width: RULER_WIDTH_PX }} />
+                        <ArtukLevelRow widths={bays.map((v) => (v.width_mm ?? 0) * pxPerMm)} heightPx={ARTUK_LEVEL_GAP_MM * pxPerMm} />
+                      </div>
+                    )}
                     <div className="flex">
                       <div style={{ width: RULER_WIDTH_PX }} />
                       <DrawingBar label={`BASEFRAME · ${plinthHeight}mm`} heightPx={plinthHeight * pxPerMm} widthPx={totalWidth * pxPerMm} />
@@ -1746,12 +1815,10 @@ export function GaCanvas({
                       <HorizontalDimension widthPx={sideViewWidthPx} label="0" />
                     </div>
                     {sb.std === "ArTuK" && (
-                      <div
-                        className="flex items-center justify-center overflow-hidden bg-red-600 font-bold uppercase leading-none tracking-[0.2em] text-white"
-                        style={{ width: sideViewWidthPx, height: ARTUK_STRIP_MM * pxPerMm, fontSize: Math.max(5, ARTUK_STRIP_MM * pxPerMm * 0.75) }}
-                      >
-                        ArTuK
-                      </div>
+                      <>
+                        <div className="bg-red-600" style={{ width: sideViewWidthPx, height: ARTUK_STRIP_MM * pxPerMm }} />
+                        <ArtukLevelRow widths={[sideViewWidthPx]} heightPx={ARTUK_LEVEL_GAP_MM * pxPerMm} />
+                      </>
                     )}
                     <div className="relative">
                       {busbarPosition === "top" && <DrawingBar label={chamberCaption} heightPx={busbarHeight * pxPerMm} widthPx={sideViewWidthPx} />}
@@ -1787,12 +1854,13 @@ export function GaCanvas({
                         />
                       )}
                     </div>
+                    {sb.std === "ArTuK" && <ArtukLevelRow widths={[sideViewWidthPx]} heightPx={ARTUK_LEVEL_GAP_MM * pxPerMm} />}
                     <DrawingBar label={`PLINTH · ${plinthHeight}mm`} heightPx={plinthHeight * pxPerMm} widthPx={sideViewWidthPx} />
                     <HorizontalDimension widthPx={sideViewWidthPx} label={`${sideViewDepthMm}mm`} />
                     <PanelSummaryTable
                       widthMm={totalWidth}
                       depthMm={bays.some((v) => v.depth_mm != null) ? deepestBayMm : null}
-                      heightMm={plinthHeight + bayHeightMm + (isArtuk ? ARTUK_STRIP_MM : 0)}
+                      heightMm={plinthHeight + heightNoBaseMm}
                       cableAccess={cableAccess}
                       cableEntry={sb.cable_entry}
                       cableExit={sb.cable_exit}
@@ -2189,6 +2257,31 @@ function HorizontalRuler({
 // The drawing's summary block, as on a GA sheet: overall size (W x D x H,
 // H = plinth + panel + busbar chamber), cable entry/exit with the side
 // cables come from, and form of separation + standard.
+// One bay's slice of the ArTuK red strip: "ABB" in a white box at the left
+// corner and "ArTu" at the right.
+function ArtukStripSegment({ widthPx, heightPx }: { widthPx: number; heightPx: number }) {
+  const fontSize = Math.max(4, heightPx * 0.6);
+  const box = "flex items-center bg-white px-0.5 font-bold leading-none text-red-600";
+  return (
+    <div className="flex items-center justify-between overflow-hidden border-r border-red-800/40 px-0.5" style={{ width: widthPx, height: heightPx }}>
+      <span className={box} style={{ fontSize, height: heightPx * 0.8 }}>ABB</span>
+      <span className={box} style={{ fontSize, height: heightPx * 0.8 }}>ArTu</span>
+    </div>
+  );
+}
+
+// The 60mm ArTuK level (empty space) above the topmost and below the
+// bottommost feeder, one bordered cell per bay.
+function ArtukLevelRow({ widths, heightPx }: { widths: number[]; heightPx: number }) {
+  return (
+    <div className="flex">
+      {widths.map((w, i) => (
+        <div key={i} className="border-x border-black/70 bg-white" style={{ width: w, height: heightPx }} />
+      ))}
+    </div>
+  );
+}
+
 function PanelSummaryTable({
   widthMm,
   depthMm,
