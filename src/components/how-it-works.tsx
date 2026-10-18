@@ -14,6 +14,7 @@ import {
   STAR_DELTA_SIZES,
   VFD_SOFT_STARTER_SIZES,
 } from "@/lib/artuk-sizing";
+import { ARTUK_CU_CHARTS, formatJoint, formatJoints } from "@/lib/artuk-busbar-chart";
 import { BAR_SIZES, MATERIAL_DENSITY, barArea, type BusbarMaterial } from "@/lib/busbar-plan";
 
 // Reference capacity uses the project defaults; each project can set its own
@@ -43,6 +44,7 @@ const NAV: NavItem[] = [
     label: "Dimensions & sizing data",
     children: [
       { id: "dim-busbars", label: "Busbar sizes" },
+      { id: "dim-artuk-cu", label: "ArTuK copper busbar (ABB)" },
       { id: "dim-acb", label: "ACB" },
       { id: "dim-mccb", label: "MCCB" },
       { id: "dim-dol", label: "DOL / RDOL" },
@@ -331,6 +333,15 @@ export function HowItWorks() {
               <>
                 Each bar is sized from the current it carries ÷ the project&apos;s current density, using only the stocked sizes (see{" "}
                 <i>Busbar sizes</i>). Above the biggest bar it runs bars in parallel. Neutral follows the switchboard&apos;s 100% / 50% setting.
+              </>,
+              <>
+                <b>ArTuK boards with copper busbar are different</b>: the design is ABB&apos;s, so the main busbar and each ACB&apos;s links come
+                from <b>ABB&apos;s busbar charts</b> (see <i>ArTuK copper busbar (ABB)</i>), not current density. The chart is picked by the
+                ACB&apos;s rating, the board&apos;s short-circuit kA and IP (the HBB position is ignored): the smallest chart whose rating covers
+                the ACB and whose kA and IP cover the board&apos;s. The main busbar follows the largest incomer&apos;s chart. Neutral is always
+                100%, even if the board is set to 50%. ACB link weights use ABB&apos;s own cut lengths. MCCB droppers and feeder links aren&apos;t
+                in ABB&apos;s charts and are still sized by current density. Aluminium ArTuK boards use current density until their ruleset is
+                added. These bars show an <b>ABB chart</b> tag when clicked.
               </>,
               <>
                 To change a bar, click it in the drawing (or a row in the <b>Busbar Schedule</b>) and pick a size, runs per phase or
@@ -631,6 +642,56 @@ function DimensionsReference() {
         <p className="mt-2 text-xs text-secondary">
           Capacity is per bar at the default current density; each project can set its own Cu/Al density in Project Detail. Above the largest bar,
           the plan runs bars in parallel per phase.
+        </p>
+      </Section>
+
+      <Section
+        id="dim-artuk-cu"
+        title="ArTuK copper busbar (ABB charts)"
+        note="From ABB's 'ArTuK Copper Busbar Length for Emax ACB' workbook. Used on ArTuK boards with copper busbar. All sizes are 100% neutral (Ph & Ne the same unless shown)."
+      >
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-surface-container-high text-xs uppercase tracking-wide text-on-surface-variant">
+                <th className="py-2 pr-3">ACB rating</th>
+                <th className="py-2 pr-3">Frame</th>
+                <th className="py-2 pr-3 text-right">Bay W × D</th>
+                <th className="py-2 pr-3">Up to</th>
+                <th className="py-2 pr-3">Main busbar</th>
+                <th className="py-2 pr-3">Main busbar to ACB link (top)</th>
+                <th className="py-2 pr-3">ACB link (bottom)</th>
+                <th className="py-2 pr-3 text-right">Link copper / ACB</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ARTUK_CU_CHARTS.map((c) => {
+                const kg = [...c.topPieces, ...c.bottomPieces].reduce((s, pc) => s + barArea(pc.bar) * pc.lengthMm * MATERIAL_DENSITY.Cu, 0);
+                return (
+                  <tr key={c.sheet} className="border-b border-surface-container-high/60 align-top">
+                    <td className="py-1.5 pr-3 font-medium">{c.ratingLabel}</td>
+                    <td className="py-1.5 pr-3">{c.frames.join(" / ")}</td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums">
+                      {c.bayWidthMm} × {c.bayDepthLabel}
+                    </td>
+                    <td className="py-1.5 pr-3 whitespace-nowrap">
+                      {c.scKa}kA 1s · IP{c.ip}
+                    </td>
+                    <td className="py-1.5 pr-3">{formatJoint(c.main)}</td>
+                    <td className="py-1.5 pr-3">{formatJoints(c.top)}</td>
+                    <td className="py-1.5 pr-3">{formatJoints(c.bottom)}</td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums">{kg.toFixed(1)} kg</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-2 text-xs text-secondary">
+          &ldquo;R&rdquo; = runs per phase. Where a link has two joints, the 1st joint is at the ACB terminal and the 2nd carries on to the
+          main busbar (top) or the cable side (bottom). &ldquo;Link copper / ACB&rdquo; is ABB&apos;s cut lengths for one ACB&apos;s top and
+          bottom links, all phases and neutral. A board above a chart&apos;s kA or IP moves up to the next chart that covers it (with a warning
+          to confirm with ABB). On the 5000A sheet ABB&apos;s own total misses one 450mm bottom-link bar; the full piece list is used here.
         </p>
       </Section>
 

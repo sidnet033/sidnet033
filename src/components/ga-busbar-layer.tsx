@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Icon } from "@/components/icon";
 import { numericKeyGuard } from "@/lib/numeric-input";
+import { formatJoints } from "@/lib/artuk-busbar-chart";
 import {
   KIND_LABELS,
   MAX_RUNS_PER_PHASE,
@@ -668,8 +669,17 @@ export function BusbarSegmentPanel({
           <span className="rounded bg-surface-container-low px-1.5 py-0.5 text-[10px] text-secondary">Auto</span>
         )}
         {segment.undersized && <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">Undersized</span>}
+        {segment.chart && <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">ABB chart</span>}
       </div>
 
+      {segment.chart ? (
+        <dl className="mb-3 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px]">
+          <dt className="text-on-surface-variant">ABB chart</dt>
+          <dd className="text-right font-mono text-on-surface">{segment.chart.sheet}</dd>
+          <dt className="text-on-surface-variant">Chart size</dt>
+          <dd className="text-right font-mono text-on-surface">{formatJoints(segment.chart.joints)}</dd>
+        </dl>
+      ) : (
       <dl className="mb-3 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px]">
         <dt className="text-on-surface-variant">Design current</dt>
         <dd className="text-right font-mono text-on-surface">{segment.designCurrentA != null ? `${segment.designCurrentA} A` : "—"}</dd>
@@ -686,6 +696,7 @@ export function BusbarSegmentPanel({
           {segment.capacityA != null ? `${segment.capacityA} A` : "—"}
         </dd>
       </dl>
+      )}
 
       <div className="mb-2 flex items-end gap-2">
         <label className="flex-1">
@@ -755,7 +766,7 @@ export function BusbarSegmentPanel({
       <p className="mb-1 text-[11px] text-on-surface-variant">
         Neutral:{" "}
         <span className="font-mono text-on-surface">
-          {hasNeutral ? `${formatBar(segment.neutral?.bar ?? null, segment.neutral?.runs ?? 1)} (${neutralPct}%)` : "none — 3-pole"}
+          {hasNeutral ? `${formatBar(segment.neutral?.bar ?? null, segment.neutral?.runs ?? 1)} (${segment.chart ? "100% — ABB" : `${neutralPct}%`})` : "none — 3-pole"}
         </span>
       </p>
       <p className="mb-3 text-[11px] text-on-surface-variant">

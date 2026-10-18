@@ -44,6 +44,11 @@ export function busbarTakeoff(plan: BusbarPlan, material: BusbarMaterial, ratePe
     bySize.set(key, entry);
   };
   for (const seg of plan.segments) {
+    // ArTuK copper ACB links: ABB's cut lengths (all phases + neutral)
+    if (seg.pieces) {
+      for (const pc of seg.pieces) add(pc.bar, 1, pc.lengthMm);
+      continue;
+    }
     if (!seg.bar || seg.lengthMm <= 0) continue;
     add(seg.bar, seg.runs * 3, seg.lengthMm);
     if (seg.neutral) add(seg.neutral.bar, seg.neutral.runs, seg.lengthMm);

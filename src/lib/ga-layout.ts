@@ -1,3 +1,4 @@
+import { parseIp } from "@/lib/artuk-busbar-chart";
 import type { BayType, Feeder, PlacedFeeder, Switchboard, Vertical } from "@/types/database";
 import { ACB_SIZES, MCCB_SIZES, OUTGOING_MCC_BAY, lookupAcbBaySpec, lookupFeederBoxHeight, suggestAcbFrame } from "@/lib/artuk-sizing";
 import { bayFunctionOf, overrideKey, planBusbars, type BusbarMaterial, type BusbarOverride, type BusbarPlan } from "@/lib/busbar-plan";
@@ -231,7 +232,8 @@ export function overridesFromRows(rows: BusbarOverrideRow[]): Record<string, Bus
   return overrides;
 }
 
-export type BusbarParams = Pick<Switchboard, "busbar" | "amps" | "poles" | "neutral_size_pct" | "cable_entry">;
+export type BusbarParams = Pick<Switchboard, "busbar" | "amps" | "poles" | "neutral_size_pct" | "cable_entry"> &
+  Partial<Pick<Switchboard, "std" | "ka" | "ip_rating">>;
 
 // Physically the busbar chamber sits away from wherever cables enter the
 // panel (more room to route cable near the entry side).
@@ -277,5 +279,7 @@ export function planForSwitchboard(args: {
     switchboardAmps: args.params.amps,
     defaultDepthMm: Math.max(0, ...bays.map((v) => v.depth_mm ?? 0)) || DEFAULT_BAY_DEPTH_MM,
     overrides: args.overrides,
+    // ArTuK + copper: bars from ABB's charts (Al has its own ruleset, to come)
+    artukCu: args.params.std === "ArTuK" && material === "Cu" ? { ka: args.params.ka ?? null, ip: parseIp(args.params.ip_rating) } : null,
   });
 }
