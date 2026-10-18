@@ -19,20 +19,29 @@ export const DEFAULT_BAY_DEPTH_MM = 600;
 // Every switchgear bay leaves a 60mm gap each side of its feeders: a 600mm
 // wide feeder sits in a 720mm bay (drawn as dotted lines inside the bay).
 export const FEEDER_SIDE_GAP_MM = 60;
-// ArTuK: the red ArTuK strip on top is 25mm, and strip + feeders (busbar
-// chamber + panel) + baseframe add up to 2231mm.
-export const ARTUK_TOTAL_HEIGHT_MM = 2231;
+// ArTuK: the red ArTuK strip on top is 25mm. An ArTuK height (from the
+// ruleset) runs from the top of that strip to the bottom of the lowest
+// feeder -- strip + busbar chamber + feeders -- and does NOT include the
+// baseframe: a 2131 board on a 100mm baseframe stands 2231mm from the floor.
 export const ARTUK_STRIP_MM = 25;
+export const ARTUK_HEIGHTS_MM = [2131, 2231];
+export const DEFAULT_ARTUK_HEIGHT_MM = 2231;
 
-// Panel (feeder) height actually used for a switchboard: on ArTuK it's
-// whatever's left of 2231mm after the strip, baseframe and busbar chamber;
-// otherwise the panel height set on the switchboard.
+// The ArTuK height a switchboard was saved at (stored as its panel height,
+// so recovered as panel + chamber + strip), snapped to an allowed height.
+export function artukHeightOf(panelMm: number | null, chamberMm: number): number {
+  const h = panelMm != null ? panelMm + chamberMm + ARTUK_STRIP_MM : null;
+  return h != null && ARTUK_HEIGHTS_MM.includes(h) ? h : DEFAULT_ARTUK_HEIGHT_MM;
+}
+
+// Panel (feeder) height actually used for a switchboard: on ArTuK, the
+// ArTuK height less the strip and busbar chamber; otherwise the panel
+// height set on the switchboard.
 export function effectivePanelHeight(
-  sb: Pick<Switchboard, "std" | "panel_height_mm" | "plinth_height_mm" | "busbar_chamber_height_mm">,
-  plinthMm: number = sb.plinth_height_mm ?? 100,
+  sb: Pick<Switchboard, "std" | "panel_height_mm" | "busbar_chamber_height_mm">,
   chamberMm: number = sb.busbar_chamber_height_mm ?? BUSBAR_CHAMBER_HEIGHT_MM
 ): number {
-  if (sb.std === "ArTuK") return ARTUK_TOTAL_HEIGHT_MM - ARTUK_STRIP_MM - plinthMm - chamberMm;
+  if (sb.std === "ArTuK") return artukHeightOf(sb.panel_height_mm, chamberMm) - ARTUK_STRIP_MM - chamberMm;
   return sb.panel_height_mm ?? DEFAULT_PANEL_HEIGHT_MM;
 }
 
@@ -77,9 +86,9 @@ export function isAlley(bayType: BayType | null): boolean {
 }
 
 // A bay's width is set by its widest feeder plus the two side gaps; null
-// for alleys and empty bays (nothing to size from).
+// for empty bays (nothing to size from).
 export function bayWidthFor(v: Pick<VerticalWithFeeders, "bay_type" | "placed">): number | null {
-  if (isAlley(v.bay_type) || v.bay_type === "unassigned" || v.placed.length === 0) return null;
+  if (v.bay_type === "unassigned" || v.placed.length === 0) return null;
   return Math.max(...v.placed.map((p) => feederWidthFor(p.feeder))) + 2 * FEEDER_SIDE_GAP_MM;
 }
 

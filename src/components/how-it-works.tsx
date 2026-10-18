@@ -303,8 +303,11 @@ export function HowItWorks() {
               <>
                 Layout rules: each switchgear bay leaves a <b>60mm gap</b> each side of its feeders (dotted lines), so a 600mm feeder sits in a
                 720mm bay, and a bay&apos;s width follows its <b>widest feeder</b> (updated whenever feeders are added, moved or removed; you can
-                still type a width). On ArTuK boards the red ArTuK strip is 25mm and strip + feeders + baseframe = <b>2231mm</b>, so the panel
-                height is worked out automatically. In the side view each device sits at the front, as deep as the device; the vertical busbars
+                still type a width) — the gaps apply to every bay, cable and busbar alleys included. On ArTuK boards you pick the <b>ArTuK height</b>{" "}
+                (2131 or 2231mm): top of the 25mm red strip to the bottom of the lowest feeder, <i>not</i> counting the baseframe — the feeder height
+                is what&apos;s left after the strip and busbar chamber, and the baseframe adds on (2131 + 100mm baseframe = 2231mm from the floor).
+                The drawing shows bay widths along the top, feeder widths along the bottom, and on the left the overall height from the floor and
+                the height without the baseframe. In the side view each device sits at the front, as deep as the device; the vertical busbars
                 are at the rear and the horizontal main busbar in the front part of the chamber.
               </>,
               <>Front and side views, dimensions and the &ldquo;Sizing Logic&rdquo; panel explain how each size was reached.</>,
