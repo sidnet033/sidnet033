@@ -14,7 +14,17 @@ import {
   STAR_DELTA_SIZES,
   VFD_SOFT_STARTER_SIZES,
 } from "@/lib/artuk-sizing";
-import { ARTUK_CU_CHARTS, formatJoint, formatJoints } from "@/lib/artuk-busbar-chart";
+import {
+  ARTUK_AL_ACB_CHARTS,
+  ARTUK_AL_MCCB_HBB,
+  ARTUK_CU_CHARTS,
+  ARTUK_CU_PDF_CHARTS,
+  ARTUK_MCCB_LINKS,
+  FIRST_JOINT_MM,
+  formatJoint,
+  formatJoints,
+  type ArtukChart,
+} from "@/lib/artuk-busbar-chart";
 import { BAR_SIZES, MATERIAL_DENSITY, barArea, type BusbarMaterial } from "@/lib/busbar-plan";
 
 // Reference capacity uses the project defaults; each project can set its own
@@ -45,6 +55,8 @@ const NAV: NavItem[] = [
     children: [
       { id: "dim-busbars", label: "Busbar sizes" },
       { id: "dim-artuk-cu", label: "ArTuK copper busbar (ABB)" },
+      { id: "dim-artuk-al", label: "ArTuK aluminium busbar (ABB)" },
+      { id: "dim-artuk-mccb", label: "ArTuK MCCB busbar (ABB)" },
       { id: "dim-acb", label: "ACB" },
       { id: "dim-mccb", label: "MCCB" },
       { id: "dim-dol", label: "DOL / RDOL" },
@@ -335,13 +347,14 @@ export function HowItWorks() {
                 <i>Busbar sizes</i>). Above the biggest bar it runs bars in parallel. Neutral follows the switchboard&apos;s 100% / 50% setting.
               </>,
               <>
-                <b>ArTuK boards with copper busbar are different</b>: the design is ABB&apos;s, so the main busbar and each ACB&apos;s links come
-                from <b>ABB&apos;s busbar charts</b> (see <i>ArTuK copper busbar (ABB)</i>), not current density. The chart is picked by the
-                ACB&apos;s rating, the board&apos;s short-circuit kA and IP (the HBB position is ignored): the smallest chart whose rating covers
-                the ACB and whose kA and IP cover the board&apos;s. The main busbar follows the largest incomer&apos;s chart. Neutral is always
-                100%, even if the board is set to 50%. ACB link weights use ABB&apos;s own cut lengths. MCCB droppers and feeder links aren&apos;t
-                in ABB&apos;s charts and are still sized by current density. Aluminium ArTuK boards use current density until their ruleset is
-                added. These bars show an <b>ABB chart</b> tag when clicked.
+                <b>ArTuK boards are different</b>: the design is ABB&apos;s, so bars come from <b>ABB&apos;s busbar charts</b> (see the three
+                ArTuK sections under <i>Dimensions &amp; sizing data</i>), not current density. Each ACB&apos;s chart is picked by its rating, the
+                board&apos;s short-circuit kA and IP, and the bay width (HBB position ignored): the smallest chart whose rating covers the ACB
+                and whose kA and IP cover the board&apos;s. The main busbar follows the largest incomer&apos;s chart (an MCCB-fed aluminium board
+                uses ABB&apos;s lower-rating HBB table). MCCB feeder links use ABB&apos;s MCCB link sizes. <b>Copper</b> neutral is always
+                100%, even if the board is set to 50%; <b>aluminium</b> neutral is as ABB charts it. Copper ACB link weights use ABB&apos;s own
+                cut lengths; other chart bars use the drawn length. Droppers and copper MCCB-fed main busbars aren&apos;t in ABB&apos;s charts and
+                are still sized by current density. These bars show an <b>ABB chart</b> tag when clicked.
               </>,
               <>
                 To change a bar, click it in the drawing (or a row in the <b>Busbar Schedule</b>) and pick a size, runs per phase or
@@ -648,50 +661,96 @@ function DimensionsReference() {
       <Section
         id="dim-artuk-cu"
         title="ArTuK copper busbar (ABB charts)"
-        note="From ABB's 'ArTuK Copper Busbar Length for Emax ACB' workbook. Used on ArTuK boards with copper busbar. All sizes are 100% neutral (Ph & Ne the same unless shown)."
+        note="Emax 2 ACB. From ABB's 'ArTuK Copper Busbar Length for Emax ACB' workbook, plus one row only in ABB's ArTu-K Busbar Chart PDF (R4, Aug 2023). Copper is always 100% neutral (Ph & Ne the same unless shown)."
       >
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-surface-container-high text-xs uppercase tracking-wide text-on-surface-variant">
-                <th className="py-2 pr-3">ACB rating</th>
-                <th className="py-2 pr-3">Frame</th>
-                <th className="py-2 pr-3 text-right">Bay W × D</th>
-                <th className="py-2 pr-3">Up to</th>
-                <th className="py-2 pr-3">Main busbar</th>
-                <th className="py-2 pr-3">Main busbar to ACB link (top)</th>
-                <th className="py-2 pr-3">ACB link (bottom)</th>
-                <th className="py-2 pr-3 text-right">Link copper / ACB</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ARTUK_CU_CHARTS.map((c) => {
-                const kg = [...c.topPieces, ...c.bottomPieces].reduce((s, pc) => s + barArea(pc.bar) * pc.lengthMm * MATERIAL_DENSITY.Cu, 0);
-                return (
-                  <tr key={c.sheet} className="border-b border-surface-container-high/60 align-top">
-                    <td className="py-1.5 pr-3 font-medium">{c.ratingLabel}</td>
-                    <td className="py-1.5 pr-3">{c.frames.join(" / ")}</td>
-                    <td className="py-1.5 pr-3 text-right tabular-nums">
-                      {c.bayWidthMm} × {c.bayDepthLabel}
-                    </td>
-                    <td className="py-1.5 pr-3 whitespace-nowrap">
-                      {c.scKa}kA 1s · IP{c.ip}
-                    </td>
-                    <td className="py-1.5 pr-3">{formatJoint(c.main)}</td>
-                    <td className="py-1.5 pr-3">{formatJoints(c.top)}</td>
-                    <td className="py-1.5 pr-3">{formatJoints(c.bottom)}</td>
-                    <td className="py-1.5 pr-3 text-right tabular-nums">{kg.toFixed(1)} kg</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <ArtukChartTable charts={[...ARTUK_CU_CHARTS, ...ARTUK_CU_PDF_CHARTS].sort((x, y) => x.maxA - y.maxA)} material="Cu" />
         <p className="mt-2 text-xs text-secondary">
           &ldquo;R&rdquo; = runs per phase. Where a link has two joints, the 1st joint is at the ACB terminal and the 2nd carries on to the
-          main busbar (top) or the cable side (bottom). &ldquo;Link copper / ACB&rdquo; is ABB&apos;s cut lengths for one ACB&apos;s top and
-          bottom links, all phases and neutral. A board above a chart&apos;s kA or IP moves up to the next chart that covers it (with a warning
-          to confirm with ABB). On the 5000A sheet ABB&apos;s own total misses one 450mm bottom-link bar; the full piece list is used here.
+          main busbar (top) or the cable side (bottom). &ldquo;Link metal / ACB&rdquo; is ABB&apos;s cut lengths for one ACB&apos;s top and
+          bottom links, all phases and neutral (workbook rows only; the PDF row uses the drawn length). A board above a chart&apos;s kA or IP
+          moves up to the next chart that covers it, with a warning to confirm with ABB. On the 5000A sheet ABB&apos;s own total misses one
+          450mm bottom-link bar; the full piece list is used here.
+        </p>
+      </Section>
+
+      <Section
+        id="dim-artuk-al"
+        title="ArTuK aluminium busbar (ABB charts)"
+        note="Emax 2 ACB, from ABB's ArTu-K Busbar Chart PDF (R4, Aug 2023). Aluminium neutral is as ABB charts it (usually smaller than the phase)."
+      >
+        <ArtukChartTable charts={ARTUK_AL_ACB_CHARTS} material="Al" />
+        <p className="mt-2 text-xs text-secondary">
+          Where ABB has two charts for one rating (e.g. 1250A E1.2 / E2.2, 2500A 720w / 920w), the one drawn for the bay&apos;s width and the
+          board&apos;s IP is used. The 4000A 1120w chart is 3-pole only. At 5000A ABB specifies <b>copper</b> phase links (6R 100×10 Cu) with an
+          aluminium neutral — the BOM carries those as a copper line at the copper rate. Two-joint links take the 1st joint as the first{" "}
+          {FIRST_JOINT_MM}mm at the ACB terminal.
+        </p>
+      </Section>
+
+      <Section
+        id="dim-artuk-mccb"
+        title="ArTuK MCCB busbar (ABB charts)"
+        note="Tmax / XT MCCBs, from ABB's ArTu-K Busbar Chart PDF. The link at the MCCB terminal (the feeder link from the dropper); ABB gives the phase size and the neutral is taken the same."
+      >
+        <div className="grid gap-6 sm:grid-cols-2">
+          {(["Cu", "Al"] as const).map((material) => (
+            <div key={material}>
+              <p className="mb-1 text-sm font-semibold text-on-surface">{material === "Cu" ? "Copper (Cu)" : "Aluminium (Al)"} — link at MCCB terminal</p>
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-surface-container-high text-xs uppercase tracking-wide text-on-surface-variant">
+                    <th className="py-2 pr-3">Frame</th>
+                    <th className="py-2 pr-3">Rating</th>
+                    <th className="py-2 pr-3">Link (Ph)</th>
+                    <th className="py-2 pr-3">Terminal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ARTUK_MCCB_LINKS[material].map((r) => (
+                    <tr key={`${r.frame}-${r.ratingLabel}`} className="border-b border-surface-container-high/60">
+                      <td className="py-1.5 pr-3 font-medium">{r.frame}</td>
+                      <td className="py-1.5 pr-3">{r.ratingLabel}</td>
+                      <td className="py-1.5 pr-3">
+                        {r.link.runs}R {r.link.bar.widthMm}×{r.link.bar.thicknessMm}
+                      </td>
+                      <td className="py-1.5 pr-3">{r.terminal}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+        <p className="mb-1 mt-4 text-sm font-semibold text-on-surface">Aluminium main busbar (HBB) for MCCB-fed boards</p>
+        <table className="w-full text-left text-sm">
+          <thead>
+            <tr className="border-b border-surface-container-high text-xs uppercase tracking-wide text-on-surface-variant">
+              <th className="py-2 pr-3">Rating</th>
+              <th className="py-2 pr-3">MCCB frame</th>
+              <th className="py-2 pr-3">Short circuit</th>
+              <th className="py-2 pr-3">HBB (Ph)</th>
+              <th className="py-2 pr-3">Earth busbar</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ARTUK_AL_MCCB_HBB.map((r) => (
+              <tr key={r.ratingLabel} className="border-b border-surface-container-high/60">
+                <td className="py-1.5 pr-3 font-medium">{r.ratingLabel}</td>
+                <td className="py-1.5 pr-3">{r.frame}</td>
+                <td className="py-1.5 pr-3">{r.kaLabel}</td>
+                <td className="py-1.5 pr-3">
+                  {r.main.runs}R {r.main.bar.widthMm}×{r.main.bar.thicknessMm}
+                </td>
+                <td className="py-1.5 pr-3">
+                  {r.earth.runs}R {r.earth.bar.widthMm}×{r.earth.bar.thicknessMm}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="mt-2 text-xs text-secondary">
+          The MCCB link frame follows the frame ArTuK sizing picks for the rating (e.g. 630A → T6/XT6). ABB has no HBB table for copper
+          MCCB-fed boards, so those stay on current density, as do droppers (vertical busbars) on every ArTuK board.
         </p>
       </Section>
 
@@ -851,6 +910,55 @@ function DimensionsReference() {
         </ul>
       </Section>
     </>
+  );
+}
+
+function ArtukChartTable({ charts, material }: { charts: ArtukChart[]; material: BusbarMaterial }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left text-sm">
+        <thead>
+          <tr className="border-b border-surface-container-high text-xs uppercase tracking-wide text-on-surface-variant">
+            <th className="py-2 pr-3">ACB rating</th>
+            <th className="py-2 pr-3">Frame</th>
+            <th className="py-2 pr-3 text-right">Bay W{material === "Cu" ? " × D" : ""}</th>
+            <th className="py-2 pr-3">Up to</th>
+            <th className="py-2 pr-3">Main busbar</th>
+            <th className="py-2 pr-3">Main busbar to ACB link (top)</th>
+            <th className="py-2 pr-3">ACB link (bottom)</th>
+            <th className="py-2 pr-3">Earth</th>
+            {material === "Cu" && <th className="py-2 pr-3 text-right">Link metal / ACB</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {charts.map((c) => {
+            const cut = c.topPieces && c.bottomPieces ? [...c.topPieces, ...c.bottomPieces] : null;
+            const kg = cut ? cut.reduce((sum, pc) => sum + barArea(pc.bar) * pc.lengthMm * MATERIAL_DENSITY[c.material], 0) : null;
+            return (
+              <tr key={c.sheet} className="border-b border-surface-container-high/60 align-top">
+                <td className="py-1.5 pr-3 font-medium">{c.ratingLabel}</td>
+                <td className="py-1.5 pr-3">
+                  {c.frames.join(" / ")}
+                  {c.poles ? ` (${c.poles}P)` : ""}
+                </td>
+                <td className="py-1.5 pr-3 text-right tabular-nums">
+                  {c.bayWidthMm}
+                  {material === "Cu" && c.bayDepthLabel !== "—" ? ` × ${c.bayDepthLabel}` : ""}
+                </td>
+                <td className="py-1.5 pr-3 whitespace-nowrap">
+                  {c.scKa}kA · IP{c.ip}
+                </td>
+                <td className="py-1.5 pr-3">{formatJoint(c.main)}</td>
+                <td className="py-1.5 pr-3">{formatJoints(c.top)}</td>
+                <td className="py-1.5 pr-3">{formatJoints(c.bottom)}</td>
+                <td className="py-1.5 pr-3 whitespace-nowrap">{c.earth ? `${c.earth.runs}R ${c.earth.bar.widthMm}×${c.earth.bar.thicknessMm}` : "—"}</td>
+                {material === "Cu" && <td className="py-1.5 pr-3 text-right tabular-nums">{kg != null ? `${kg.toFixed(1)} kg` : "—"}</td>}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

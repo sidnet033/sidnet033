@@ -35,18 +35,21 @@ export type BusbarTakeoff = {
   rateMissing: boolean;
 };
 
-export function busbarTakeoff(plan: BusbarPlan, material: BusbarMaterial, ratePerKg: number): BusbarTakeoff {
-  const bySize = new Map<string, { bar: BarSize; lengthMm: number }>();
-  const add = (bar: BarSize, bars: number, lengthMm: number) => {
-    const key = `${bar.widthMm}x${bar.thicknessMm}`;
-    const entry = bySize.get(key) ?? { bar, lengthMm: 0 };
+// rates: INR/kg per material. ABB's 5000A aluminium chart uses copper phase
+// links, so an Al board can carry a copper line.
+export function busbarTakeoff(plan: BusbarPlan, material: BusbarMaterial, rates: Record<BusbarMaterial, number>): BusbarTakeoff {
+  const ratePerKg = rates[material];
+  const bySize = new Map<string, { bar: BarSize; lengthMm: number; material: BusbarMaterial }>();
+  const add = (bar: BarSize, bars: number, lengthMm: number, mat: BusbarMaterial = material) => {
+    const key = `${mat}-${bar.widthMm}x${bar.thicknessMm}`;
+    const entry = bySize.get(key) ?? { bar, lengthMm: 0, material: mat };
     entry.lengthMm += bars * lengthMm;
     bySize.set(key, entry);
   };
   for (const seg of plan.segments) {
-    // ArTuK copper ACB links: ABB's cut lengths (all phases + neutral)
+    // ArTuK ABB-chart bars: lengths per size and material (all phases + neutral)
     if (seg.pieces) {
-      for (const pc of seg.pieces) add(pc.bar, 1, pc.lengthMm);
+      for (const pc of seg.pieces) add(pc.bar, 1, pc.lengthMm, pc.material);
       continue;
     }
     if (!seg.bar || seg.lengthMm <= 0) continue;
@@ -55,18 +58,18 @@ export function busbarTakeoff(plan: BusbarPlan, material: BusbarMaterial, ratePe
   }
   const lines = [...bySize.entries()]
     .sort((a, b) => barArea(b[1].bar) - barArea(a[1].bar))
-    .map(([key, { bar, lengthMm }]) => {
-      const kg = Math.round(barArea(bar) * lengthMm * MATERIAL_DENSITY[material] * 10) / 10;
+    .map(([key, { bar, lengthMm, material: mat }]) => {
+      const kg = Math.round(barArea(bar) * lengthMm * MATERIAL_DENSITY[mat] * 10) / 10;
       const lengthM = Math.round(lengthMm / 100) / 10;
       return {
         key,
-        material,
+        material: mat,
         bar,
         lengthM,
         kg,
-        rate: ratePerKg,
-        amount: kg * ratePerKg,
-        description: `${material === "Cu" ? "Copper" : "Aluminium"} busbar ${bar.widthMm}×${bar.thicknessMm} mm — ${lengthM} m`,
+        rate: rates[mat],
+        amount: kg * rates[mat],
+        description: `${mat === "Cu" ? "Copper" : "Aluminium"} busbar ${bar.widthMm}×${bar.thicknessMm} mm — ${lengthM} m`,
       };
     });
   return {
@@ -74,7 +77,7 @@ export function busbarTakeoff(plan: BusbarPlan, material: BusbarMaterial, ratePe
     material,
     ratePerKg,
     total: lines.reduce((s, l) => s + l.amount, 0),
-    rateMissing: lines.length > 0 && ratePerKg <= 0,
+    rateMissing: lines.some((l) => l.rate <= 0),
   };
 }
 
@@ -110,6 +113,5 @@ export async function loadBusbarTakeoff(supabase: SupabaseClient, sb: Switchboar
     panelHeightMm: effectivePanelHeight(sb),
     chamberHeightMm: sb.busbar_chamber_height_mm ?? BUSBAR_CHAMBER_HEIGHT_MM,
   });
-  const rate = Number(material === "Cu" ? (project?.busbar_rate_cu ?? 0) : (project?.busbar_rate_al ?? 0));
-  return busbarTakeoff(plan, material, rate);
+  return busbarTakeoff(plan, material, { Cu: Number(project?.busbar_rate_cu ?? 0), Al: Number(project?.busbar_rate_al ?? 0) });
 }

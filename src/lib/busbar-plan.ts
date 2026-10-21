@@ -1,6 +1,14 @@
 import type { BayType, Feeder } from "@/types/database";
-import type { BayFunction } from "@/lib/artuk-sizing";
-import { formatJoints, pickArtukCuChart, type ArtukCuChart, type ChartJoint } from "@/lib/artuk-busbar-chart";
+import { suggestMccbFrame, type BayFunction } from "@/lib/artuk-sizing";
+import {
+  FIRST_JOINT_MM,
+  formatJoints,
+  pickAlMccbHbb,
+  pickArtukChart,
+  pickMccbLink,
+  type ArtukChart,
+  type ChartJoint,
+} from "@/lib/artuk-busbar-chart";
 
 // Busbar routing + sizing for a switchboard's GA, computed live from the
 // bays/feeders on every render so it always follows the current layout.
@@ -34,6 +42,7 @@ const bars = (list: [number, number][]): BarSize[] =>
 
 export const BAR_SIZES: Record<BusbarMaterial, BarSize[]> = {
   Cu: bars([
+    [15, 5],
     [20, 10],
     [30, 10],
     [40, 10],
@@ -46,6 +55,7 @@ export const BAR_SIZES: Record<BusbarMaterial, BarSize[]> = {
   ]),
   Al: bars([
     [20, 10],
+    [25, 10],
     [30, 6],
     [40, 10],
     [50, 10],
@@ -55,6 +65,7 @@ export const BAR_SIZES: Record<BusbarMaterial, BarSize[]> = {
     [125, 10],
     [150, 10],
     [160, 10],
+    [200, 10],
   ]),
 };
 
@@ -156,11 +167,13 @@ export type BusbarSegment = {
   capacityA: number | null;
   undersized: boolean;
   weightKg: number | null;
-  // ArTuK copper: the ABB chart this bar was taken from (not current density)
+  // ArTuK: the ABB chart this bar was taken from (not current density)
   chart: SegmentChart | null;
-  // bar lengths per size (all phases + neutral) when ABB's cut lengths are
-  // used for weight/BOM instead of drawing length × runs
-  pieces: { bar: BarSize; lengthMm: number }[] | null;
+  // total bar length per size and material (all phases + neutral, every
+  // run) for ABB-chart bars -- ABB's cut lengths where the chart has them,
+  // else the drawn length split over the chart's joints. Weight and BOM use
+  // these; null = plain length × runs.
+  pieces: { bar: BarSize; lengthMm: number; material: BusbarMaterial }[] | null;
   notes: string[];
   warnings: string[];
 };
@@ -197,8 +210,8 @@ export type BusbarPlanInput = {
   switchboardAmps: number | null;
   defaultDepthMm: number;
   overrides: Record<string, BusbarOverride>;
-  // set on ArTuK boards with copper busbar: bars come from ABB's charts
-  artukCu?: { ka: number | null; ip: number | null } | null;
+  // set on ArTuK boards: bars come from ABB's charts
+  artuk?: { ka: number | null; ip: number | null } | null;
 };
 
 export type BusbarPlan = {
@@ -243,35 +256,64 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
     );
   }
 
-  // ArTuK copper: the ABB chart of an ACB (by rating, frame, kA, IP)
-  const artukCu = input.artukCu ?? null;
-  const chartFor = (amps: number | null, frame: string | null) =>
-    artukCu ? pickArtukCuChart({ amps, frame, ka: artukCu.ka, ip: artukCu.ip }) : null;
-  const sideChart = (chart: ArtukCuChart, side: "top" | "bottom"): SegmentChart => ({
+  // ArTuK: ABB's chart for an ACB (by rating, kA, IP, bay width)
+  const artuk = input.artuk ?? null;
+  const matName = material === "Cu" ? "copper" : "aluminium";
+  const chartFor = (amps: number | null, bay: PlanBay | null) =>
+    artuk ? pickArtukChart({ material, amps, ka: artuk.ka, ip: artuk.ip, poles, bayWidthMm: bay?.widthMm ?? null }) : null;
+  const sideChart = (chart: ArtukChart, side: "top" | "bottom"): SegmentChart => ({
     sheet: chart.sheet,
     joints: side === "top" ? chart.top : chart.bottom,
-    pieces: side === "top" ? chart.topPieces : chart.bottomPieces,
+    pieces: (side === "top" ? chart.topPieces : chart.bottomPieces) ?? null,
   });
-  const chartNotes = (chart: ArtukCuChart, what: string, joints: ChartJoint[]) => [
-    `ArTuK copper — ${what} from ABB's chart "${chart.sheet}": ${formatJoints(joints)}, neutral 100%. Weight uses ABB's cut lengths.`,
-  ];
-  const bayWidthWarning = (chart: ArtukCuChart, bay: PlanBay) =>
+  const lengthNote = (joints: ChartJoint[], cutLengths: boolean) =>
+    cutLengths ? " Weight uses ABB's cut lengths." : joints.length > 1 ? ` 1st joint taken as the first ${FIRST_JOINT_MM}mm at the breaker terminal.` : "";
+  const neutralNote = material === "Cu" ? "neutral 100%" : "neutral as charted";
+  const chartNotes = (chart: ArtukChart, what: string, side: "top" | "bottom") => {
+    const joints = side === "top" ? chart.top : chart.bottom;
+    const cut = !!(side === "top" ? chart.topPieces : chart.bottomPieces);
+    return [`ArTuK ${matName} — ${what} from ABB's chart "${chart.sheet}": ${formatJoints(joints)}, ${neutralNote}.${lengthNote(joints, cut)}`];
+  };
+  const bayWidthWarning = (chart: ArtukChart, bay: PlanBay) =>
     bay.widthMm > 0 && bay.widthMm !== chart.bayWidthMm ? [`ABB's ${chart.ratingLabel} chart is for a ${chart.bayWidthMm}mm wide bay; ${bay.name} is ${bay.widthMm}mm.`] : [];
 
-  // main busbar chart: the largest incomer ACB, else the board's Amps
-  let mainPick: ReturnType<typeof pickArtukCuChart> = null;
-  if (artukCu) {
+  // main busbar: the largest incomer's ACB chart; an MCCB-fed aluminium
+  // board uses ABB's lower-rating HBB table (copper MCCB-fed boards have no
+  // ABB HBB table and stay on current density)
+  let mainChart: SegmentChart | null = null;
+  const mainNotes: string[] = [];
+  const mainWarnings: string[] = [];
+  if (artuk) {
     let best: Feeder | null = null;
     for (const bay of bays)
       for (const p of bay.placed)
         if (isIncomerFeeder(p.feeder, bay.bayType) && p.feeder.rated_current != null && (!best || p.feeder.rated_current > (best.rated_current ?? 0)))
           best = p.feeder;
-    mainPick = chartFor(best?.rated_current ?? mainCurrent, null);
+    const amps = best?.rated_current ?? mainCurrent;
+    if (best?.device_type === "MCCB") {
+      const hbb = material === "Al" ? pickAlMccbHbb(amps, artuk.ka) : null;
+      if (hbb) {
+        mainChart = { sheet: `Al MCCB HBB ${hbb.row.ratingLabel}`, joints: [hbb.row.main], pieces: null };
+        mainNotes.push(
+          `ArTuK aluminium, MCCB-fed — size from ABB's lower-rating HBB table (${hbb.row.ratingLabel}, ${hbb.row.frame}): ${formatJoints([hbb.row.main])}; neutral taken the same. Earth busbar ${formatBar(hbb.row.earth.bar, hbb.row.earth.runs)}.`
+        );
+        mainWarnings.push(...hbb.warnings);
+      }
+    } else {
+      const pick = chartFor(amps, null);
+      if (pick) {
+        mainChart = { sheet: pick.chart.sheet, joints: [pick.chart.main], pieces: null };
+        mainNotes.push(
+          `ArTuK ${matName} — size from ABB's chart "${pick.chart.sheet}" (largest incomer): ${formatJoints([pick.chart.main])}, ${neutralNote}.${pick.chart.earth ? ` Earth busbar ${formatBar(pick.chart.earth.bar, pick.chart.earth.runs)}.` : ""}`
+        );
+        mainWarnings.push(...pick.warnings);
+      }
+    }
   }
 
   if (bays.length > 0 && totalWidth > 0) {
     drafts.push({
-      chart: mainPick ? { sheet: mainPick.chart.sheet, joints: [mainPick.chart.main], pieces: null } : null,
+      chart: mainChart,
       kind: "main",
       verticalId: null,
       placedFeederId: null,
@@ -288,9 +330,9 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
       autoLengthMm: totalWidth,
       notes: [
         `Runs the full ${totalWidth}mm width of the switchboard in the busbar chamber.`,
-        ...(mainPick ? [`ArTuK copper — size from ABB's chart "${mainPick.chart.sheet}" (largest incomer): ${formatJoints([mainPick.chart.main])}, neutral 100%.`] : []),
+        ...mainNotes,
       ],
-      warnings: [...(mainCurrent == null && !mainPick ? ["No design current — set the switchboard's Amps in Project Detail."] : []), ...(mainPick?.warnings ?? [])],
+      warnings: [...(mainCurrent == null && !mainChart ? ["No design current — set the switchboard's Amps in Project Detail."] : []), ...mainWarnings],
     });
   }
 
@@ -314,10 +356,22 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
       const unitName = placed.qty > 1 ? `${f.name} #${c.unitIndex + 1}` : f.name;
       const noRating = f.rated_current == null ? ["No rated current on this feeder — set it in BOM Builder to size this bar."] : [];
 
-      // ArTuK copper ACBs (incomers and outgoings): links from ABB's chart
-      const pick = f.device_type === "ACB" && bayFunctionOf(f) !== "bus_coupler" ? chartFor(f.rated_current ?? (isIncomerFeeder(f, bay.bayType) ? mainCurrent : null), null) : null;
-      const topChart = pick ? sideChart(pick.chart, "top") : null;
-      const bottomChart = pick ? sideChart(pick.chart, "bottom") : null;
+      // ArTuK ACBs (incomers and outgoings): links from ABB's chart
+      const pick =
+        f.device_type === "ACB" && bayFunctionOf(f) !== "bus_coupler" ? chartFor(f.rated_current ?? (isIncomerFeeder(f, bay.bayType) ? mainCurrent : null), bay) : null;
+      // ArTuK MCCB incomer: ABB's MCCB link size on both terminals
+      const incomerMccb =
+        artuk && !pick && f.device_type === "MCCB" && isIncomerFeeder(f, bay.bayType) && (f.rated_current ?? mainCurrent) != null
+          ? pickMccbLink(material, f.rated_current ?? mainCurrent, suggestMccbFrame((f.rated_current ?? mainCurrent)!))
+          : null;
+      const mccbChart: SegmentChart | null = incomerMccb
+        ? { sheet: `${material} MCCB ${incomerMccb.row.frame} ${incomerMccb.row.ratingLabel}`, joints: [incomerMccb.row.link], pieces: null }
+        : null;
+      const mccbNotes = incomerMccb
+        ? [`ArTuK ${matName} — ABB's MCCB link size for ${incomerMccb.row.frame} ${incomerMccb.row.ratingLabel}: ${formatJoints([incomerMccb.row.link])}; neutral taken the same.`]
+        : [];
+      const topChart = pick ? sideChart(pick.chart, "top") : mccbChart;
+      const bottomChart = pick ? sideChart(pick.chart, "bottom") : mccbChart;
       const pickWarnings = pick ? [...pick.warnings, ...bayWidthWarning(pick.chart, bay)] : [];
 
       if (isIncomerFeeder(f, bay.bayType)) {
@@ -341,9 +395,13 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
           autoLengthMm: Math.round(Math.abs(chamberMidY - terminalY)),
           notes: [
             "Connects the incomer's outgoing terminal to the main horizontal busbar.",
-            ...(pick ? chartNotes(pick.chart, "main busbar to ACB link (top)", pick.chart.top) : []),
+            ...(pick ? chartNotes(pick.chart, "main busbar to ACB link (top)", "top") : mccbNotes),
           ],
-          warnings: [...(f.rated_current == null ? ["No rated current on the incomer — sized on the main busbar rating."] : []), ...pickWarnings],
+          warnings: [
+            ...(f.rated_current == null ? ["No rated current on the incomer — sized on the main busbar rating."] : []),
+            ...pickWarnings,
+            ...(incomerMccb?.warnings ?? []),
+          ],
         });
         const depth = bay.depthMm ?? input.defaultDepthMm;
         const cableY = awayFromChamberY(c);
@@ -362,7 +420,7 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
           autoLengthMm: Math.round(depth * INCOMER_CABLE_LINK_DEPTH_FRACTION),
           notes: [
             `Cable-termination bar, ${INCOMER_CABLE_LINK_DEPTH_FRACTION * 100}% of the ${depth}mm bay depth, for lugging the customer's incoming cables.`,
-            ...(pick ? chartNotes(pick.chart, "ACB link (bottom)", pick.chart.bottom) : []),
+            ...(pick ? chartNotes(pick.chart, "ACB link (bottom)", "bottom") : mccbNotes),
           ],
           warnings: bay.depthMm == null ? [`Bay depth not set — assumed ${input.defaultDepthMm}mm.`] : [],
         });
@@ -390,7 +448,7 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
           autoLengthMm: Math.round(Math.abs(chamberMidY - terminalY)),
           notes: [
             "Outgoing ACB fed straight off the main busbar — no dropper needed.",
-            ...(pick ? chartNotes(pick.chart, "main busbar to ACB link (top)", pick.chart.top) : []),
+            ...(pick ? chartNotes(pick.chart, "main busbar to ACB link (top)", "top") : []),
           ],
           warnings: [
             ...(pick ? [] : noRating),
@@ -417,7 +475,7 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
             autoLengthMm: Math.round(depth * INCOMER_CABLE_LINK_DEPTH_FRACTION),
             notes: [
               `Cable-termination bar, ${INCOMER_CABLE_LINK_DEPTH_FRACTION * 100}% of the ${depth}mm bay depth, for lugging the outgoing cables.`,
-              ...(pick ? chartNotes(pick.chart, "ACB link (bottom)", pick.chart.bottom) : []),
+              ...(pick ? chartNotes(pick.chart, "ACB link (bottom)", "bottom") : []),
             ],
             warnings: [...(pick ? [] : noRating), ...(bay.depthMm == null && !pick ? [`Bay depth not set — assumed ${input.defaultDepthMm}mm.`] : [])],
           });
@@ -438,6 +496,8 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
         droppers.set(host.id, group);
       }
       group.links.push({ bay, c, feeder: f });
+      // ArTuK MCCBs: ABB's link size at the MCCB terminal
+      const mccb = artuk && f.device_type === "MCCB" && f.rated_current != null ? pickMccbLink(material, f.rated_current, suggestMccbFrame(f.rated_current)) : null;
       const towardDropper = group.x >= centreX ? bay.leftMm + bay.widthMm : bay.leftMm;
       const terminalX = (towardDropper + centreX) / 2;
       drafts.push({
@@ -455,8 +515,14 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
         side: null,
         designCurrentA: f.rated_current,
         autoLengthMm: Math.round(Math.abs(group.x - terminalX)),
-        notes: ["Feeder busbar from the dropper to this outgoing device's incoming terminal."],
-        warnings: noRating,
+        chart: mccb ? { sheet: `${material} MCCB ${mccb.row.frame} ${mccb.row.ratingLabel}`, joints: [mccb.row.link], pieces: null } : null,
+        notes: [
+          "Feeder busbar from the dropper to this outgoing device's incoming terminal.",
+          ...(mccb
+            ? [`ArTuK ${matName} — ABB's MCCB link size for ${mccb.row.frame} ${mccb.row.ratingLabel} (${mccb.row.terminal} terminal): ${formatJoints([mccb.row.link])}; neutral taken the same.`]
+            : []),
+        ],
+        warnings: [...noRating, ...(mccb?.warnings ?? [])],
       });
     }
   });
@@ -532,7 +598,7 @@ function finishSegment(
   const o = ctx.overrides[key];
   const chart = d.chart ?? null;
   const first = chart?.joints[0] ?? null;
-  // ArTuK copper: ABB's chart size (first joint, at the ACB terminal) is the
+  // ArTuK: ABB's chart size (first joint, at the breaker terminal) is the
   // "auto" size; otherwise current density
   const auto = first ? { bar: first.bar, runs: first.runs } : autoSize(d.designCurrentA, ctx.densityAPerMm2, ctx.material);
   const sizeOverridden = !!o && o.barWidthMm != null && o.barThicknessMm != null;
@@ -547,16 +613,30 @@ function finishSegment(
 
   let neutral: { bar: BarSize; runs: number } | null = null;
   if (ctx.hasNeutral && bar) {
-    if (first) neutral = { bar, runs: sizeOverridden || runsOverridden ? runs : first.neRuns }; // ABB: always 100% neutral
+    if (first) neutral = { bar, runs: sizeOverridden || runsOverridden ? runs : first.neRuns }; // as ABB charts it
     else neutral = ctx.neutralPct >= 100 ? { bar, runs } : autoSize(d.designCurrentA != null ? (d.designCurrentA * ctx.neutralPct) / 100 : null, ctx.densityAPerMm2, ctx.material);
   }
 
-  // ABB's cut lengths, unless the user changed this bar. The charts are 4P;
-  // on a 3-pole board the neutral's share is taken out.
-  let pieces: { bar: BarSize; lengthMm: number }[] | null = null;
-  if (chart?.pieces && first && !sizeOverridden && !runsOverridden && !lengthOverridden) {
-    const phaseShare = ctx.hasNeutral ? 1 : (3 * first.runs) / (3 * first.runs + first.neRuns);
-    pieces = chart.pieces.map((pc) => ({ bar: pc.bar, lengthMm: Math.round(pc.lengthMm * phaseShare) }));
+  // ABB chart bars, unless the user changed this bar's size or runs:
+  // ABB's cut lengths where the chart has them (4P; on a 3-pole board the
+  // neutral's share is taken out), else the drawn length split over the
+  // chart's joints -- 1st joint the first FIRST_JOINT_MM at the breaker
+  // terminal, 2nd joint the rest.
+  let pieces: BusbarSegment["pieces"] = null;
+  if (chart && first && !sizeOverridden && !runsOverridden) {
+    if (chart.pieces && !lengthOverridden) {
+      const phaseShare = ctx.hasNeutral ? 1 : (3 * first.runs) / (3 * first.runs + first.neRuns);
+      pieces = chart.pieces.map((pc) => ({ bar: pc.bar, lengthMm: Math.round(pc.lengthMm * phaseShare), material: ctx.material }));
+    } else if (!chart.pieces) {
+      const lens = chart.joints.length > 1 ? [Math.min(FIRST_JOINT_MM, lengthMm), Math.max(0, lengthMm - FIRST_JOINT_MM)] : [lengthMm];
+      pieces = [];
+      chart.joints.forEach((jt, i) => {
+        const len = lens[i] ?? 0;
+        if (len <= 0) return;
+        pieces!.push({ bar: jt.bar, lengthMm: len * 3 * jt.runs, material: jt.phMaterial ?? ctx.material });
+        if (ctx.hasNeutral && jt.neRuns > 0) pieces!.push({ bar: jt.bar, lengthMm: len * jt.neRuns, material: ctx.material });
+      });
+    }
   }
 
   const capacityA = bar && !first ? Math.round(barArea(bar) * runs * ctx.densityAPerMm2) : null;
@@ -564,7 +644,7 @@ function finishSegment(
   const phaseArea = bar ? barArea(bar) * runs * 3 : 0;
   const neutralArea = neutral ? barArea(neutral.bar) * neutral.runs : 0;
   const weightKg = pieces
-    ? Math.round(pieces.reduce((sum, pc) => sum + barArea(pc.bar) * pc.lengthMm, 0) * MATERIAL_DENSITY[ctx.material] * 100) / 100
+    ? Math.round(pieces.reduce((sum, pc) => sum + barArea(pc.bar) * pc.lengthMm * MATERIAL_DENSITY[pc.material], 0) * 100) / 100
     : bar
       ? Math.round((phaseArea + neutralArea) * lengthMm * MATERIAL_DENSITY[ctx.material] * 100) / 100
       : null;

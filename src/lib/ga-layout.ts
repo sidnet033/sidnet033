@@ -279,7 +279,7 @@ export function planForSwitchboard(args: {
     switchboardAmps: args.params.amps,
     defaultDepthMm: Math.max(0, ...bays.map((v) => v.depth_mm ?? 0)) || DEFAULT_BAY_DEPTH_MM,
     overrides: args.overrides,
-    // ArTuK + copper: bars from ABB's charts (Al has its own ruleset, to come)
-    artukCu: args.params.std === "ArTuK" && material === "Cu" ? { ka: args.params.ka ?? null, ip: parseIp(args.params.ip_rating) } : null,
+    // ArTuK: bars from ABB's charts (copper and aluminium)
+    artuk: args.params.std === "ArTuK" ? { ka: args.params.ka ?? null, ip: parseIp(args.params.ip_rating) } : null,
   });
 }

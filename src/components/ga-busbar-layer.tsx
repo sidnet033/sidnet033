@@ -766,7 +766,7 @@ export function BusbarSegmentPanel({
       <p className="mb-1 text-[11px] text-on-surface-variant">
         Neutral:{" "}
         <span className="font-mono text-on-surface">
-          {hasNeutral ? `${formatBar(segment.neutral?.bar ?? null, segment.neutral?.runs ?? 1)} (${segment.chart ? "100% — ABB" : `${neutralPct}%`})` : "none — 3-pole"}
+          {hasNeutral ? `${formatBar(segment.neutral?.bar ?? null, segment.neutral?.runs ?? 1)} (${segment.chart ? "ABB chart" : `${neutralPct}%`})` : "none — 3-pole"}
         </span>
       </p>
       <p className="mb-3 text-[11px] text-on-surface-variant">
