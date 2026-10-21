@@ -351,8 +351,8 @@ export function HowItWorks() {
                 ArTuK sections under <i>Dimensions &amp; sizing data</i>), not current density. Each ACB&apos;s chart is picked by its rating, the
                 board&apos;s short-circuit kA and IP, and the bay width (HBB position ignored): the smallest chart whose rating covers the ACB
                 and whose kA and IP cover the board&apos;s. The main busbar follows the largest incomer&apos;s chart (an MCCB-fed aluminium board
-                uses ABB&apos;s lower-rating HBB table). MCCB feeder links use ABB&apos;s MCCB link sizes. <b>Copper</b> neutral is always
-                100%, even if the board is set to 50%; <b>aluminium</b> neutral is as ABB charts it. Copper ACB link weights use ABB&apos;s own
+                uses ABB&apos;s lower-rating HBB table). MCCB feeder links use ABB&apos;s MCCB link sizes. Neutral is as ABB charts it,
+                whatever the board&apos;s 50% / 100% setting (copper is mostly 100%; aluminium usually smaller). Copper ACB link weights use ABB&apos;s own
                 cut lengths; other chart bars use the drawn length. Droppers and copper MCCB-fed main busbars aren&apos;t in ABB&apos;s charts and
                 are still sized by current density. These bars show an <b>ABB chart</b> tag when clicked.
               </>,
@@ -661,13 +661,15 @@ function DimensionsReference() {
       <Section
         id="dim-artuk-cu"
         title="ArTuK copper busbar (ABB charts)"
-        note="Emax 2 ACB. From ABB's 'ArTuK Copper Busbar Length for Emax ACB' workbook, plus one row only in ABB's ArTu-K Busbar Chart PDF (R4, Aug 2023). Copper is always 100% neutral (Ph & Ne the same unless shown)."
+        note="Emax 2 ACB. ABB's ArTu-K Busbar Chart PDF (R4, Aug 2023) sizes, with cut lengths from ABB's 'ArTuK Copper Busbar Length for Emax ACB' workbook. Where the two differ, the PDF wins. Copper neutral as ABB charts it (Ph & Ne the same unless shown)."
       >
         <ArtukChartTable charts={[...ARTUK_CU_CHARTS, ...ARTUK_CU_PDF_CHARTS].sort((x, y) => x.maxA - y.maxA)} material="Cu" />
         <p className="mt-2 text-xs text-secondary">
           &ldquo;R&rdquo; = runs per phase. Where a link has two joints, the 1st joint is at the ACB terminal and the 2nd carries on to the
           main busbar (top) or the cable side (bottom). &ldquo;Link metal / ACB&rdquo; is ABB&apos;s cut lengths for one ACB&apos;s top and
-          bottom links, all phases and neutral (workbook rows only; the PDF row uses the drawn length). A board above a chart&apos;s kA or IP
+          bottom links, all phases and neutral; where the PDF changed a size or run count, the workbook&apos;s lengths are recounted to the PDF&apos;s
+          runs. The 2500A E4.2 row has no workbook lengths and uses the drawn length. At one rating the ACB&apos;s expected frame wins (1250A →
+          E1.2). A board above a chart&apos;s kA or IP
           moves up to the next chart that covers it, with a warning to confirm with ABB. On the 5000A sheet ABB&apos;s own total misses one
           450mm bottom-link bar; the full piece list is used here.
         </p>

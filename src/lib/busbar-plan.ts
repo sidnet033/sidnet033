@@ -1,5 +1,5 @@
 import type { BayType, Feeder } from "@/types/database";
-import { suggestMccbFrame, type BayFunction } from "@/lib/artuk-sizing";
+import { suggestAcbFrame, suggestMccbFrame, type BayFunction } from "@/lib/artuk-sizing";
 import {
   FIRST_JOINT_MM,
   formatJoints,
@@ -260,7 +260,9 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
   const artuk = input.artuk ?? null;
   const matName = material === "Cu" ? "copper" : "aluminium";
   const chartFor = (amps: number | null, bay: PlanBay | null) =>
-    artuk ? pickArtukChart({ material, amps, ka: artuk.ka, ip: artuk.ip, poles, bayWidthMm: bay?.widthMm ?? null }) : null;
+    artuk
+      ? pickArtukChart({ material, amps, ka: artuk.ka, ip: artuk.ip, poles, bayWidthMm: bay?.widthMm ?? null, frame: amps != null && amps > 0 ? suggestAcbFrame(amps) : null })
+      : null;
   const sideChart = (chart: ArtukChart, side: "top" | "bottom"): SegmentChart => ({
     sheet: chart.sheet,
     joints: side === "top" ? chart.top : chart.bottom,
@@ -268,7 +270,7 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
   });
   const lengthNote = (joints: ChartJoint[], cutLengths: boolean) =>
     cutLengths ? " Weight uses ABB's cut lengths." : joints.length > 1 ? ` 1st joint taken as the first ${FIRST_JOINT_MM}mm at the breaker terminal.` : "";
-  const neutralNote = material === "Cu" ? "neutral 100%" : "neutral as charted";
+  const neutralNote = "neutral as ABB charts it";
   const chartNotes = (chart: ArtukChart, what: string, side: "top" | "bottom") => {
     const joints = side === "top" ? chart.top : chart.bottom;
     const cut = !!(side === "top" ? chart.topPieces : chart.bottomPieces);

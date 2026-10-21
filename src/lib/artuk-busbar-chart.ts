@@ -5,15 +5,18 @@ import type { BarSize, BusbarMaterial } from "@/lib/busbar-plan";
 // Sources:
 //  - "ArTuK Copper Busbar Length for Emax ACB" workbook (copper, Emax 2
 //    ACB): sizes plus ABB's cut length for every piece. These are the
-//    primary copper ACB charts.
+//    copper ACB charts. Where the PDF differs, the PDF wins (sizes, bay
+//    width, kA); the workbook's cut lengths are kept and recounted to the
+//    PDF's runs (see PDF_OVERRIDE notes below).
 //  - "ArTu-K Busbar Chart" ELSP/ARTU-K/ENGG/BUSBAR CHART/01 R4 (Aug 2023):
 //    aluminium Emax 2 ACB, aluminium and copper Tmax/XT MCCB link sizes,
-//    aluminium main busbar for MCCB-only boards, and one copper ACB row the
-//    workbook doesn't have (2500A E4.2 Vr-Vr IP54). New Emax pages ignored.
+//    aluminium main busbar for MCCB-only boards, and the copper ACB rows the
+//    workbook doesn't have (1250A E1.2, 2500A E4.2 Vr-Vr IP54). New Emax
+//    pages ignored.
 //
-// Copper charts are 100% neutral (even if the board spec says 50%); the
-// 5000A copper chart has fewer neutral runs, as ABB draws it. Aluminium
-// charts give their own (smaller) neutral. The HBB position is ignored.
+// Neutral is as ABB charts it, whatever the board's 50%/100% setting: copper
+// is mostly 100% (1250A E2.2 and 5000A have fewer neutral runs), aluminium
+// usually smaller than the phase. The HBB position is ignored.
 //
 // Each ACB chart gives:
 //  - the bay width ABB designed it for,
@@ -88,19 +91,23 @@ export const ARTUK_CU_CHARTS: ArtukChart[] = [
   {
     material: "Cu",
     sheet: "E1.2E2.2 1250A Vr-Vr 4P",
-    frames: ["E1.2", "E2.2"],
+    // PDF_OVERRIDE: the PDF splits 1250A by frame; this is the E2.2 row, with
+    // 1R neutral on the outgoing link and the 1st joint (workbook: 2R Ne).
+    // Cut lengths drop one neutral piece from each: bottom 5129 - 609,
+    // top links 2458 - 315 (+ droppers 4380).
+    frames: ["E2.2"],
     maxA: 1250,
-    ratingLabel: "1250A",
+    ratingLabel: "1250A (E2.2)",
     bayWidthMm: 720,
     bayDepthLabel: "1030",
     scKa: 50,
     terminals: "Vr-Vr",
     ip: 54,
     main: j(1, 80),
-    top: [j(2, 80), j(1, 80)],
-    bottom: [j(2, 80)],
-    topPieces: [p(80, 6838)],
-    bottomPieces: [p(80, 5129)],
+    top: [j(2, 80, 1), j(1, 80)],
+    bottom: [j(2, 80, 1)],
+    topPieces: [p(80, 6523)],
+    bottomPieces: [p(80, 4520)],
   },
   {
     material: "Cu",
@@ -125,7 +132,8 @@ export const ARTUK_CU_CHARTS: ArtukChart[] = [
     frames: ["E2.2"],
     maxA: 2000,
     ratingLabel: "2000A",
-    bayWidthMm: 720,
+    // PDF_OVERRIDE: 920w bay (workbook: 720)
+    bayWidthMm: 920,
     bayDepthLabel: "1030",
     scKa: 50,
     terminals: "Vr-Vr",
@@ -147,10 +155,13 @@ export const ARTUK_CU_CHARTS: ArtukChart[] = [
     scKa: 65,
     terminals: "SVr-SVr",
     ip: 43,
-    main: j(2, 80),
-    top: [j(2, 100), j(2, 80)],
+    // PDF_OVERRIDE: main 2R 100×10 (workbook 2R 80×10); top link 1st joint
+    // 3R 100×10, 2nd joint 2R 100×10 (workbook 2R 100 / 2R 80). Cut lengths:
+    // top links 1229mm per run-set × 3 runs = 3687, droppers 8920 now 100×10.
+    main: j(2, 100),
+    top: [j(3, 100), j(2, 100)],
     bottom: [j(3, 100)],
-    topPieces: [p(100, 2458), p(80, 8920)],
+    topPieces: [p(100, 12607)],
     bottomPieces: [p(100, 5994)],
   },
   {
@@ -197,7 +208,8 @@ export const ARTUK_CU_CHARTS: ArtukChart[] = [
     ratingLabel: "5000A",
     bayWidthMm: 1320,
     bayDepthLabel: "1030+437",
-    scKa: 87,
+    // PDF_OVERRIDE: 87kA & 100kA 1s (workbook: 87kA)
+    scKa: 100,
     terminals: "Vr-Vr",
     ip: 54,
     main: j(3, 160),
@@ -228,6 +240,25 @@ for (const c of ARTUK_CU_CHARTS) {
 // Copper rows from the PDF chart that the workbook doesn't have. No cut
 // lengths, so their weight comes from the drawn bar lengths.
 export const ARTUK_CU_PDF_CHARTS: ArtukChart[] = [
+  {
+    // same sizes as the E1.2 800A-1000A chart, so that sheet's cut lengths apply
+    material: "Cu",
+    sheet: "PDF Cu 1250A E1.2",
+    frames: ["E1.2"],
+    maxA: 1250,
+    ratingLabel: "1250A (E1.2)",
+    bayWidthMm: 720,
+    bayDepthLabel: "1030",
+    scKa: 50,
+    terminals: "Vr-Vr",
+    ip: 54,
+    main: j(1, 80),
+    top: [j(2, 50)],
+    bottom: [j(2, 50)],
+    topPieces: [p(50, 10578)],
+    bottomPieces: [p(50, 5129)],
+    earth: { bar: b(40), runs: 1 },
+  },
   {
     material: "Cu",
     sheet: "PDF Cu 2500A E4.2 Vr-Vr",
@@ -376,7 +407,8 @@ export function acbChartsFor(material: BusbarMaterial): ArtukChart[] {
 // higher is fine). Between charts of the same rating, the one drawn for
 // the bay's width wins, else the first listed (the copper workbook before
 // the PDF). If the board's kA / IP is beyond every chart covering the
-// rating, the nearest chart is used with a warning.
+// rating, the nearest chart is used with a warning. Ties at one rating go
+// to the expected frame first, then the bay width.
 export function pickArtukChart(args: {
   material: BusbarMaterial;
   amps: number | null;
@@ -384,6 +416,8 @@ export function pickArtukChart(args: {
   ip: number | null;
   poles?: number | null;
   bayWidthMm?: number | null;
+  // the ACB frame ArTuK sizing picks for the rating (e.g. 1250A -> E1.2)
+  frame?: string | null;
 }): ChartPick {
   const { material, amps, ka, ip } = args;
   if (amps == null || amps <= 0) return null;
@@ -396,7 +430,9 @@ export function pickArtukChart(args: {
   const fits = (c: ArtukChart) => (ka == null || c.scKa >= ka) && (ip == null || c.ip >= ip);
   const best = (list: ArtukChart[]) => {
     const atRating = list.filter((c) => c.maxA === list[0].maxA);
-    return atRating.find((c) => args.bayWidthMm != null && c.bayWidthMm === args.bayWidthMm) ?? atRating[0];
+    const byFrame = args.frame ? atRating.filter((c) => c.frames.includes(args.frame!)) : [];
+    const pool = byFrame.length ? byFrame : atRating;
+    return pool.find((c) => args.bayWidthMm != null && c.bayWidthMm === args.bayWidthMm) ?? pool[0];
   };
   const fitting = byRating.filter(fits);
   if (fitting.length) {
