@@ -1,3 +1,4 @@
+import { suggestAcbFrame } from "@/lib/artuk-sizing";
 import type { BarSize, BusbarMaterial } from "@/lib/busbar-plan";
 
 // ABB's ArTuK busbar charts. On ArTuK boards the main busbar and each
@@ -416,8 +417,10 @@ export function pickArtukChart(args: {
   ip: number | null;
   poles?: number | null;
   bayWidthMm?: number | null;
-  // the ACB frame ArTuK sizing picks for the rating (e.g. 1250A -> E1.2)
+  // the ACB's frame: its item's own, else the one ArTuK sizing expects for
+  // the rating (e.g. 1250A -> E1.2)
   frame?: string | null;
+  frameFromItem?: boolean;
 }): ChartPick {
   const { material, amps, ka, ip } = args;
   if (amps == null || amps <= 0) return null;
@@ -430,10 +433,18 @@ export function pickArtukChart(args: {
   const fits = (c: ArtukChart) => (ka == null || c.scKa >= ka) && (ip == null || c.ip >= ip);
   const best = (list: ArtukChart[]) => {
     const atRating = list.filter((c) => c.maxA === list[0].maxA);
-    const byFrame = args.frame ? atRating.filter((c) => c.frames.includes(args.frame!)) : [];
+    let byFrame = args.frame ? atRating.filter((c) => c.frames.includes(args.frame!)) : [];
+    // an item frame not in the charts: fall back to the frame expected for the rating
+    if (!byFrame.length && amps > 0) byFrame = atRating.filter((c) => c.frames.includes(suggestAcbFrame(amps)));
     const pool = byFrame.length ? byFrame : atRating;
     return pool.find((c) => args.bayWidthMm != null && c.bayWidthMm === args.bayWidthMm) ?? pool[0];
   };
+  // an item frame that's in none of ABB's Emax 2 charts (e.g. old Emax E1,
+  // Formula FA1, another make) -- sized by rating, with a note
+  const frameNote =
+    args.frameFromItem && args.frame && !pool.some((c) => c.frames.includes(args.frame!))
+      ? [`Frame ${args.frame} isn't in ABB's ArTuK charts (Emax 2 only) — chart picked by rating.`]
+      : [];
   const fitting = byRating.filter(fits);
   if (fitting.length) {
     const chart = best(fitting);
@@ -444,10 +455,10 @@ export function pickArtukChart(args: {
         : [
             `${amps}A: ABB's ${nominal.ratingLabel} ${material} chart only covers ${nominal.scKa}kA / IP${nominal.ip}, so the next chart that covers the board's ${ka != null ? `${ka}kA` : ""}${ka != null && ip != null ? " / " : ""}${ip != null ? `IP${ip}` : ""} (${chart.ratingLabel}) is used — confirm with ABB.`,
           ];
-    return { chart, warnings };
+    return { chart, warnings: [...frameNote, ...warnings] };
   }
   const nearest = best(byRating);
-  const warnings: string[] = [];
+  const warnings: string[] = [...frameNote];
   if (ka != null && nearest.scKa < ka) warnings.push(`Board is ${ka}kA but ABB's ${nearest.ratingLabel} ${material} chart is for ${nearest.scKa}kA — check with ABB.`);
   if (ip != null && nearest.ip < ip) warnings.push(`Board is IP${ip} but ABB's ${nearest.ratingLabel} ${material} chart is for IP${nearest.ip} — check with ABB.`);
   return { chart: nearest, warnings };
@@ -457,7 +468,12 @@ const frameTokens = (f: string) => f.toUpperCase().split("/").map((t) => t.trim(
 
 // MCCB link size by rating, matching the frame ArTuK sizing would pick for
 // that rating (e.g. 630A -> T6/XT6, not T5/XT5).
-export function pickMccbLink(material: BusbarMaterial, amps: number | null, frame: string | null): { row: MccbLinkRow; warnings: string[] } | null {
+export function pickMccbLink(
+  material: BusbarMaterial,
+  amps: number | null,
+  frame: string | null,
+  frameFromItem = false
+): { row: MccbLinkRow; warnings: string[] } | null {
   if (amps == null || amps <= 0) return null;
   const rows = ARTUK_MCCB_LINKS[material];
   const wanted = frame ? frameTokens(frame) : [];
@@ -466,8 +482,18 @@ export function pickMccbLink(material: BusbarMaterial, amps: number | null, fram
     const top = rows[rows.length - 1];
     return { row: top, warnings: [`${amps}A MCCB is above ABB's ${material} MCCB link chart (${top.ratingLabel}) — ${top.frame} size used; check with ABB.`] };
   }
-  const row = covering.find((r) => frameTokens(r.frame).some((t) => wanted.includes(t))) ?? covering[0];
-  return { row, warnings: [] };
+  const byFrame = covering.find((r) => frameTokens(r.frame).some((t) => wanted.includes(t)));
+  const row = byFrame ?? covering[0];
+  const known = rows.some((r) => frameTokens(r.frame).some((t) => wanted.includes(t)));
+  return {
+    row,
+    warnings:
+      frameFromItem && frame && !known
+        ? [`Frame ${frame} isn't in ABB's Tmax/XT MCCB chart — link sized by rating (${row.frame} ${row.ratingLabel}).`]
+        : frameFromItem && frame && !byFrame
+          ? [`ABB's ${material} chart has no ${frame} row at ${amps}A — ${row.frame} ${row.ratingLabel} size used.`]
+          : [],
+  };
 }
 
 // Aluminium main busbar for an MCCB-fed board.

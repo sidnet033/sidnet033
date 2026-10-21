@@ -237,6 +237,7 @@ export type MissingItemDraft = {
   amps: string;
   poles: string;
   ka: string;
+  frame: string;
   unitCost: string;
   create: boolean;
 };
@@ -253,6 +254,7 @@ export function buildMissingItemDrafts(missing: MissingItemRef[]): MissingItemDr
     amps: "",
     poles: "",
     ka: "",
+    frame: "",
     unitCost: "0",
     create: true,
   }));
@@ -271,6 +273,7 @@ export function validateMissingDraft(d: MissingItemDraft): string | null {
     amps: d.amps.trim() ? Number(d.amps) : null,
     poles: d.poles.trim() ? Number(d.poles) : null,
     ka: d.ka.trim() ? Number(d.ka) : null,
+    frame: d.frame,
   });
 }
 
@@ -284,7 +287,7 @@ function draftToItemRow(d: MissingItemDraft) {
     source: d.source as ItemSource,
     status: "active" as const,
     amps: d.amps.trim() ? Number(d.amps) : null,
-    frame: null,
+    frame: d.frame.trim() || null,
     ka: d.ka.trim() ? Number(d.ka) : null,
     poles: d.poles.trim() ? Number(d.poles) : null,
     uom: "nos",

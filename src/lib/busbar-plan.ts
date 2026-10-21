@@ -259,9 +259,19 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
   // ArTuK: ABB's chart for an ACB (by rating, kA, IP, bay width)
   const artuk = input.artuk ?? null;
   const matName = material === "Cu" ? "copper" : "aluminium";
-  const chartFor = (amps: number | null, bay: PlanBay | null) =>
+  const chartFor = (amps: number | null, bay: PlanBay | null, itemFrame: string | null) =>
     artuk
-      ? pickArtukChart({ material, amps, ka: artuk.ka, ip: artuk.ip, poles, bayWidthMm: bay?.widthMm ?? null, frame: amps != null && amps > 0 ? suggestAcbFrame(amps) : null })
+      ? pickArtukChart({
+          material,
+          amps,
+          ka: artuk.ka,
+          ip: artuk.ip,
+          poles,
+          bayWidthMm: bay?.widthMm ?? null,
+          // the ACB item's own frame; else the frame ArTuK sizing expects for the rating
+          frame: itemFrame ?? (amps != null && amps > 0 ? suggestAcbFrame(amps) : null),
+          frameFromItem: itemFrame != null,
+        })
       : null;
   const sideChart = (chart: ArtukChart, side: "top" | "bottom"): SegmentChart => ({
     sheet: chart.sheet,
@@ -302,7 +312,7 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
         mainWarnings.push(...hbb.warnings);
       }
     } else {
-      const pick = chartFor(amps, null);
+      const pick = chartFor(amps, null, best ? breakerFrameOf(best) : null);
       if (pick) {
         mainChart = { sheet: pick.chart.sheet, joints: [pick.chart.main], pieces: null };
         mainNotes.push(
@@ -360,11 +370,11 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
 
       // ArTuK ACBs (incomers and outgoings): links from ABB's chart
       const pick =
-        f.device_type === "ACB" && bayFunctionOf(f) !== "bus_coupler" ? chartFor(f.rated_current ?? (isIncomerFeeder(f, bay.bayType) ? mainCurrent : null), bay) : null;
+        f.device_type === "ACB" && bayFunctionOf(f) !== "bus_coupler" ? chartFor(f.rated_current ?? (isIncomerFeeder(f, bay.bayType) ? mainCurrent : null), bay, breakerFrameOf(f)) : null;
       // ArTuK MCCB incomer: ABB's MCCB link size on both terminals
       const incomerMccb =
         artuk && !pick && f.device_type === "MCCB" && isIncomerFeeder(f, bay.bayType) && (f.rated_current ?? mainCurrent) != null
-          ? pickMccbLink(material, f.rated_current ?? mainCurrent, suggestMccbFrame((f.rated_current ?? mainCurrent)!))
+          ? pickMccbLink(material, f.rated_current ?? mainCurrent, breakerFrameOf(f) ?? suggestMccbFrame((f.rated_current ?? mainCurrent)!), breakerFrameOf(f) != null)
           : null;
       const mccbChart: SegmentChart | null = incomerMccb
         ? { sheet: `${material} MCCB ${incomerMccb.row.frame} ${incomerMccb.row.ratingLabel}`, joints: [incomerMccb.row.link], pieces: null }
@@ -499,7 +509,7 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
       }
       group.links.push({ bay, c, feeder: f });
       // ArTuK MCCBs: ABB's link size at the MCCB terminal
-      const mccb = artuk && f.device_type === "MCCB" && f.rated_current != null ? pickMccbLink(material, f.rated_current, suggestMccbFrame(f.rated_current)) : null;
+      const mccb = artuk && f.device_type === "MCCB" && f.rated_current != null ? pickMccbLink(material, f.rated_current, breakerFrameOf(f) ?? suggestMccbFrame(f.rated_current), breakerFrameOf(f) != null) : null;
       const towardDropper = group.x >= centreX ? bay.leftMm + bay.widthMm : bay.leftMm;
       const terminalX = (towardDropper + centreX) / 2;
       drafts.push({
@@ -569,6 +579,19 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
   const segments = drafts.map((d) => finishSegment(d, { material, densityAPerMm2, hasNeutral, neutralPct, overrides }));
   const totalWeightKg = segments.reduce((s, seg) => s + (seg.weightKg ?? 0), 0);
   return { segments, chamberMidY, totalWeightKg, warnings: planWarnings };
+}
+
+// The breaker frame of a feeder (e.g. "E2.2", "XT4"), read off its ACB /
+// MCCB item in the item master when the feeder was loaded with its items
+// (feeder:feeders(*, feeder_items(item:item_master(category, frame)))).
+export type FeederWithItemFrames = Feeder & { feeder_items?: { item: { category: string | null; frame: string | null } | null }[] | null };
+export function breakerFrameOf(feeder: Feeder): string | null {
+  const want = feeder.device_type === "ACB" || feeder.device_type === "MCCB" ? feeder.device_type : null;
+  if (!want) return null;
+  const line = ((feeder as FeederWithItemFrames).feeder_items ?? []).find(
+    (fi) => (fi.item?.category ?? "").trim().toUpperCase() === want && fi.item?.frame?.trim()
+  );
+  return line?.item?.frame?.trim().toUpperCase() ?? null;
 }
 
 export function isIncomerFeeder(feeder: Feeder, bayType: BayType | null): boolean {

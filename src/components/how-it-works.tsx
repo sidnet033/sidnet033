@@ -190,7 +190,7 @@ export function HowItWorks() {
                 updated or rejected.
               </>,
               <>
-                Breakers (ACB / MCCB / MCB) must have Amps, Poles and kA. Mark items whose price is only an estimate with Source = <b>Estimation</b>{" "}
+                Breakers (ACB / MCCB / MCB) must have Amps, Poles and kA; ACBs and MCCBs also need their <b>Frame</b> (e.g. E1.2, E2.2, XT4, T5) — ArTuK busbar charts are picked by it. Mark items whose price is only an estimate with Source = <b>Estimation</b>{" "}
                 (they show in pink everywhere so they get double-checked). Discontinued items show greyed out.
               </>,
               <>
@@ -668,7 +668,7 @@ function DimensionsReference() {
           &ldquo;R&rdquo; = runs per phase. Where a link has two joints, the 1st joint is at the ACB terminal and the 2nd carries on to the
           main busbar (top) or the cable side (bottom). &ldquo;Link metal / ACB&rdquo; is ABB&apos;s cut lengths for one ACB&apos;s top and
           bottom links, all phases and neutral; where the PDF changed a size or run count, the workbook&apos;s lengths are recounted to the PDF&apos;s
-          runs. The 2500A E4.2 row has no workbook lengths and uses the drawn length. At one rating the ACB&apos;s expected frame wins (1250A →
+          runs. The 2500A E4.2 row has no workbook lengths and uses the drawn length. At one rating the ACB item&apos;s Frame (from the Item Master) picks the chart; with no frame, the frame expected for the rating is used (1250A →
           E1.2). A board above a chart&apos;s kA or IP
           moves up to the next chart that covers it, with a warning to confirm with ABB. On the 5000A sheet ABB&apos;s own total misses one
           450mm bottom-link bar; the full piece list is used here.

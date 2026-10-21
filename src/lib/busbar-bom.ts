@@ -99,7 +99,7 @@ export async function loadBusbarTakeoff(supabase: SupabaseClient, sb: Switchboar
   const verticals = (vRows ?? []) as Vertical[];
   const vIds = verticals.map((v) => v.id);
   const { data: pRows } = vIds.length
-    ? await supabase.from("placed_feeders").select("*, feeder:feeders(*)").in("vertical_id", vIds).order("sort_order")
+    ? await supabase.from("placed_feeders").select("*, feeder:feeders(*, feeder_items(item:item_master(category, frame)))").in("vertical_id", vIds).order("sort_order")
     : { data: [] };
   const placed = (pRows ?? []) as unknown as (PlacedFeeder & { feeder: Feeder })[];
   const project = (rev as unknown as { project: ProjectBusbarSettings | null } | null)?.project ?? null;

@@ -161,7 +161,7 @@ export async function loadProjectData(
   const { data: pRows } = vIds.length
     ? await supabase
         .from("placed_feeders")
-        .select("*, feeder:feeders(*)")
+        .select("*, feeder:feeders(*, feeder_items(item:item_master(category, frame)))")
         .in("vertical_id", vIds)
         .order("sort_order")
     : { data: [] };

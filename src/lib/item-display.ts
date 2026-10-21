@@ -28,13 +28,27 @@ export function isBreakerCategory(category: string | null | undefined): boolean 
   return c === "ACB" || c === "MCCB" || c === "MCB";
 }
 
+// Frame is compulsory for ACB and MCCB items (not MCB): ArTuK busbar
+// charts and bay sizing are chosen by breaker frame.
+export function isFrameRequiredCategory(category: string | null | undefined): boolean {
+  const c = (category ?? "").trim().toUpperCase();
+  return c === "ACB" || c === "MCCB";
+}
+
+// Suggestions for the Frame field (free text -- other makes have their own).
+export const BREAKER_FRAME_SUGGESTIONS: Record<"ACB" | "MCCB", string[]> = {
+  ACB: ["E1.2", "E2.2", "E4.2", "E6.2", "FA1", "FA2", "FA4"],
+  MCCB: ["XT1", "XT2", "XT3", "XT4", "XT5", "XT6", "XT7", "T5", "T6", "T7", "A1", "A2", "A3", "P1", "P2", "P3"],
+};
+
 // The one compulsory-field rule for creating/importing an item master row,
 // shared by CreateItemDialog, the item xlsx/Google Sheet import
 // (item-import.ts), and the feeder import's missing-item creation flow
 // (feeder-import.ts) -- so the rule can only ever be defined once. Base
 // rule: (SKU or Vendor Cat) + Description (the item's name) + Make +
 // Category + Source. ACB/MCCB/MCB items additionally need Amps, Poles,
-// and kA. Returns the first violation, or null when the row is valid.
+// and kA; ACB/MCCB also need Frame. Returns the first violation, or null
+// when the row is valid.
 export function validateNewItemFields(d: {
   sku: string | null;
   vendorCat: string | null;
@@ -45,6 +59,7 @@ export function validateNewItemFields(d: {
   amps: number | null;
   poles: number | null;
   ka: number | null;
+  frame: string | null;
 }): string | null {
   if (!d.sku?.trim() && !d.vendorCat?.trim()) return "SKU or Vendor Cat is required.";
   if (!d.description?.trim()) return "Description (item name) is required.";
@@ -56,6 +71,7 @@ export function validateNewItemFields(d: {
     if (d.poles == null) return "Poles is required for ACB/MCCB/MCB items.";
     if (d.ka == null) return "kA is required for ACB/MCCB/MCB items.";
   }
+  if (isFrameRequiredCategory(d.category) && !d.frame?.trim()) return "Frame is required for ACB/MCCB items (e.g. E1.2, XT4).";
   return null;
 }
 

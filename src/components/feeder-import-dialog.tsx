@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { numericKeyGuard } from "@/lib/numeric-input";
-import { isBreakerCategory } from "@/lib/item-display";
+import { isBreakerCategory, isFrameRequiredCategory } from "@/lib/item-display";
 import {
   TEMPLATE_COLUMNS,
   buildItemIndex,
@@ -284,6 +284,7 @@ export function FeederImportDialog({
                           <th className="px-2">Amps</th>
                           <th className="px-2">Poles</th>
                           <th className="px-2">kA</th>
+                          <th className="px-2">Frame</th>
                           <th className="px-2">Unit Cost</th>
                         </tr>
                       </thead>
@@ -476,7 +477,7 @@ function MissingItemRow({ draft, onChange }: { draft: MissingItemDraft; onChange
           onChange={(e) => onChange({ category: e.target.value })}
           disabled={!draft.create}
           placeholder="Required"
-          title="ACB, MCCB, or MCB requires Amps/Poles/kA too"
+          title="ACB, MCCB, or MCB requires Amps/Poles/kA too; ACB and MCCB also need Frame"
           className="w-24 rounded border border-outline-variant/60 px-1.5 py-1 text-xs disabled:opacity-40"
         />
       </td>
@@ -527,6 +528,16 @@ function MissingItemRow({ draft, onChange }: { draft: MissingItemDraft; onChange
           onKeyDown={numericKeyGuard()}
           disabled={!draft.create}
           placeholder={breaker ? "Required" : ""}
+          className="w-16 rounded border border-outline-variant/60 px-1.5 py-1 text-xs disabled:opacity-40"
+        />
+      </td>
+      <td className="px-2">
+        <input
+          value={draft.frame}
+          onChange={(e) => onChange({ frame: e.target.value })}
+          disabled={!draft.create}
+          placeholder={isFrameRequiredCategory(draft.category) ? "Required" : ""}
+          title="e.g. E1.2, E2.2, XT4, T5"
           className="w-16 rounded border border-outline-variant/60 px-1.5 py-1 text-xs disabled:opacity-40"
         />
       </td>

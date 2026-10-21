@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase/client";
-import { fetchAllItemMaster, itemRowClass } from "@/lib/item-display";
+import { BREAKER_FRAME_SUGGESTIONS, fetchAllItemMaster, isFrameRequiredCategory, itemRowClass } from "@/lib/item-display";
 import { effectiveNetRate } from "@/lib/feeder-cost";
 import type { ItemMaster, ItemStatus } from "@/types/database";
 import { XlsUpload } from "@/components/xls-upload";
@@ -289,6 +289,7 @@ function draftToRow(d: Draft) {
 function validateDraft(d: Draft): string | null {
   if (!d.sku.trim() && !d.vendor_cat.trim()) return "Either SKU or Vendor Cat is required.";
   if (!d.description.trim()) return "Description is required.";
+  if (isFrameRequiredCategory(d.category) && !d.frame.trim()) return "Frame is required for ACB/MCCB items (e.g. E1.2, XT4).";
   return null;
 }
 
@@ -830,7 +831,15 @@ export function ItemMasterTable({
       case "amps":
         return <input type="text" inputMode="decimal" onKeyDown={numericKeyGuard()} className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.amps} onChange={(e) => setEditDraft({ ...editDraft, amps: e.target.value })} />;
       case "frame":
-        return <input className="w-20 rounded border px-1 py-0.5 text-center" value={editDraft.frame} onChange={(e) => setEditDraft({ ...editDraft, frame: e.target.value })} />;
+        return (
+          <input
+            className={`w-20 rounded border px-1 py-0.5 text-center ${isFrameRequiredCategory(editDraft.category) && !editDraft.frame.trim() ? "border-error" : ""}`}
+            value={editDraft.frame}
+            placeholder={isFrameRequiredCategory(editDraft.category) ? "Required" : ""}
+            list="item-frame-suggestions"
+            onChange={(e) => setEditDraft({ ...editDraft, frame: e.target.value })}
+          />
+        );
       case "poles":
         return <input type="text" inputMode="numeric" onKeyDown={numericKeyGuard()} className="w-14 rounded border px-1 py-0.5 text-right" value={editDraft.poles} onChange={(e) => setEditDraft({ ...editDraft, poles: e.target.value })} />;
       case "ka":
@@ -1132,6 +1141,11 @@ export function ItemMasterTable({
 
       <div className="overflow-hidden rounded-[8px] bg-surface-container-lowest shadow-sm">
         <div className="overflow-x-auto">
+          <datalist id="item-frame-suggestions">
+            {[...BREAKER_FRAME_SUGGESTIONS.ACB, ...BREAKER_FRAME_SUGGESTIONS.MCCB].map((f) => (
+              <option key={f} value={f} />
+            ))}
+          </datalist>
           <table className="w-full whitespace-nowrap text-left text-xs">
             <thead className="sticky top-0 z-10 bg-surface-container text-[10px] font-semibold uppercase tracking-wide text-secondary">
               <tr className="h-9 border-b border-outline-variant/30">

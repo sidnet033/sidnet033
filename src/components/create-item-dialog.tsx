@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { numericKeyGuard } from "@/lib/numeric-input";
-import { itemCode, findDuplicateItem, isBreakerCategory, validateNewItemFields } from "@/lib/item-display";
+import { BREAKER_FRAME_SUGGESTIONS, itemCode, findDuplicateItem, isBreakerCategory, isFrameRequiredCategory, validateNewItemFields } from "@/lib/item-display";
 import { effectiveNetRate } from "@/lib/feeder-cost";
 import type { ItemMaster, ItemSource, ItemStatus } from "@/types/database";
 
@@ -46,6 +46,7 @@ function validateDraft(d: Draft): string | null {
     amps: d.amps.trim() ? Number(d.amps) : null,
     poles: d.poles.trim() ? Number(d.poles) : null,
     ka: d.ka.trim() ? Number(d.ka) : null,
+    frame: d.frame,
   });
 }
 
@@ -172,7 +173,18 @@ export function CreateItemDialog({
             <SourceField value={effectiveSource} onChange={(v) => patch({ source: v })} />
             <StatusField value={draft.status} onChange={(v) => patch({ status: v })} />
             <Field label="Amps" value={draft.amps} onChange={(v) => patch({ amps: v })} numeric required={isBreaker} />
-            <Field label="Frame (ACB/MCCB/MCB)" value={draft.frame} onChange={(v) => patch({ frame: v })} />
+            <Field
+              label="Frame (ACB/MCCB)"
+              value={draft.frame}
+              onChange={(v) => patch({ frame: v })}
+              required={isFrameRequiredCategory(draft.category)}
+              list="item-frame-suggestions"
+            />
+            <datalist id="item-frame-suggestions">
+              {[...BREAKER_FRAME_SUGGESTIONS.ACB, ...BREAKER_FRAME_SUGGESTIONS.MCCB].map((f) => (
+                <option key={f} value={f} />
+              ))}
+            </datalist>
             <Field label="kA" value={draft.ka} onChange={(v) => patch({ ka: v })} numeric required={isBreaker} />
             <Field label="Poles" value={draft.poles} onChange={(v) => patch({ poles: v })} numeric required={isBreaker} />
             <Field label="UOM" value={draft.uom} onChange={(v) => patch({ uom: v })} />
@@ -268,6 +280,7 @@ function Field({
   numeric = false,
   required = false,
   className = "",
+  list,
 }: {
   label: string;
   value: string;
@@ -275,6 +288,7 @@ function Field({
   numeric?: boolean;
   required?: boolean;
   className?: string;
+  list?: string;
 }) {
   return (
     <div className={className}>
@@ -286,6 +300,7 @@ function Field({
         inputMode={numeric ? "decimal" : undefined}
         onKeyDown={numeric ? numericKeyGuard() : undefined}
         required={required}
+        list={list}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="w-full rounded-[4px] border border-outline-variant/60 px-2 py-1.5 text-sm"

@@ -162,7 +162,7 @@ async function loadGaData(supabase: ReturnType<typeof createClient>, switchboard
 
   const verticalIds = (verticals ?? []).map((v) => v.id);
   const { data: placed } = verticalIds.length
-    ? await supabase.from("placed_feeders").select("*, feeder:feeders(*)").in("vertical_id", verticalIds).order("sort_order")
+    ? await supabase.from("placed_feeders").select("*, feeder:feeders(*, feeder_items(item:item_master(category, frame)))").in("vertical_id", verticalIds).order("sort_order")
     : { data: [] };
 
   const verticalsWithFeeders: VerticalWithFeeders[] = (verticals ?? []).map((v) => ({

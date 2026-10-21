@@ -177,6 +177,7 @@ export async function importItemRows(
       amps: resolved.data.amps,
       poles: resolved.data.poles,
       ka: resolved.data.ka,
+      frame: resolved.data.frame,
     });
     if (fieldError) {
       summary.skipped.push({ row: resolved.rowNumber, reason: fieldError });
@@ -188,10 +189,30 @@ export async function importItemRows(
   let done = summary.skipped.length;
   const total = rows.length;
 
+  // An update row with a blank frame keeps the item's existing frame (frames
+  // were backfilled from descriptions and the sheet may not carry them).
+  // Rows with and without a frame go in separate batches, because an
+  // upsert batch writes the same columns for every row.
+  const rowOf = (r: Resolved, mode: "insert" | "update") => {
+    const { frame, ...rest } = r.data;
+    return mode === "update" && frame == null
+      ? { ...rest, id: r.id, updated_at: new Date().toISOString() }
+      : { ...r.data, id: r.id, updated_at: new Date().toISOString() };
+  };
+
   async function writeChunked(items: Resolved[], mode: "insert" | "update") {
     for (let i = 0; i < items.length; i += CHUNK_SIZE) {
       const chunk = items.slice(i, i + CHUNK_SIZE);
-      const payload = chunk.map((r) => ({ ...r.data, id: r.id, updated_at: new Date().toISOString() }));
+      if (mode === "update") {
+        const withFrame = chunk.filter((r) => r.data.frame != null);
+        const without = chunk.filter((r) => r.data.frame == null);
+        if (withFrame.length && without.length) {
+          await writeChunked(withFrame, mode);
+          await writeChunked(without, mode);
+          continue;
+        }
+      }
+      const payload = chunk.map((r) => rowOf(r, mode));
       const { error } =
         mode === "insert"
           ? await supabase.from("item_master").insert(payload)
@@ -205,7 +226,7 @@ export async function importItemRows(
         // that chunk's rows individually so we can report exactly which
         // row failed and why, without losing the rest of the chunk.
         for (const r of chunk) {
-          const row = { ...r.data, id: r.id, updated_at: new Date().toISOString() };
+          const row = rowOf(r, mode);
           const { error: rowError } =
             mode === "insert"
               ? await supabase.from("item_master").insert(row)
