@@ -29,6 +29,7 @@ export function BulkAddItemsDialog({
   const [text, setText] = useState("");
   const [rows, setRows] = useState<PasteRow[] | null>(null);
   const [state, setState] = useState<Record<string, RowState>>({});
+  const [copied, setCopied] = useState(false);
 
   function check() {
     const parsed = parsePastedCodes(text, index);
@@ -48,6 +49,25 @@ export function BulkAddItemsDialog({
   const found = rows?.filter((r) => r.matches.length > 0) ?? [];
   const missing = rows?.filter((r) => r.matches.length === 0) ?? [];
   const chosen = (rows ?? []).filter((r) => state[r.key]?.include && state[r.key]?.itemId);
+  const alreadyIn = (rows ?? []).filter((r) => r.matches.length > 0 && state[r.key]?.itemId && existingItemIds.has(state[r.key].itemId!));
+
+  // Codes not in Item Master, as "code<TAB>qty" lines -- pastes straight
+  // into Excel (two columns) to create them in Item Master later.
+  async function copyMissing() {
+    const text = ["code\tqty", ...missing.map((r) => `${r.code}\t${r.qty}`)].join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   function patch(key: string, p: Partial<RowState>) {
     setState((s) => ({ ...s, [key]: { ...s[key], ...p } }));
@@ -103,6 +123,14 @@ export function BulkAddItemsDialog({
               <div className="flex flex-wrap gap-2 text-xs">
                 <span className="rounded bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">{found.length} found</span>
                 {missing.length > 0 && <span className="rounded bg-red-50 px-2 py-0.5 font-medium text-red-700">{missing.length} not found</span>}
+                {alreadyIn.length > 0 && (
+                  <span className="rounded bg-amber-50 px-2 py-0.5 font-medium text-amber-700">{alreadyIn.length} already in this feeder</span>
+                )}
+                {missing.length > 0 && (
+                  <button onClick={copyMissing} className="ml-auto flex items-center gap-1 rounded border border-red-200 px-2 py-0.5 font-medium text-red-700 hover:bg-red-50" title="Copy the codes not found (with qty) to paste into Excel">
+                    <Icon name={copied ? "check" : "content_copy"} size={13} /> {copied ? "Copied" : `Copy ${missing.length} missing code${missing.length === 1 ? "" : "s"}`}
+                  </button>
+                )}
                 {rows.some((r) => r.matches.length > 1) && (
                   <span className="rounded bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
                     {rows.filter((r) => r.matches.length > 1).length} with several matches — pick one
@@ -124,7 +152,10 @@ export function BulkAddItemsDialog({
                     const s = state[r.key];
                     const item = s?.itemId ? byId.get(s.itemId) : null;
                     return (
-                      <tr key={r.key} className={`border-b border-surface-container ${r.matches.length === 0 ? "bg-red-50/60" : ""}`}>
+                      <tr
+                        key={r.key}
+                        className={`border-b border-surface-container ${r.matches.length === 0 ? "bg-red-50/60" : item && existingItemIds.has(item.id) ? "bg-amber-50/70" : ""}`}
+                      >
                         <td className="px-1 py-1">
                           {r.matches.length > 0 && (
                             <input type="checkbox" checked={s.include} onChange={() => patch(r.key, { include: !s.include })} aria-label={`Add ${r.code}`} />
@@ -171,7 +202,11 @@ export function BulkAddItemsDialog({
                         </td>
                         <td className="px-2 py-1 text-[11px] text-secondary">
                           {item?.status === "discontinued" && <span className="text-red-700">Discontinued. </span>}
-                          {item && existingItemIds.has(item.id) && <span>Already in feeder — qty will be added.</span>}
+                          {item && existingItemIds.has(item.id) && (
+                            <span className="flex items-center gap-1 font-medium text-amber-700">
+                              <Icon name="warning" size={13} /> Already in this feeder — if added, its qty is added to the existing line. Untick to skip.
+                            </span>
+                          )}
                         </td>
                       </tr>
                     );
@@ -180,7 +215,8 @@ export function BulkAddItemsDialog({
               </table>
               {missing.length > 0 && (
                 <p className="text-[11px] text-secondary">
-                  Codes not found are skipped. Add them to the Item Master first (or use “Create New Item in Master &amp; Add”), then paste again.
+                  Codes not found are skipped. Use <b>Copy missing codes</b> to paste them into Excel, add them to the Item Master (or use “Create
+                  New Item in Master &amp; Add”), then paste again.
                 </p>
               )}
             </>

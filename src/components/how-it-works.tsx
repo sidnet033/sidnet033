@@ -187,7 +187,8 @@ export function HowItWorks() {
             items={[
               <>
                 <b>Item Master</b> is the price list. Each item has a list price and a discount; the <b>net cost</b> is worked out automatically (list
-                price less discount). Import or update in bulk from an Excel file or the linked Google Sheet — the import log shows what was created,
+                price less discount). Import or update in bulk from an Excel file (use <b>Download template</b>; its <b>Allowed values</b> tab lists the values each
+                restricted field takes, with dropdowns on those columns) or the linked Google Sheet — the import log shows what was created,
                 updated or rejected.
               </>,
               <>
@@ -266,7 +267,9 @@ export function HowItWorks() {
               <>
                 <b>Discounts</b>: every item line can override its list price or discount % for this BOM only. To discount a whole category at once
                 (e.g. all MCCBs at 42%), use <b>Bulk Discount — Category</b> at the top. To add many items at once, use <b>Paste Item Codes</b> on a feeder: paste SKUs or catalogue numbers
-                (with quantities, straight from Excel), check which ones were found, then add them. Inside a feeder, the qty, list price and discount boxes work like
+                (with quantities, straight from Excel), check which ones were found, then add them. <b>Copy missing codes</b> copies the codes not in
+                Item Master (with qty) to paste into Excel and create later; items already in the feeder are highlighted amber (adding them
+                tops up the existing line&apos;s qty — untick to skip). Inside a feeder, the qty, list price and discount boxes work like
                 a spreadsheet: arrow keys and Enter move between them, and typing replaces the value.
               </>,
               <>
