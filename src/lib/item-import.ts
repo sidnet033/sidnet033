@@ -167,7 +167,15 @@ export async function importItemRows(
     if (data.sku) skuToId.set(data.sku, id);
     if (data.vendor_cat) vendorCatToId.set(data.vendor_cat, id);
     if (!byId.has(id)) order.push(id);
-    byId.set(id, { rowNumber, id, data, isNew: newIds.has(id) });
+    // A second row for the same item (same SKU or Vendor Cat) fills in on
+    // top of the first: its values win, but its blank cells don't wipe what
+    // the earlier row gave (e.g. a row with only the Vendor Cat no longer
+    // drops the SKU an earlier row had).
+    const prior = byId.get(id);
+    const merged = prior
+      ? (Object.fromEntries(Object.entries(data).map(([k, v]) => [k, v ?? prior.data[k as keyof ParsedItemRow]])) as unknown as ParsedItemRow)
+      : data;
+    byId.set(id, { rowNumber, id, data: merged, isNew: newIds.has(id) });
   }
 
   // The fuller compulsory-field rule (Make, Category, and -- for ACB/MCCB/MCB
@@ -206,11 +214,13 @@ export async function importItemRows(
   let done = summary.skipped.length;
   const total = rows.length;
 
-  // An update row with a blank frame / material / weight keeps the item's
+  // An update row with a blank SKU / Vendor Cat / frame / material / weight keeps the item's
   // existing value (frames were backfilled from descriptions, and a sheet
   // may not carry these columns). Rows are batched by which of these they
   // carry, because an upsert batch writes the same columns for every row.
-  const KEEP_IF_BLANK = ["frame", "material", "weight_kg"] as const;
+  // Same for SKU / Vendor Cat: a row that matched an item by one of them
+  // and leaves the other blank must not erase it.
+  const KEEP_IF_BLANK = ["sku", "vendor_cat", "frame", "material", "weight_kg"] as const;
   const blankKeys = (r: Resolved) => KEEP_IF_BLANK.filter((k) => r.data[k] == null);
   const rowOf = (r: Resolved, mode: "insert" | "update") => {
     const row: Record<string, unknown> = { ...r.data, id: r.id, updated_at: new Date().toISOString() };

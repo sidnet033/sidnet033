@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { excelCellText } from "@/lib/excel-cell";
 import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase/client";
 import { importItemRows, logImport, parseBooleanCell, parseMaterialCell, parseMrpOrLpCell, parseWeightCell, type ImportSummary, type ParsedItemRow } from "@/lib/item-import";
@@ -68,10 +69,7 @@ export function XlsUpload({ onDone, currentUserName }: { onDone: () => void; cur
         const cellText = (key: string) => {
           const idx = columnIndex[key];
           if (!idx) return "";
-          const v = row.getCell(idx).value;
-          if (v == null) return "";
-          if (typeof v === "object" && "text" in v) return String((v as { text: string }).text);
-          return String(v);
+          return excelCellText(row.getCell(idx).value);
         };
         if (row.cellCount === 0) return;
 

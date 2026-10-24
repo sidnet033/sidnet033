@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { excelCellText } from "@/lib/excel-cell";
 import { DEVICE_TYPE_LABELS } from "@/lib/artuk-sizing";
 import { FEEDER_TYPES, computeFeederTag } from "@/lib/feeder-tag";
 import { validateNewItemFields } from "@/lib/item-display";
@@ -81,10 +82,7 @@ export function parseFeederSheet(sheet: SheetLike): { lines: ParsedFeederLine[];
     const cellText = (key: string) => {
       const idx = columnIndex[key];
       if (!idx) return "";
-      const v = row.getCell(idx).value;
-      if (v == null) return "";
-      if (typeof v === "object" && "text" in v) return String((v as { text: string }).text);
-      return String(v);
+      return excelCellText(row.getCell(idx).value);
     };
 
     const raw: Record<string, string> = {};
