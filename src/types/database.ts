@@ -198,6 +198,8 @@ export type Switchboard = {
   busbar: "Cu" | "Al" | null;
   neutral_size_pct: number;
   cable_access: "Front" | "Rear" | null;
+  // ArTu-K: single front (default) or double front (back-to-back feeders)
+  arrangement: "single_front" | "double_front";
   std: "ArTuK" | "61439" | "60439" | null;
   qty: number;
   sort_order: number;

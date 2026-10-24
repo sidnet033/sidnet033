@@ -57,6 +57,7 @@ const NAV: NavItem[] = [
       { id: "dim-artuk-cu", label: "ArTuK copper busbar (ABB)" },
       { id: "dim-artuk-al", label: "ArTuK aluminium busbar (ABB)" },
       { id: "dim-artuk-mccb", label: "ArTuK MCCB busbar (ABB)" },
+      { id: "dim-artuk-enclosure", label: "ArTuK enclosure parts (ABB)" },
       { id: "dim-acb", label: "ACB" },
       { id: "dim-mccb", label: "MCCB" },
       { id: "dim-dol", label: "DOL / RDOL" },
@@ -270,7 +271,9 @@ export function HowItWorks() {
               </>,
               <>
                 <b>Busbars</b>: the &ldquo;Auto&rdquo; lines come straight from the GA busbar plan — one line per bar size, in kg, priced at the
-                project&apos;s busbar rate. Add your own lines underneath for supports, sleeves, etc. <b>Enclosure</b> lines are entered by hand.
+                project&apos;s busbar rate. Add your own lines underneath for supports, sleeves, etc. <b>Enclosure</b>: on ArTuK boards an
+                &ldquo;Auto&rdquo; line lists every ABB ArTu-K part the GA needs (expand it to see part codes, quantities and where each is used),
+                priced from Item Master; other boards&apos; enclosure lines are entered by hand.
               </>,
               <>
                 Set labor (wiring, assembly, testing) as a % of materials in the cost breakdown card.
@@ -318,10 +321,15 @@ export function HowItWorks() {
                 Layout rules: each switchgear bay leaves a <b>60mm gap</b> each side of its feeders (dotted lines), so a 600mm feeder sits in a
                 720mm bay, and a bay&apos;s width follows its <b>widest feeder</b> (updated whenever feeders are added, moved or removed; you can
                 still type a width) — the gaps apply to every bay, cable and busbar alleys included. On ArTuK boards you pick the <b>ArTuK height</b>{" "}
-                (2131 or 2231mm): top of the 25mm red strip to the top of the baseframe, <i>not</i> counting the baseframe. Inside that there&apos;s a{" "}
-                <b>60mm level</b> between the strip and the topmost feeder and another 60mm between the bottommost feeder and the baseframe; the
-                feeder height is what&apos;s left after the strip, the two levels and the busbar chamber. The red strip shows &ldquo;ABB&rdquo; at
-                the left and &ldquo;ArTu&rdquo; at the right corner of every bay.
+                as ABB defines it: <b>2231mm overall</b> on the 100mm baseframe (2131mm without it), or 2031 / 1831mm with ABB&apos;s 1800 / 1600mm
+                uprights. The uprights&apos; modular height (2000mm = 20 × 100mm modules) holds the horizontal busbar chamber and the feeders; the
+                other 131mm is the 25mm red strip plus the margins above and below the modules. The red strip shows &ldquo;ABB&rdquo; at the left
+                and &ldquo;ArTu&rdquo; at the right corner of every bay. The <b>busbar chamber height</b> follows ABB&apos;s rule for the main bar:
+                up to 80×10 → 200mm, 100–160 → 300mm, 200×10 → 400mm (set automatically; type a height to override, and the chamber panel offers
+                ABB&apos;s value again). <b>Arrangement</b> (next to Cable Access) is Single front by default; Double front is ABB&apos;s back-to-back
+                layout. MCC bay depth follows ABB: rear access 1037mm; front access 637mm (single-run busbar) or 837mm (two runs); double front
+                1037mm up to 2000A, 1237mm at 2500A. Front-access and double-front ArTu-K are type-tested to 50kA 1s and Form 3b (double front up
+                to 2500A) — the checks warn beyond that.
                 The drawing shows bay widths along the top, feeder widths along the bottom, and on the left the overall height from the floor and
                 the height without the baseframe. In the side view each device sits at the front, as deep as the device; the vertical busbars
                 are at the rear and the horizontal main busbar in the front part of the chamber. <b>Fit width</b> zooms out so the whole panel
@@ -754,6 +762,53 @@ function DimensionsReference() {
           The MCCB link frame follows the frame ArTuK sizing picks for the rating (e.g. 630A → T6/XT6). ABB has no HBB table for copper
           MCCB-fed boards, so those stay on current density, as do droppers (vertical busbars) on every ArTuK board.
         </p>
+      </Section>
+
+      <Section
+        id="dim-artuk-enclosure"
+        title="ArTuK enclosure parts (ABB)"
+        note="How the BOM's automatic ArTu-K enclosure list is built from the GA — rules taken from the kit lists on ABB's assembly guideline (WK-003) and part codes from ABB's Standard BOM (BOM-12-04-2023). All 592 parts are in Item Master (category 'ArTuK Enclosure'); load ABB's prices there."
+      >
+        <table className="w-full text-left text-sm">
+          <tbody>
+              <tr className="border-b border-surface-container-high/60 align-top">
+                <td className="py-1.5 pr-3 font-medium">Structure, per bay</td>
+                <td className="py-1.5 pr-3">Top/base set by width × depth (SK60/SK80/SK10/SK12/VC30 + depth: 10 = 1030, 60 = 630, 80 = 830, 12 = 1230; a 1467mm-deep bay is 1030 + 430 with TV1251-1 ×2 and TV5101-1 ×4), N°4 uprights SK2000-1 / SK1800-1 / SK1600-1, screws AD1033-1 ×5 and APR14/20 ×3.</td>
+              </tr>
+              <tr className="border-b border-surface-container-high/60 align-top">
+                <td className="py-1.5 pr-3 font-medium">Switchgear bay</td>
+                <td className="py-1.5 pr-3">N°2 functional frames SK2002-1, glass door PV20xx by inner width (600 → PV2061-1, 800 → PV2082-1, 1000 → PV2012-1, 1200 → PV2012/2-1), hinged rear door RF20xx-1H (rear cover RF20xx-1 on front-access boards), internal hinges AD1090.</td>
+              </tr>
+              <tr className="border-b border-surface-container-high/60 align-top">
+                <td className="py-1.5 pr-3 font-medium">Cable / busbar alley</td>
+                <td className="py-1.5 pr-3">Top/base set VC30xx-1, uprights, metal door PO2033-1, rear door RF2030-1H.</td>
+              </tr>
+              <tr className="border-b border-surface-container-high/60 align-top">
+                <td className="py-1.5 pr-3 font-medium">Main busbar supports</td>
+                <td className="py-1.5 pr-3">Per switchgear bay: 1–2 runs 551060-T6 ×2, 3 runs 551090-T3 ×3, 4 runs 551040-T1A INTL ×3 + neutral support ×3; bays under 900mm deep MXM8224NS / MXM6514NS ×2.</td>
+              </tr>
+              <tr className="border-b border-surface-container-high/60 align-top">
+                <td className="py-1.5 pr-3 font-medium">ACB bay</td>
+                <td className="py-1.5 pr-3">ACB kit + segregation kit by frame and bay width (E1.2 KN1866-1IN + FH_E12609-1; E2.2 720w KN2666-1IN + FH_E22609-1, 920w KN2668-1IN + FH_E22809-1; E4.2 KN4868-1IN + FH_E42809-1; E6.2 1120w KN6360-1IN + FH_E62109-1, 1320w KN6361-1IN + FH_E62129-1), 4 shelves SH…, rear segregation 200 ×4 + 300 ×2 + 400 ×1, crosspieces TV1005-1 ×4 and TV1211-1 (×2 on 920w+). Bus couplers add the internal bus riser parts (VC2020-1, TR1205-1, AD1025-1, SV2015-1).</td>
+              </tr>
+              <tr className="border-b border-surface-container-high/60 align-top">
+                <td className="py-1.5 pr-3 font-medium">MCC bay</td>
+                <td className="py-1.5 pr-3">Per MCCB: mounting kit H23KT200–600-1 and segregation kit FH10x0-1 (900 deep) / FH3xx0-1 (500–700 deep) by compartment height; other devices: blind panel with cutout + back plate + segregation kit; 3 shelves, horizontal bus segregation SH1030-1, rear segregation 100 + 300, crosspieces, dropper supports 551060-T6 ×4.</td>
+              </tr>
+              <tr className="border-b border-surface-container-high/60 align-top">
+                <td className="py-1.5 pr-3 font-medium">Blank spaces, busbar chamber</td>
+                <td className="py-1.5 pr-3">Blind panel PC… + back plate PF… for each 100mm-step height (split into ABB sizes).</td>
+              </tr>
+              <tr className="border-b border-surface-container-high/60 align-top">
+                <td className="py-1.5 pr-3 font-medium">Line-up</td>
+                <td className="py-1.5 pr-3">One N°2 side-panel set LF20xx-1 for the deepest bay (both ends), lifting eyebolts AA9610-1, and per joint between bays a coupling kit AD1014 and lifting reinforcement SA1350-1.</td>
+              </tr>
+              <tr className="border-b border-surface-container-high/60 align-top">
+                <td className="py-1.5 pr-3 font-medium">Not automatic</td>
+                <td className="py-1.5 pr-3">Roof filters and louvred rear doors (ventilation per incomer rating), IP31/IP41 finishing kits, corner sets, double-front ICC parts, metering/relay cutouts — add them as lines.</td>
+              </tr>
+          </tbody>
+        </table>
       </Section>
 
       <Section id="dim-acb" title="ACB (Emax2)" note="Device's own breaker-face footprint. Bay dimensions come from the ArTuK bay assemblies below, not this table.">

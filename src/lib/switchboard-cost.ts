@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getFeederCosts } from "@/lib/feeder-cost";
 import { loadBusbarTakeoff } from "@/lib/busbar-bom";
+import { loadEnclosureTakeoff } from "@/lib/artuk-enclosure";
 import type { Switchboard } from "@/types/database";
 
 export type CostBreakdown = {
@@ -17,18 +18,20 @@ export type CostBreakdown = {
 
 // RM (raw materials) = Electrical (placed feeders' item costs) + Busbars
 // (the GA busbar plan's bars at the project's per-kg rate, plus any manual
-// busbar lines) + Enclosure line items. Labor/adders are a % of RM total (matches the
+// busbar lines) + Enclosure (ArTuK: ABB parts from the GA, priced from Item
+// Master) + manual enclosure line items. Labor/adders are a % of RM total (matches the
 // mockup's Cost Breakdown card), not itemized labor lines.
 export async function getSwitchboardCostBreakdown(
   supabase: SupabaseClient,
   switchboard: Switchboard
 ): Promise<CostBreakdown> {
-  const [{ data: verticals }, { data: busbarRows }, { data: enclosureRows }, feederCosts, takeoff] = await Promise.all([
+  const [{ data: verticals }, { data: busbarRows }, { data: enclosureRows }, feederCosts, takeoff, enclosureTakeoff] = await Promise.all([
     supabase.from("verticals").select("id").eq("switchboard_id", switchboard.id),
     supabase.from("switchboard_busbars").select("qty, rate").eq("switchboard_id", switchboard.id),
     supabase.from("switchboard_enclosure_lines").select("qty, rate").eq("switchboard_id", switchboard.id),
     getFeederCosts(supabase),
     loadBusbarTakeoff(supabase, switchboard),
+    loadEnclosureTakeoff(supabase, switchboard),
   ]);
 
   const verticalIds = ((verticals ?? []) as { id: string }[]).map((v) => v.id);
@@ -41,7 +44,8 @@ export async function getSwitchboardCostBreakdown(
     0
   );
   const busbars = takeoff.total + ((busbarRows ?? []) as { qty: number; rate: number }[]).reduce((s, r) => s + r.qty * r.rate, 0);
-  const enclosure = ((enclosureRows ?? []) as { qty: number; rate: number }[]).reduce((s, r) => s + r.qty * r.rate, 0);
+  const enclosure =
+    (enclosureTakeoff?.total ?? 0) + ((enclosureRows ?? []) as { qty: number; rate: number }[]).reduce((s, r) => s + r.qty * r.rate, 0);
 
   const rmTotal = electrical + busbars + enclosure;
   const wiringAmt = (rmTotal * switchboard.labor_wiring_pct) / 100;

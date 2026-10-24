@@ -1,7 +1,7 @@
 import { parseIp } from "@/lib/artuk-busbar-chart";
 import type { BayType, Feeder, PlacedFeeder, Switchboard, Vertical } from "@/types/database";
 import { ACB_SIZES, MCCB_SIZES, OUTGOING_MCC_BAY, lookupAcbBaySpec, lookupFeederBoxHeight, suggestAcbFrame } from "@/lib/artuk-sizing";
-import { bayFunctionOf, overrideKey, planBusbars, type BusbarMaterial, type BusbarOverride, type BusbarPlan } from "@/lib/busbar-plan";
+import { bayFunctionOf, breakerFrameOf, overrideKey, planBusbars, type BusbarMaterial, type BusbarOverride, type BusbarPlan } from "@/lib/busbar-plan";
 
 // GA layout rules shared by GA Builder (drawing, Update GA, busbar layer)
 // and Project Detail's project-wide checks, so both always reach the same
@@ -20,23 +20,39 @@ export const DEFAULT_BAY_DEPTH_MM = 600;
 // Every switchgear bay leaves a 60mm gap each side of its feeders: a 600mm
 // wide feeder sits in a 720mm bay (drawn as dotted lines inside the bay).
 export const FEEDER_SIDE_GAP_MM = 60;
-// ArTuK: the red ArTuK strip on top is 25mm. An ArTuK height (from the
-// ruleset) runs from the top of that strip to the bottom of the lowest
-// feeder -- strip + busbar chamber + feeders -- and does NOT include the
-// baseframe: a 2131 board on a 100mm baseframe stands 2231mm from the floor.
+// ArTuK heights, per ABB's assembly guideline (WK-003): a standard bay is
+// 2231mm overall on its 100mm baseframe -- 2131mm without it. Inside that
+// is the modular height of the uprights (2000mm = 20 x 100mm modules; ABB
+// also makes 1800 and 1600mm uprights), which holds the horizontal busbar
+// chamber and the feeders. The remaining 131mm is the red ArTuK strip
+// (25mm) plus the margins above and below the modules.
+// ARTUK_HEIGHTS_MM are heights WITHOUT the baseframe (strip to bottom of
+// the frame); the GA shows them with the baseframe added (2231 etc.).
 export const ARTUK_STRIP_MM = 25;
-// ...and there's a 60mm level between the strip and the topmost contents,
-// and between the bottommost contents and the baseframe.
-export const ARTUK_LEVEL_GAP_MM = 60;
-export const ARTUK_HEIGHTS_MM = [2131, 2231];
-export const DEFAULT_ARTUK_HEIGHT_MM = 2231;
+export const ARTUK_FIXED_MM = 131;
+// the margin above the topmost and below the bottommost module
+export const ARTUK_LEVEL_GAP_MM = (ARTUK_FIXED_MM - ARTUK_STRIP_MM) / 2;
+export const ARTUK_MODULAR_HEIGHTS_MM = [2000, 1800, 1600];
+export const ARTUK_HEIGHTS_MM = ARTUK_MODULAR_HEIGHTS_MM.map((m) => m + ARTUK_FIXED_MM);
+export const DEFAULT_ARTUK_HEIGHT_MM = ARTUK_HEIGHTS_MM[0];
 
-// Everything inside an ArTuK height other than the busbar chamber and the
-// feeders: the strip and the two 60mm levels.
-export const ARTUK_FIXED_MM = ARTUK_STRIP_MM + 2 * ARTUK_LEVEL_GAP_MM;
+// ABB's horizontal busbar section height by main bar size (ArTuK sizing
+// sheet): up to 80x10 -> 200mm, 100-160 -> 300mm, 200x10 -> 400mm.
+export function artukChamberHeightFor(bar: { widthMm: number } | null | undefined): number | null {
+  if (!bar) return null;
+  return bar.widthMm <= 80 ? 200 : bar.widthMm <= 160 ? 300 : 400;
+}
+export const ARTUK_CHAMBER_HEIGHTS_MM = [200, 300, 400];
+
+// Upright (modular) height of an ArTuK height: 2131 -> 2000.
+export function artukModularHeight(artukHeightMm: number): number {
+  return artukHeightMm - ARTUK_FIXED_MM;
+}
 
 // The ArTuK height a switchboard was saved at (stored as its panel height,
-// so recovered as panel + chamber + strip + levels), snapped to an allowed height.
+// so recovered as panel + chamber + strip/margins), snapped to an allowed
+// height (boards saved under the old 145mm strip/levels rule fall back to
+// the 2000mm-upright default).
 export function artukHeightOf(panelMm: number | null, chamberMm: number): number {
   const h = panelMm != null ? panelMm + chamberMm + ARTUK_FIXED_MM : null;
   return h != null && ARTUK_HEIGHTS_MM.includes(h) ? h : DEFAULT_ARTUK_HEIGHT_MM;
@@ -178,13 +194,26 @@ export function computeCompartments(vertical: VerticalWithFeeders, panelHeightMm
 // read from its placed feeders -- null when nothing in the bay drives a size
 // (alleys, the unassigned bucket, empty or unclassified bays, an ACB with
 // no rated current).
-export function artukBaySize(v: VerticalWithFeeders): { widthMm: number; depthMm: number } | null {
+// Board options that change an MCC bay's depth (ABB guidelines):
+//  - double front (ELSP/ARTU-K/ENGG/15): 1037mm up to 2000A, 1237mm at 2500A,
+//  - front access (ELSP/ARTU-K/ENGG/16): 637mm single-run, 837mm two-run busbar.
+export type ArtukBayOptions = { arrangement?: Switchboard["arrangement"]; frontAccess?: boolean; amps?: number | null; mainRuns?: number };
+
+export function mccBayDepth(opts: ArtukBayOptions = {}): number {
+  if (opts.arrangement === "double_front") return (opts.amps ?? 0) > 2000 ? 1237 : 1037;
+  if (opts.frontAccess) return (opts.mainRuns ?? 1) >= 2 ? 837 : 637;
+  return OUTGOING_MCC_BAY.depthMm;
+}
+
+export function artukBaySize(v: VerticalWithFeeders, opts: ArtukBayOptions = {}): { widthMm: number; depthMm: number } | null {
   if (v.bay_type === "cable_alley" || v.bay_type === "busbar_alley" || v.bay_type === "unassigned") return null;
   const acbUnits = v.placed.filter((p) => p.feeder.device_type === "ACB");
   if (acbUnits.length > 0) {
     const p = acbUnits[0];
     if (p.feeder.rated_current == null) return null;
-    const frame = suggestAcbFrame(p.feeder.rated_current);
+    // the ACB item's own frame (Item Master), else the one expected for the rating
+    const itemFrame = breakerFrameOf(p.feeder as Feeder);
+    const frame = (["E1.2", "E2.2", "E4.2", "E6.2"].includes(itemFrame ?? "") ? itemFrame : suggestAcbFrame(p.feeder.rated_current)) as ReturnType<typeof suggestAcbFrame>;
     const fn = bayFunctionOf(p.feeder) ?? "outgoing";
     const spec = lookupAcbBaySpec(frame, fn);
     if (spec) return { widthMm: spec.widthMm, depthMm: spec.depthMm };
@@ -196,7 +225,7 @@ export function artukBaySize(v: VerticalWithFeeders): { widthMm: number; depthMm
     return bracket ? { widthMm: bracket.width4P100, depthMm: 1037 } : null;
   }
   const hasOtherClassified = v.placed.some((p) => p.feeder.device_type && p.feeder.device_type !== "ACB" && p.feeder.device_type !== "OTHER");
-  return hasOtherClassified ? { widthMm: OUTGOING_MCC_BAY.widthMm, depthMm: OUTGOING_MCC_BAY.depthMm } : null;
+  return hasOtherClassified ? { widthMm: OUTGOING_MCC_BAY.widthMm, depthMm: mccBayDepth(opts) } : null;
 }
 
 export type BusbarOverrideRow = {

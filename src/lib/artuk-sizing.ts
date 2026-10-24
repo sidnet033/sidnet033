@@ -181,10 +181,12 @@ export const ACB_2TIER_OUTGOING_E12 = {
 // chosen automatically. Offered only as a manual GA Builder template.
 export const MCC_FRONT_ACCESS_PAIR = {
   label: "ArTu-K 920+1120mm MCC Vertical, Front Access",
+  // 637mm deep for a single-run busbar, 837mm for two runs; up to Form 3b
+  // and 36/50kA 1s (ABB front access guideline ELSP/ARTU-K/ENGG/16)
   primary: { widthMm: 920, depthMm: 637 },
   paired: { widthMm: 1120, depthMm: 637 },
   ipRating: 54,
-  form: "4b",
+  form: "3b",
   note: "Alternate to the default 720w rear-access MCC vertical used automatically by Auto-generate GA. Add this by hand if your board uses front access instead.",
 };
 

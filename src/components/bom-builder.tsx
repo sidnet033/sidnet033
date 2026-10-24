@@ -18,6 +18,7 @@ import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { formatMoney } from "@/lib/money";
 import { loadBusbarTakeoff, type BusbarTakeoff } from "@/lib/busbar-bom";
+import { loadEnclosureTakeoff, type EnclosureTakeoff } from "@/lib/artuk-enclosure";
 import { ampsViolations, nextStandardAmps } from "@/lib/amps-check";
 import type {
   DeviceType,
@@ -100,7 +101,7 @@ async function loadBomData(supabase: ReturnType<typeof createClient>, switchboar
   const { data: verticals } = await supabase.from("verticals").select("id").eq("switchboard_id", switchboardId);
   const verticalIds = ((verticals ?? []) as { id: string }[]).map((v) => v.id);
 
-  const [{ data: placed }, { data: busbarRows }, { data: enclosureRows }, { data: libraryFeeders }, busbarTakeoff] = await Promise.all([
+  const [{ data: placed }, { data: busbarRows }, { data: enclosureRows }, { data: libraryFeeders }, busbarTakeoff, enclosureTakeoff] = await Promise.all([
     verticalIds.length
       ? supabase
           .from("placed_feeders")
@@ -111,6 +112,7 @@ async function loadBomData(supabase: ReturnType<typeof createClient>, switchboar
     supabase.from("switchboard_enclosure_lines").select("*").eq("switchboard_id", switchboardId).order("sort_order"),
     supabase.from("feeders").select("id, name, category, tag, rating_summary").eq("is_library", true).order("name"),
     loadBusbarTakeoff(supabase, switchboard as Switchboard),
+    loadEnclosureTakeoff(supabase, switchboard as Switchboard),
   ]);
 
   type PlacedRow = { id: string; vertical_id: string; tier_number: number; qty: number; feeder: Feeder };
@@ -158,6 +160,7 @@ async function loadBomData(supabase: ReturnType<typeof createClient>, switchboar
     enclosureLines: (enclosureRows ?? []) as SwitchboardEnclosureLine[],
     libraryFeedersAll: (libraryFeeders ?? []) as LibraryFeederOption[],
     busbarTakeoff,
+    enclosureTakeoff,
   };
 }
 
@@ -256,6 +259,7 @@ export function BomBuilder({
   const [resetKey, setResetKey] = useState(0);
   const [items, setItems] = useState(allItems);
   const [busbarTakeoff, setBusbarTakeoff] = useState<BusbarTakeoff | null>(null);
+  const [enclosureTakeoff, setEnclosureTakeoff] = useState<EnclosureTakeoff | null>(null);
   // the warnings box starts collapsed -- just its one-line summary shows
   const [warningsOpen, setWarningsOpen] = useState(false);
 
@@ -278,6 +282,7 @@ export function BomBuilder({
       setDraft(d);
       setLibraryFeedersAll(data.libraryFeedersAll);
       setBusbarTakeoff(data.busbarTakeoff);
+      setEnclosureTakeoff(data.enclosureTakeoff);
       setLoading(false);
     })();
     return () => {
@@ -334,7 +339,7 @@ export function BomBuilder({
 
   const electrical = draft ? draft.modules.reduce((s, m) => s + m.qty * lineTotal(m.lines), 0) : 0;
   const busbarsTotal = (busbarTakeoff?.total ?? 0) + (draft ? draft.busbars.reduce((s, b) => s + b.qty * b.rate, 0) : 0);
-  const enclosureTotal = draft ? draft.enclosureLines.reduce((s, e) => s + e.qty * e.rate, 0) : 0;
+  const enclosureTotal = (enclosureTakeoff?.total ?? 0) + (draft ? draft.enclosureLines.reduce((s, e) => s + e.qty * e.rate, 0) : 0);
   const rmTotal = electrical + busbarsTotal + enclosureTotal;
   const wiringAmt = draft ? (rmTotal * draft.laborWiring) / 100 : 0;
   const assemblyAmt = draft ? (rmTotal * draft.laborAssembly) / 100 : 0;
@@ -1042,6 +1047,7 @@ export function BomBuilder({
       <LineItemsSection
         title="2. Enclosure & Cubicle Construction"
         lines={draft.enclosureLines}
+        enclosureAuto={enclosureTakeoff}
         readOnly={readOnly}
         onAdd={addEnclosureLine}
         onUpdate={updateEnclosureLine}
@@ -1640,6 +1646,7 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
   title,
   lines,
   autoLines,
+  enclosureAuto,
   readOnly,
   onAdd,
   onUpdate,
@@ -1647,6 +1654,9 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
 }: {
   title: string;
   lines: T[];
+  // Enclosure only (ArTuK): ABB part list computed from the GA, priced from
+  // Item Master -- read-only here.
+  enclosureAuto?: EnclosureTakeoff | null;
   // Busbars only: lines computed from the GA busbar plan (read-only here --
   // sizes are changed in GA Builder, the per-kg rate in Project Detail).
   autoLines?: BusbarTakeoff | null;
@@ -1655,7 +1665,8 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
   onUpdate: (id: string, patch: Partial<T>) => void;
   onRemove: (id: string) => void;
 }) {
-  const total = lines.reduce((s, l) => s + l.qty * l.rate, 0) + (autoLines?.total ?? 0);
+  const total = lines.reduce((s, l) => s + l.qty * l.rate, 0) + (autoLines?.total ?? 0) + (enclosureAuto?.total ?? 0);
+  const [partsOpen, setPartsOpen] = useState(false);
   return (
     <div className="overflow-hidden rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-xs">
       <div className="flex items-center justify-between border-b border-surface-container bg-surface-container-low/60 px-4 py-2.5">
@@ -1700,6 +1711,47 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
               </td>
             </tr>
           )}
+          {enclosureAuto && enclosureAuto.lines.length > 0 && (
+            <>
+              <tr className="border-t border-surface-container bg-primary/5">
+                <td colSpan={3} className="px-3 py-1.5">
+                  <button onClick={() => setPartsOpen((o) => !o)} className="flex items-center gap-1 text-left">
+                    <Icon name={partsOpen ? "expand_less" : "expand_more"} size={14} />
+                    <span className="mr-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-primary">Auto</span>
+                    ABB ArTu-K enclosure parts from the GA — {enclosureAuto.lines.length} part codes
+                  </button>
+                </td>
+                <td className="px-3 py-1.5 text-right tabular-nums">{money(enclosureAuto.total)}</td>
+                {!readOnly && <td />}
+              </tr>
+              {partsOpen &&
+                enclosureAuto.lines.map((l) => (
+                  <tr key={`enc-${l.code}`} className={`border-t border-surface-container ${l.priced ? "" : "bg-red-50"}`} title={l.why.join("\n")}>
+                    <td className="px-3 py-1 pl-8">
+                      <span className="mr-2 font-mono text-[11px]">{l.code}</span>
+                      <span className={l.inItemMaster ? "" : "text-error"}>{l.description}</span>
+                    </td>
+                    <td className="px-3 py-1 text-right tabular-nums">{l.qty}</td>
+                    <td className={`px-3 py-1 text-right tabular-nums ${l.priced ? "" : "text-error"}`}>{money(l.rate)}</td>
+                    <td className="px-3 py-1 text-right tabular-nums">{money(l.amount)}</td>
+                    {!readOnly && <td />}
+                  </tr>
+                ))}
+              <tr className="border-t border-surface-container">
+                <td colSpan={5} className={`px-3 py-1 text-[11px] ${enclosureAuto.unpriced + enclosureAuto.missing > 0 ? "text-error" : "text-on-surface-variant"}`}>
+                  {enclosureAuto.unpriced + enclosureAuto.missing > 0
+                    ? `${enclosureAuto.unpriced} part code(s) have no price in Item Master${enclosureAuto.missing ? ` and ${enclosureAuto.missing} aren't in Item Master` : ""} — load ABB's price list (category "ArTuK Enclosure") so the enclosure is costed. `
+                    : ""}
+                  Built from the GA bay by bay using ABB&apos;s assembly kit lists; hover a part for where it&apos;s used. Add lines below for anything else (roof filters, louvres, finishing kits).
+                  {enclosureAuto.warnings.map((w, i) => (
+                    <span key={i} className="block text-amber-700">
+                      {w}
+                    </span>
+                  ))}
+                </td>
+              </tr>
+            </>
+          )}
           {lines.map((l) => (
             <tr key={l.id} className="border-t border-surface-container">
               <td className="px-3 py-1.5">
@@ -1742,7 +1794,7 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
               )}
             </tr>
           ))}
-          {lines.length === 0 && !autoLines?.lines.length && (
+          {lines.length === 0 && !autoLines?.lines.length && !enclosureAuto?.lines.length && (
             <tr>
               <td colSpan={5} className="px-3 py-4 text-center text-on-surface-variant">
                 No lines yet.

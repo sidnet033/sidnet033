@@ -469,8 +469,36 @@ export function auditBoard(
 
   if (sb.std === "ArTuK") {
     const boardIp = sb.ip_rating ? Number(sb.ip_rating) : null;
+    const bayOpts = {
+      arrangement: sb.arrangement,
+      frontAccess: sb.cable_access === "Front",
+      amps: sb.amps,
+      mainRuns: plan.segments.find((s) => s.kind === "main")?.runs ?? 1,
+    };
+    // ABB limits for double-front (ELSP/ARTU-K/ENGG/15) and front-access
+    // (ELSP/ARTU-K/ENGG/16) ArTu-K panels: up to 50kA 1s, up to Form 3b;
+    // double front up to 2500A.
+    const layout = sb.arrangement === "double_front" ? "Double-front" : sb.cable_access === "Front" ? "Front-access" : null;
+    if (layout) {
+      const formLevel = (sb.form_of_separation ?? "").match(/(\d)/)?.[1];
+      const limits: string[] = [];
+      if (sb.ka != null && sb.ka > 50) limits.push(`is type-tested only up to 50kA 1s (board is ${sb.ka}kA)`);
+      if (formLevel && Number(formLevel) > 3) limits.push(`goes up to Form 3b (board is ${sb.form_of_separation})`);
+      if (layout === "Double-front" && sb.amps != null && sb.amps > 2500) limits.push(`is covered up to 2500A (board is ${sb.amps}A)`);
+      for (const l of limits) {
+        items.push({
+          ...base,
+          id: `${sb.id}|artuk-layout|${l.slice(0, 24)}`,
+          area: "GA",
+          severity: "warning",
+          message: `${layout} ArTu-K ${l} — check with ABB.`,
+          apply: null,
+          applyLabel: null,
+        });
+      }
+    }
     for (const v of placedBays) {
-      const size = artukBaySize(v);
+      const size = artukBaySize(v, bayOpts);
       if (
         size &&
         (v.width_mm !== size.widthMm || v.depth_mm !== size.depthMm)

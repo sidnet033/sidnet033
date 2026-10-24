@@ -30,8 +30,10 @@ import {
 } from "@/lib/artuk-sizing";
 import { bayFunctionOf, type BusbarOverride, type BusbarPlan, type BusbarSegment } from "@/lib/busbar-plan";
 import {
+  ARTUK_CHAMBER_HEIGHTS_MM,
   ARTUK_FIXED_MM,
   ARTUK_HEIGHTS_MM,
+  artukChamberHeightFor,
   ARTUK_LEVEL_GAP_MM,
   ARTUK_STRIP_MM,
   BUSBAR_CHAMBER_HEIGHT_MM,
@@ -371,10 +373,15 @@ export function GaCanvas({
   // cable entry/exit in the summary table, e.g. "CABLE ENTRY – REAR TOP"
   const [cableAccess, setCableAccess] = useState<Switchboard["cable_access"]>(null);
   const [savedCableAccess, setSavedCableAccess] = useState<Switchboard["cable_access"]>(null);
+  const [arrangement, setArrangement] = useState<Switchboard["arrangement"]>("single_front");
+  const [savedArrangement, setSavedArrangement] = useState<Switchboard["arrangement"]>("single_front");
   const [panelHeightSetting, setPanelHeight] = useState(2100);
   const [savedPanelHeight, setSavedPanelHeight] = useState(2100);
   const [busbarHeight, setBusbarHeight] = useState(BUSBAR_CHAMBER_HEIGHT_MM);
   const [savedBusbarHeight, setSavedBusbarHeight] = useState(BUSBAR_CHAMBER_HEIGHT_MM);
+  // ArTuK: whether the chamber height follows ABB's height for the main bar
+  // (off once it's typed by hand; on for the old default or an ABB height)
+  const [chamberAuto, setChamberAuto] = useState(false);
   // ArTuK: you pick an ArTuK height (top of the strip to the top of the
   // baseframe, baseframe NOT included); the feeders get whatever's left after
   // the 25mm strip, the two 60mm levels and the busbar chamber.
@@ -548,12 +555,15 @@ export function GaCanvas({
     setSavedPlinthHeight(plinth);
     setCableAccess(data.switchboard.cable_access ?? null);
     setSavedCableAccess(data.switchboard.cable_access ?? null);
+    setArrangement(data.switchboard.arrangement ?? "single_front");
+    setSavedArrangement(data.switchboard.arrangement ?? "single_front");
     setPanelHeight(panel);
     setSavedPanelHeight(panel);
     setArtukHeight(artukHeightOf(data.switchboard.panel_height_mm, busbar));
     setSavedArtukHeight(artukHeightOf(data.switchboard.panel_height_mm, busbar));
     setBusbarHeight(busbar);
     setSavedBusbarHeight(busbar);
+    setChamberAuto(busbar === BUSBAR_CHAMBER_HEIGHT_MM || ARTUK_CHAMBER_HEIGHTS_MM.includes(busbar));
     setDensities(data.densities);
     setBusbarOverrides(data.overrides);
     setSavedBusbarOverrides(data.overrides);
@@ -575,12 +585,15 @@ export function GaCanvas({
       setSavedPlinthHeight(plinth);
       setCableAccess(data.switchboard.cable_access ?? null);
       setSavedCableAccess(data.switchboard.cable_access ?? null);
+      setArrangement(data.switchboard.arrangement ?? "single_front");
+      setSavedArrangement(data.switchboard.arrangement ?? "single_front");
       setPanelHeight(panel);
       setSavedPanelHeight(panel);
       setArtukHeight(artukHeightOf(data.switchboard.panel_height_mm, busbar));
       setSavedArtukHeight(artukHeightOf(data.switchboard.panel_height_mm, busbar));
       setBusbarHeight(busbar);
       setSavedBusbarHeight(busbar);
+      setChamberAuto(busbar === BUSBAR_CHAMBER_HEIGHT_MM || ARTUK_CHAMBER_HEIGHTS_MM.includes(busbar));
       setDensities(data.densities);
       setBusbarOverrides(data.overrides);
       setSavedBusbarOverrides(data.overrides);
@@ -597,6 +610,7 @@ export function GaCanvas({
     JSON.stringify(verticals) !== JSON.stringify(savedVerticals) ||
     plinthHeight !== savedPlinthHeight ||
     cableAccess !== savedCableAccess ||
+    arrangement !== savedArrangement ||
     (isArtuk ? artukHeight !== savedArtukHeight : panelHeightSetting !== savedPanelHeight) ||
     busbarHeight !== savedBusbarHeight ||
     JSON.stringify(busbarOverrides) !== JSON.stringify(savedBusbarOverrides);
@@ -670,6 +684,14 @@ export function GaCanvas({
       })
     : null;
   const selectedSegment = busbarPlan?.segments.find((seg) => seg.key === selectedSegmentKey) ?? null;
+
+  // ArTuK: the busbar chamber height follows the main bar size (ABB). It
+  // follows automatically while the saved height is the old default or an
+  // ABB height and hasn't been changed by hand this session; a custom
+  // height is kept, with the ABB height offered in the chamber panel.
+  const mainBar = busbarPlan?.segments.find((seg) => seg.kind === "main")?.bar ?? null;
+  const abbChamberMm = isArtuk ? artukChamberHeightFor(mainBar) : null;
+  if (chamberAuto && !readOnly && abbChamberMm != null && busbarHeight !== abbChamberMm) setBusbarHeight(abbChamberMm);
 
   function patchSegmentOverrides(
     segs: BusbarSegment[],
@@ -857,10 +879,19 @@ export function GaCanvas({
     if (!sb || readOnly) return;
     setVerticals(
       verticals.map((v) => {
-        const size = artukBaySize(v);
+        const size = artukBaySize(v, {
+          arrangement,
+          frontAccess: cableAccess === "Front",
+          amps: sb.amps,
+          mainRuns: busbarPlan?.segments.find((s) => s.kind === "main")?.runs ?? 1,
+        });
         return size ? { ...v, width_mm: size.widthMm, depth_mm: size.depthMm } : v;
       })
     );
+    if (abbChamberMm != null) {
+      setBusbarHeight(abbChamberMm);
+      setChamberAuto(true);
+    }
   }
 
   // sort_order for a bay added at the right-hand end (gaps left by deleted
@@ -1032,6 +1063,7 @@ export function GaCanvas({
     setVerticals(structuredClone(savedVerticals));
     setPlinthHeight(savedPlinthHeight);
     setCableAccess(savedCableAccess);
+    setArrangement(savedArrangement);
     setPanelHeight(savedPanelHeight);
     setArtukHeight(savedArtukHeight);
     setBusbarHeight(savedBusbarHeight);
@@ -1184,6 +1216,7 @@ export function GaCanvas({
       const paramPatch: Partial<Switchboard> = {};
       if (plinthHeight !== savedPlinthHeight) paramPatch.plinth_height_mm = plinthHeight;
       if (cableAccess !== savedCableAccess) paramPatch.cable_access = cableAccess;
+      if (arrangement !== savedArrangement) paramPatch.arrangement = arrangement;
       if (panelHeight !== savedPanelHeight) paramPatch.panel_height_mm = panelHeight;
       if (busbarHeight !== savedBusbarHeight) paramPatch.busbar_chamber_height_mm = busbarHeight;
       if (Object.keys(paramPatch).length > 0) {
@@ -1388,7 +1421,7 @@ export function GaCanvas({
           </Field>
           {isArtuk ? (
             <>
-              <Field label="ArTuK Height (excl. baseframe)">
+              <Field label="ArTuK Height (overall)">
                 <select
                   disabled={readOnly}
                   value={artukHeight}
@@ -1397,7 +1430,7 @@ export function GaCanvas({
                 >
                   {ARTUK_HEIGHTS_MM.map((v) => (
                     <option key={v} value={v}>
-                      {v}mm
+                      {v + plinthHeight}mm ({v - ARTUK_FIXED_MM} uprights, {v}mm without base)
                     </option>
                   ))}
                 </select>
@@ -1436,6 +1469,19 @@ export function GaCanvas({
               <option value="Rear">Rear</option>
             </select>
           </Field>
+          {isArtuk && (
+            <Field label="Arrangement">
+              <select
+                disabled={readOnly}
+                value={arrangement}
+                onChange={(e) => setArrangement(e.target.value as Switchboard["arrangement"])}
+                className="rounded border border-surface-container-high px-1.5 py-1"
+              >
+                <option value="single_front">Single front</option>
+                <option value="double_front">Double front</option>
+              </select>
+            </Field>
+          )}
           <ReadOnlyField label="Cable Entry" value={sb.cable_entry} />
           <ReadOnlyField label="Cable Exit" value={sb.cable_exit} />
         </div>
@@ -1959,8 +2005,13 @@ export function GaCanvas({
                   <BusbarDetailsPanel
                     key={`busbar-${resetKey}`}
                     height={busbarHeight}
+                    abbHeight={abbChamberMm}
+                    mainBarLabel={mainBar ? `${mainBar.widthMm}×${mainBar.thicknessMm}` : null}
                     readOnly={readOnly}
-                    onHeightChange={setBusbarHeight}
+                    onHeightChange={(h) => {
+                      setBusbarHeight(h);
+                      setChamberAuto(h === abbChamberMm);
+                    }}
                     onClose={() => setBusbarSelected(false)}
                   />
                 ) : (
@@ -2531,11 +2582,15 @@ function BayColumn({
 // clicking its bar in the drawing, mutually exclusive with a bay selection.
 function BusbarDetailsPanel({
   height,
+  abbHeight,
+  mainBarLabel,
   readOnly,
   onHeightChange,
   onClose,
 }: {
   height: number;
+  abbHeight: number | null;
+  mainBarLabel: string | null;
   readOnly: boolean;
   onHeightChange: (value: number) => void;
   onClose: () => void;
@@ -2573,6 +2628,22 @@ function BusbarDetailsPanel({
       <p className="text-[11px] leading-snug text-on-surface-variant">
         Height of the main horizontal busbar chamber, spanning the full width of the switchboard.
       </p>
+      {abbHeight != null && (
+        <p className={`mt-2 text-[11px] leading-snug ${abbHeight === height ? "text-on-surface-variant" : "text-amber-700"}`}>
+          ABB ArTuK: {abbHeight}mm for a {mainBarLabel} main bar (up to 80×10 → 200, 100–160 → 300, 200×10 → 400).
+          {abbHeight !== height && !readOnly && (
+            <button
+              onClick={() => {
+                setLocal(String(abbHeight));
+                onHeightChange(abbHeight);
+              }}
+              className="ml-1 font-semibold underline"
+            >
+              Use {abbHeight}mm
+            </button>
+          )}
+        </p>
+      )}
     </div>
   );
 }
