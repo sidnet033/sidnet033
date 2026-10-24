@@ -261,6 +261,18 @@ export function BomBuilder({
   const [saving, setSaving] = useState(false);
   const [resetKey, setResetKey] = useState(0);
   const [items, setItems] = useState(allItems);
+  // Feeder cards start collapsed; one added in this session (library, ad
+  // hoc, duplicate, split) opens so it can be filled in.
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const openModule = (id: string) => setOpenIds((prev) => new Set(prev).add(id));
+  function toggleModule(id: string) {
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
   const [busbarTakeoff, setBusbarTakeoff] = useState<BusbarTakeoff | null>(null);
   const [enclosureTakeoff, setEnclosureTakeoff] = useState<EnclosureTakeoff | null>(null);
   // the warnings box starts collapsed -- just its one-line summary shows
@@ -421,6 +433,7 @@ export function BomBuilder({
     const { data: lines } = await supabase.from("feeder_items").select("*, item:item_master(*)").eq("feeder_id", opt.id).order("sort_order");
     if (!feeder) return;
     const draftLines = ((lines ?? []) as unknown as FeederItemWithDetails[]).map(toDraftLine);
+    openModule(opt.id);
     setDraft((d) =>
       d
         ? {
@@ -437,6 +450,7 @@ export function BomBuilder({
   async function handleAdHocCreated(feeder: Feeder & { cost: number }) {
     const { data: lines } = await supabase.from("feeder_items").select("*, item:item_master(*)").eq("feeder_id", feeder.id).order("sort_order");
     const draftLines = ((lines ?? []) as unknown as FeederItemWithDetails[]).map(toDraftLine);
+    openModule(feeder.id);
     setDraft((d) =>
       d
         ? {
@@ -517,6 +531,7 @@ export function BomBuilder({
       baselineLines: draftLines,
       baselinePlacements: [{ id: placement.id, vertical_id: vId, qty: 1 }],
     };
+    openModule(newModule.feeder.id);
     setSaved((s) => (s ? { ...s, modules: [...s.modules, newModule] } : s));
     setDraft((d) => (d ? { ...d, modules: [...d.modules, newModule] } : d));
     router.refresh();
@@ -542,6 +557,7 @@ export function BomBuilder({
     if (!moved.length || !kept.length) return;
     const feeder: Feeder = { ...mod.feeder, id: newId(), name: newName, tag: null, is_library: false, switchboard_id: sb.id };
     const newModule: DraftModule = { feeder, baselineFeeder: feeder, qty: mod.qty, lines: moved, baselineLines: [], baselinePlacements: [] };
+    openModule(feeder.id);
     setDraft((d) =>
       d
         ? { ...d, modules: d.modules.flatMap((m) => (m.feeder.id === mod.feeder.id ? [{ ...m, lines: kept }, newModule] : [m])) }
@@ -1133,10 +1149,22 @@ export function BomBuilder({
       )}
 
       <div className="space-y-3">
+        {draft.modules.length > 0 && (
+          <div className="flex items-center justify-end gap-3 text-xs">
+            <button onClick={() => setOpenIds(new Set(draft.modules.map((m) => m.feeder.id)))} className="flex items-center gap-1 text-primary hover:underline">
+              <Icon name="unfold_more" size={14} /> Expand all
+            </button>
+            <button onClick={() => setOpenIds(new Set())} className="flex items-center gap-1 text-primary hover:underline">
+              <Icon name="unfold_less" size={14} /> Collapse all
+            </button>
+          </div>
+        )}
         {draft.modules.map((mod) => (
           <FeederModuleCard
             key={mod.feeder.id}
             mod={mod}
+            expanded={openIds.has(mod.feeder.id)}
+            onToggleExpanded={() => toggleModule(mod.feeder.id)}
             ampsError={ampsIssueIds.has(mod.feeder.id) && sb ? `Rated above the switchboard (${sb.amps}A)` : null}
             readOnly={readOnly}
             canEditLines={!readOnly && (isAdmin || !mod.feeder.is_library)}
@@ -1315,8 +1343,12 @@ function FeederModuleCard({
   onDelete,
   onPromote,
   onSplit,
+  expanded,
+  onToggleExpanded,
 }: {
   mod: DraftModule;
+  expanded: boolean;
+  onToggleExpanded: () => void;
   ampsError: string | null;
   readOnly: boolean;
   canEditLines: boolean;
@@ -1335,7 +1367,6 @@ function FeederModuleCard({
   onPromote?: () => void;
   onSplit?: (picks: SplitPick[], newName: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(true);
   const [splitOpen, setSplitOpen] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [createItemOpen, setCreateItemOpen] = useState(false);
@@ -1396,7 +1427,7 @@ function FeederModuleCard({
         </div>
       )}
       <div className={`flex flex-wrap items-center gap-3 border-b px-4 py-2.5 ${headerClass}`}>
-        <button onClick={() => setExpanded(!expanded)} className="text-on-surface-variant hover:text-on-surface-variant">
+        <button onClick={onToggleExpanded} className="text-on-surface-variant hover:text-on-surface-variant">
           <Icon name={expanded ? "expand_less" : "expand_more"} size={18} />
         </button>
         <div className="flex flex-1 flex-wrap items-center gap-2">
