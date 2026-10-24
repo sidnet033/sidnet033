@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { CreateItemDialog } from "@/components/create-item-dialog";
+import { RefreshItemsButton } from "@/components/refresh-items-button";
 import { itemCode, fetchAllItemMaster, itemRowClass } from "@/lib/item-display";
 import { numericKeyGuard } from "@/lib/numeric-input";
 import { effectiveNetRate } from "@/lib/feeder-cost";
@@ -346,8 +347,10 @@ export function FeederMasterWorkspace({
             </div>
             <h1 className="font-headline-lg text-headline-lg leading-none tracking-tight text-on-surface">Feeder Master</h1>
           </div>
+          <div className="flex shrink-0 items-center gap-space-sm self-start md:self-auto">
+          <RefreshItemsButton items={items} onRefreshed={setItems} />
           {isAdmin && (
-            <div className="flex shrink-0 items-center gap-space-sm self-start md:self-auto">
+            <div className="flex shrink-0 items-center gap-space-sm">
               <FeederImportDialog feeders={feeders} items={items} currentUserName={currentUserName} onDone={refreshAll} />
               <button
                 disabled
@@ -365,6 +368,7 @@ export function FeederMasterWorkspace({
               </button>
             </div>
           )}
+          </div>
         </div>
 
         {/* Standard Feeder Library */}

@@ -269,7 +269,8 @@ export function HowItWorks() {
                 (e.g. all MCCBs at 42%), use <b>Bulk Discount — Category</b> at the top. To add many items at once, use <b>Paste Item Codes</b> on a feeder: paste SKUs or catalogue numbers
                 (with quantities, straight from Excel), check which ones were found, then add them. <b>Copy missing codes</b> copies the codes not in
                 Item Master (with qty) to paste into Excel and create later; items already in the feeder are highlighted amber (adding them
-                tops up the existing line&apos;s qty — untick to skip). Inside a feeder, the qty, list price and discount boxes work like
+                tops up the existing line&apos;s qty — untick to skip). If someone else adds items to Item Master while you work, click <b>Refresh items</b> (BOM Builder and Feeder Master) to
+                load them without losing your unsaved edits. Inside a feeder, the qty, list price and discount boxes work like
                 a spreadsheet: arrow keys and Enter move between them, and typing replaces the value.
               </>,
               <>

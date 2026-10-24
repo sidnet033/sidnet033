@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { CostBreakdownCard } from "@/components/cost-breakdown-card";
 import { AdHocFeederPanel } from "@/components/ad-hoc-feeder-panel";
+import { RefreshItemsButton } from "@/components/refresh-items-button";
 import { CreateItemDialog } from "@/components/create-item-dialog";
 import { BulkAddItemsDialog } from "@/components/bulk-add-items-dialog";
 import { findDuplicateLibraryFeeder } from "@/lib/feeder-duplicate";
@@ -933,6 +934,7 @@ export function BomBuilder({
           >
             <Icon name="file_save" size={16} /> Export BOM (PDF/XLSX)
           </button>
+          <RefreshItemsButton items={items} onRefreshed={setItems} />
           {!readOnly && (
             <>
               <button onClick={handleCancel} disabled={!dirty || saving} className="btn btn-outline">
