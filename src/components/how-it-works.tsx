@@ -331,7 +331,10 @@ export function HowItWorks() {
                 1037mm up to 2000A, 1237mm at 2500A. Front-access and double-front ArTu-K are type-tested to 50kA 1s and Form 3b (double front up
                 to 2500A) — the checks warn beyond that. <b>Internal Arc</b> (tick box next to Arrangement) switches the enclosure parts to
                 ABB&apos;s internal-arc design. Busbar supports are drawn as <span className="font-semibold text-pink-600">pink</span> marks on the
-                main and vertical busbars (hover for the part and span) and counted in the BOM.
+                main and vertical busbars (hover for the part and span) and counted in the BOM. If the panel takes <b>busducts</b> in from the top,
+                tick <b>Busduct Entries</b>: then select a bay and set its number of busduct top entries (drawn as violet{" "}
+                <span className="rounded-t bg-violet-600 px-1 font-mono text-[10px] font-bold text-white">BD</span> marks above the bay and listed
+                in the summary table). The GA won&apos;t save until at least one bay has an entry, and the project checks raise an alert.
                 The drawing shows bay widths along the top, feeder widths along the bottom, and on the left the overall height from the floor and
                 the height without the baseframe. In the side view each device sits at the front, as deep as the device; the vertical busbars
                 are at the rear and the horizontal main busbar in the front part of the chamber. <b>Fit width</b> zooms out so the whole panel
@@ -515,6 +518,8 @@ export function HowItWorks() {
                 [<Bar key="8" color="#dc2626" />, "Side view: phase R (Y yellow, B blue, N black) — one line per bar run."],
                 [<Bar key="9" color="#dc2626" />, "Undersized bar — too small for its current."],
                 [<Bar key="10" color="#006194" />, "The bar you've selected."],
+                [<Bar key="11" color="#ec4899" />, "Busbar support (ArTuK) — hover for the part and span."],
+                [<Chip key="12" className="bg-violet-600 text-white">BD</Chip>, "Busduct top entry."],
               ]}
             />
           </div>

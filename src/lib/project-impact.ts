@@ -340,6 +340,19 @@ export function auditBoard(
     });
   }
 
+  // busduct entries ticked but none placed in the GA
+  if (sb.has_busduct && !board.verticals.some((v) => (v.busduct_entries ?? 0) > 0)) {
+    items.push({
+      ...base,
+      id: `${sb.id}|busduct`,
+      area: "GA",
+      severity: "alert",
+      message: "Busduct entries is ticked but no bay has a busduct top entry — add at least one in GA Builder (select a bay).",
+      apply: null,
+      applyLabel: null,
+    });
+  }
+
   if (placedBays.length === 0) return items;
 
   const plan = planOf(board, densities);

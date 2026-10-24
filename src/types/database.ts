@@ -208,6 +208,8 @@ export type Switchboard = {
   arrangement: "single_front" | "double_front";
   // ArTu-K internal arc compliance (ABB ELSP/ARTU-K/ENGG/04)
   internal_arc: boolean;
+  // takes busduct(s) in from the top as well as cables
+  has_busduct: boolean;
   std: "ArTuK" | "61439" | "60439" | null;
   qty: number;
   sort_order: number;
@@ -259,6 +261,8 @@ export type Vertical = {
   dummy_slot: number | null;
   // the blank/DUMMY space's height when set by hand; null = fills what's left
   dummy_height_mm: number | null;
+  // number of busduct top entries in this bay (switchboards with has_busduct)
+  busduct_entries: number;
 };
 
 // a feeder placed inside a bay, stacked into a tier

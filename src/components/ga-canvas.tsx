@@ -232,6 +232,7 @@ function withUnassigned(verts: VerticalWithFeeders[], switchboardId: string): { 
     created_at: new Date().toISOString(),
     dummy_slot: null,
     dummy_height_mm: null,
+    busduct_entries: 0,
     placed: [],
   };
   return { unassigned: created, verts: [...verts, created] };
@@ -332,6 +333,7 @@ function makeVertical(
     created_at: new Date().toISOString(),
     dummy_slot: null,
     dummy_height_mm: null,
+    busduct_entries: 0,
     placed: [],
   };
 }
@@ -378,6 +380,8 @@ export function GaCanvas({
   const [savedArrangement, setSavedArrangement] = useState<Switchboard["arrangement"]>("single_front");
   const [internalArc, setInternalArc] = useState(false);
   const [savedInternalArc, setSavedInternalArc] = useState(false);
+  const [hasBusduct, setHasBusduct] = useState(false);
+  const [savedHasBusduct, setSavedHasBusduct] = useState(false);
   const [panelHeightSetting, setPanelHeight] = useState(2100);
   const [savedPanelHeight, setSavedPanelHeight] = useState(2100);
   const [busbarHeight, setBusbarHeight] = useState(BUSBAR_CHAMBER_HEIGHT_MM);
@@ -562,6 +566,8 @@ export function GaCanvas({
     setSavedArrangement(data.switchboard.arrangement ?? "single_front");
     setInternalArc(!!data.switchboard.internal_arc);
     setSavedInternalArc(!!data.switchboard.internal_arc);
+    setHasBusduct(!!data.switchboard.has_busduct);
+    setSavedHasBusduct(!!data.switchboard.has_busduct);
     setPanelHeight(panel);
     setSavedPanelHeight(panel);
     setArtukHeight(artukHeightOf(data.switchboard.panel_height_mm, busbar));
@@ -594,6 +600,8 @@ export function GaCanvas({
       setSavedArrangement(data.switchboard.arrangement ?? "single_front");
       setInternalArc(!!data.switchboard.internal_arc);
       setSavedInternalArc(!!data.switchboard.internal_arc);
+      setHasBusduct(!!data.switchboard.has_busduct);
+      setSavedHasBusduct(!!data.switchboard.has_busduct);
       setPanelHeight(panel);
       setSavedPanelHeight(panel);
       setArtukHeight(artukHeightOf(data.switchboard.panel_height_mm, busbar));
@@ -619,11 +627,13 @@ export function GaCanvas({
     cableAccess !== savedCableAccess ||
     arrangement !== savedArrangement ||
     internalArc !== savedInternalArc ||
+    hasBusduct !== savedHasBusduct ||
     (isArtuk ? artukHeight !== savedArtukHeight : panelHeightSetting !== savedPanelHeight) ||
     busbarHeight !== savedBusbarHeight ||
     JSON.stringify(busbarOverrides) !== JSON.stringify(savedBusbarOverrides);
 
   const bays = verticals.filter((v) => v.bay_type !== "unassigned").sort((a, b) => a.sort_order - b.sort_order);
+  const busductTotal = bays.reduce((s, v) => s + (v.busduct_entries ?? 0), 0);
   const unallocated = verticals.find((v) => v.bay_type === "unassigned") ?? null;
   const totalWidth = bays.reduce((s, v) => s + (v.width_mm ?? 0), 0);
 
@@ -814,6 +824,7 @@ export function GaCanvas({
       created_at: new Date().toISOString(),
       dummy_slot: null,
       dummy_height_mm: null,
+      busduct_entries: 0,
       placed: [],
     };
     created.sort_order = nextBaySortOrder();
@@ -1087,6 +1098,7 @@ export function GaCanvas({
     setCableAccess(savedCableAccess);
     setArrangement(savedArrangement);
     setInternalArc(savedInternalArc);
+    setHasBusduct(savedHasBusduct);
     setPanelHeight(savedPanelHeight);
     setArtukHeight(savedArtukHeight);
     setBusbarHeight(savedBusbarHeight);
@@ -1098,6 +1110,10 @@ export function GaCanvas({
 
   async function handleSave() {
     if (!sb || readOnly) return;
+    if (hasBusduct && busductTotal === 0) {
+      alert("Busduct entries is ticked for this panel — select a bay and add at least one busduct top entry before saving (or untick Busduct entries).");
+      return;
+    }
     setSaving(true);
     try {
       const tempVerticalIdMap = new Map<string, string>();
@@ -1117,6 +1133,7 @@ export function GaCanvas({
             sort_order: v.sort_order,
             dummy_slot: v.dummy_slot,
             dummy_height_mm: v.dummy_height_mm,
+            busduct_entries: v.busduct_entries ?? 0,
           })
           .select("id")
           .single();
@@ -1134,6 +1151,7 @@ export function GaCanvas({
         if (v.depth_mm !== prev.depth_mm) fieldPatch.depth_mm = v.depth_mm;
         if (v.dummy_slot !== prev.dummy_slot) fieldPatch.dummy_slot = v.dummy_slot;
         if (v.dummy_height_mm !== prev.dummy_height_mm) fieldPatch.dummy_height_mm = v.dummy_height_mm;
+        if ((v.busduct_entries ?? 0) !== (prev.busduct_entries ?? 0)) fieldPatch.busduct_entries = v.busduct_entries ?? 0;
         if (Object.keys(fieldPatch).length === 0) continue;
         const { error } = await supabase.from("verticals").update(fieldPatch).eq("id", v.id);
         if (error) throw new Error(error.message);
@@ -1241,6 +1259,7 @@ export function GaCanvas({
       if (cableAccess !== savedCableAccess) paramPatch.cable_access = cableAccess;
       if (arrangement !== savedArrangement) paramPatch.arrangement = arrangement;
       if (internalArc !== savedInternalArc) paramPatch.internal_arc = internalArc;
+      if (hasBusduct !== savedHasBusduct) paramPatch.has_busduct = hasBusduct;
       if (panelHeight !== savedPanelHeight) paramPatch.panel_height_mm = panelHeight;
       if (busbarHeight !== savedBusbarHeight) paramPatch.busbar_chamber_height_mm = busbarHeight;
       if (Object.keys(paramPatch).length > 0) {
@@ -1506,6 +1525,17 @@ export function GaCanvas({
               </select>
             </Field>
           )}
+          <Field label="Busduct Entries">
+            <label className="flex items-center gap-1.5 py-1 text-xs">
+              <input type="checkbox" disabled={readOnly} checked={hasBusduct} onChange={(e) => setHasBusduct(e.target.checked)} />
+              Top busduct entry
+              {hasBusduct && (
+                <span className={`ml-1 rounded px-1 text-[10px] font-semibold ${busductTotal ? "bg-violet-100 text-violet-700" : "bg-red-100 text-red-700"}`}>
+                  {busductTotal ? `${busductTotal} in GA` : "add ≥1 in a bay"}
+                </span>
+              )}
+            </label>
+          </Field>
           {isArtuk && (
             <Field label="Internal Arc">
               <label className="flex items-center gap-1.5 py-1 text-xs">
@@ -1721,6 +1751,28 @@ export function GaCanvas({
                         <ViewLabel>Front View</ViewLabel>
                       </div>
                     </div>
+
+                    {/* busduct top entries (violet), above each bay that has them */}
+                    {hasBusduct && (
+                      <div className="flex">
+                        <div style={{ width: RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX }} />
+                        <div className="flex">
+                          {bays.map((v) => (
+                            <div key={v.id} className="flex items-end justify-evenly" style={{ width: (v.width_mm ?? 0) * pxPerMm, height: 18 }}>
+                              {Array.from({ length: v.busduct_entries ?? 0 }, (_, k) => (
+                                <span
+                                  key={k}
+                                  data-ga-tip={`Busduct top entry ${k + 1} of ${v.busduct_entries} — ${v.name}`}
+                                  className="rounded-t bg-violet-600 px-1 font-mono text-[9px] font-bold leading-[14px] text-white"
+                                >
+                                  BD
+                                </span>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* bay widths across the top */}
                     <div className="flex">
@@ -1993,6 +2045,7 @@ export function GaCanvas({
                       cableAccess={cableAccess}
                       cableEntry={sb.cable_entry}
                       cableExit={sb.cable_exit}
+                      busductEntries={hasBusduct ? busductTotal : null}
                       form={sb.form_of_separation}
                       std={sb.std}
                     />
@@ -2087,6 +2140,10 @@ export function GaCanvas({
                     readOnly={readOnly}
                     onRename={(name) => selectedBay && renameBay(selectedBay.id, name)}
                     onDimChange={(field, val) => selectedBay && setBayDim(selectedBay.id, field, val)}
+                    busductEntries={hasBusduct && selectedBay ? (selectedBay.busduct_entries ?? 0) : null}
+                    onBusductChange={(n) =>
+                      selectedBay && setVerticals(verticals.map((v) => (v.id === selectedBay.id ? { ...v, busduct_entries: Math.max(0, n) } : v)))
+                    }
                     onDelete={() => {
                       if (!selectedBay) return;
                       deleteBay(selectedBay.id);
@@ -2392,6 +2449,7 @@ function PanelSummaryTable({
   cableAccess,
   cableEntry,
   cableExit,
+  busductEntries,
   form,
   std,
 }: {
@@ -2401,6 +2459,7 @@ function PanelSummaryTable({
   cableAccess: Switchboard["cable_access"];
   cableEntry: Switchboard["cable_entry"];
   cableExit: Switchboard["cable_exit"];
+  busductEntries: number | null;
   form: string | null;
   std: Switchboard["std"];
 }) {
@@ -2438,6 +2497,13 @@ function PanelSummaryTable({
             CABLE EXIT – <span className="text-red-600">{route(cableExit)}</span>
           </td>
         </tr>
+        {busductEntries != null && (
+          <tr>
+            <td colSpan={3} className={cell}>
+              BUSDUCT ENTRY – <span className="text-violet-700">TOP × {busductEntries}</span>
+            </td>
+          </tr>
+        )}
         <tr>
           <td colSpan={3} className={cell}>
             {[formText ? `FORM ${formText}` : null, stdText].filter(Boolean).join(", ") || "—"}
@@ -2810,6 +2876,8 @@ function BayDetailsPanel({
   readOnly,
   onRename,
   onDimChange,
+  busductEntries,
+  onBusductChange,
   onDelete,
   onClose,
 }: {
@@ -2817,6 +2885,9 @@ function BayDetailsPanel({
   readOnly: boolean;
   onRename: (name: string) => void;
   onDimChange: (field: "width_mm" | "depth_mm", value: string) => void;
+  // busduct top entries in this bay; null when the panel has no busducts
+  busductEntries: number | null;
+  onBusductChange: (n: number) => void;
   onDelete: () => void;
   onClose: () => void;
 }) {
@@ -2885,6 +2956,24 @@ function BayDetailsPanel({
         </label>
         <span className="pb-1.5 text-xs text-on-surface-variant">mm</span>
       </div>
+      {busductEntries != null && (
+        <div className="mb-3">
+          <span className="mb-1 block text-[10px] font-medium text-on-surface-variant">Busduct top entries</span>
+          <div className="flex items-center gap-2">
+            <button
+              disabled={readOnly || busductEntries === 0}
+              onClick={() => onBusductChange(busductEntries - 1)}
+              className="h-6 w-6 rounded border border-surface-container-high text-sm disabled:opacity-40"
+            >
+              −
+            </button>
+            <span className="w-6 text-center text-sm font-semibold text-violet-700">{busductEntries}</span>
+            <button disabled={readOnly} onClick={() => onBusductChange(busductEntries + 1)} className="h-6 w-6 rounded border border-surface-container-high text-sm disabled:opacity-40">
+              +
+            </button>
+          </div>
+        </div>
+      )}
       {!readOnly && (
         <button onClick={onDelete} className="font-body-sm text-body-sm text-error hover:underline">
           Delete bay
