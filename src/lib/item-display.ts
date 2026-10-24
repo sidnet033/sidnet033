@@ -41,6 +41,22 @@ export const BREAKER_FRAME_SUGGESTIONS: Record<"ACB" | "MCCB", string[]> = {
   MCCB: ["XT1", "XT2", "XT3", "XT4", "XT5", "XT6", "XT7", "T5", "T6", "T7", "A1", "A2", "A3", "P1", "P2", "P3"],
 };
 
+// ABB's Formula series (Formula ACB FA1/FA2/FA4, Formula MCCB A1/A2/A3) --
+// discouraged in ArTu-K panels. Recognised by frame, or "Formula" in the
+// description / vendor description.
+export function isFormulaSeries(item: {
+  category: string | null;
+  frame: string | null;
+  description: string | null;
+  vendor_description?: string | null;
+}): boolean {
+  const c = (item.category ?? "").trim().toUpperCase();
+  if (c !== "ACB" && c !== "MCCB") return false;
+  if (/^(FA\d|A[1-3])$/i.test((item.frame ?? "").trim())) return true;
+  const text = `${item.description ?? ""} ${item.vendor_description ?? ""}`;
+  return /formula/i.test(text) || /^\s*(FA\d|A[1-3])[A-Z]?\s/i.test(item.vendor_description ?? "");
+}
+
 // The one compulsory-field rule for creating/importing an item master row,
 // shared by CreateItemDialog, the item xlsx/Google Sheet import
 // (item-import.ts), and the feeder import's missing-item creation flow

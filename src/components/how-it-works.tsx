@@ -414,7 +414,8 @@ export function HowItWorks() {
                 and <b>block saving</b> the revision they&apos;re in until fixed: feeders rated above the switchboard Amps, an incomer rated below it,
                 undersized busbars, a main busbar with no rating. <span className="font-semibold text-amber-700">Warnings</span> are worth checking
                 but <b>don&apos;t stop you saving</b>: items or breakers rated below the switchboard kA, ArTuK bays below the switchboard IP or at a
-                non-standard size, hand-set bars that differ from the rules. Tick fixable lines and click <b>Apply selected fixes</b>; the rest say
+                non-standard size, hand-set bars that differ from the rules, ABB <b>Formula</b> series ACB / MCCB (FA1/FA2/FA4, A1–A3) in an
+                ArTuK panel (discouraged by ABB — also shown in BOM Builder). A panel ticked for busduct entries with none placed is an alert. Tick fixable lines and click <b>Apply selected fixes</b>; the rest say
                 where to fix them.
               </>,
               <>

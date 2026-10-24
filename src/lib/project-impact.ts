@@ -1,3 +1,4 @@
+import { isFormulaSeries } from "@/lib/item-display";
 import type { createClient } from "@/lib/supabase/client";
 import type {
   Feeder,
@@ -42,7 +43,7 @@ export type Densities = Record<BusbarMaterial, number>;
 
 // unpriced: the line's effective net rate is zero (no list price, line
 // override or net cost) -- it adds nothing to the cost
-export type FeederItemRating = { itemId: string; description: string; ka: number | null; unpriced: boolean };
+export type FeederItemRating = { itemId: string; description: string; ka: number | null; unpriced: boolean; formula: boolean };
 
 export type BoardData = {
   revision: { id: string; label: string };
@@ -176,7 +177,7 @@ export async function loadProjectData(
   const { data: fiRows } = feederIds.length
     ? await supabase
         .from("feeder_items")
-        .select("feeder_id, list_price_override, discount_pct_override, item:item_master(id, description, ka, unit_cost, list_price, discount_pct)")
+        .select("feeder_id, list_price_override, discount_pct_override, item:item_master(id, description, ka, unit_cost, list_price, discount_pct, category, frame, vendor_description)")
         .in("feeder_id", feederIds)
     : { data: [] };
   const feederItems: Record<string, FeederItemRating[]> = {};
@@ -184,7 +185,17 @@ export async function loadProjectData(
     feeder_id: string;
     list_price_override: number | null;
     discount_pct_override: number | null;
-    item: { id: string; description: string; ka: number | null; unit_cost: number; list_price: number | null; discount_pct: number | null } | null;
+    item: {
+      id: string;
+      description: string;
+      ka: number | null;
+      unit_cost: number;
+      list_price: number | null;
+      discount_pct: number | null;
+      category: string | null;
+      frame: string | null;
+      vendor_description: string | null;
+    } | null;
   };
   for (const r of (fiRows ?? []) as unknown as FiRow[]) {
     if (!r.item) continue;
@@ -198,6 +209,7 @@ export async function loadProjectData(
       description: r.item.description,
       ka: r.item.ka != null ? Number(r.item.ka) : null,
       unpriced: !(net > 0),
+      formula: isFormulaSeries(r.item),
     });
   }
 
@@ -314,6 +326,19 @@ export function auditBoard(
     for (const p of v.placed) {
       if (pricedChecked.has(p.feeder.id)) continue;
       pricedChecked.add(p.feeder.id);
+      if (sb.std === "ArTuK") {
+        for (const it of (board.feederItems[p.feeder.id] ?? []).filter((i) => i.formula)) {
+          items.push({
+            ...base,
+            id: `${sb.id}|formula|${p.feeder.id}|${it.itemId}`,
+            area: "BOM",
+            severity: "warning",
+            message: `"${it.description}" (in ${p.feeder.name}) is ABB Formula series — discouraged in ArTuK panels; prefer Emax 2 / Tmax XT.`,
+            apply: null,
+            applyLabel: null,
+          });
+        }
+      }
       if ((board.feederItems[p.feeder.id] ?? []).some((it) => it.unpriced)) {
         items.push({
           ...base,

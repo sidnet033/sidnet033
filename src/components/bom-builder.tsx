@@ -12,7 +12,7 @@ import { ensureUnassignedVertical } from "@/lib/switchboard-bom";
 import { effectiveNetRate } from "@/lib/feeder-cost";
 import { computeFeederTag } from "@/lib/feeder-tag";
 import { DEVICE_TYPE_LABELS, MOTOR_STARTER_TYPES } from "@/lib/artuk-sizing";
-import { itemCode, itemRowClass } from "@/lib/item-display";
+import { isFormulaSeries, itemCode, itemRowClass } from "@/lib/item-display";
 import { numericGridKeys, numericKeyGuard } from "@/lib/numeric-input";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
@@ -311,6 +311,20 @@ export function BomBuilder({
         if (seenKa.has(key)) continue;
         seenKa.add(key);
         kaWarnings.push({ key, feeder: m.feeder.name, item: l.item.description, ka: Number(l.item.ka) });
+      }
+    }
+  }
+
+  // ArTu-K panels: ABB's Formula series ACB/MCCB is discouraged -- a warning
+  const formulaWarnings: { key: string; feeder: string; item: string }[] = [];
+  if (sb?.std === "ArTuK" && draft) {
+    const seen = new Set<string>();
+    for (const m of draft.modules) {
+      for (const l of m.lines) {
+        const key = `${m.feeder.id}|${l.item_id}`;
+        if (seen.has(key) || !isFormulaSeries(l.item)) continue;
+        seen.add(key);
+        formulaWarnings.push({ key, feeder: m.feeder.name, item: l.item.description });
       }
     }
   }
@@ -990,6 +1004,22 @@ export function BomBuilder({
           </p>
           </>
           )}
+        </div>
+      )}
+
+      {formulaWarnings.length > 0 && (
+        <div className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-4 py-2 text-sm text-on-surface">
+          <p className="flex items-center gap-2 font-semibold text-amber-800">
+            <Icon name="warning" size={18} /> Warning: ABB&apos;s Formula series ACB / MCCB is discouraged in ArTuK panels
+          </p>
+          <ul className="mt-1 list-disc pl-6 text-xs">
+            {formulaWarnings.map((w) => (
+              <li key={w.key}>
+                <b>{w.item}</b> in {w.feeder}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-xs text-on-surface-variant">You can still save. Prefer Emax 2 ACBs and Tmax XT / T MCCBs.</p>
         </div>
       )}
 
