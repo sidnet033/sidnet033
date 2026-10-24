@@ -329,7 +329,9 @@ export function HowItWorks() {
                 ABB&apos;s value again). <b>Arrangement</b> (next to Cable Access) is Single front by default; Double front is ABB&apos;s back-to-back
                 layout. MCC bay depth follows ABB: rear access 1037mm; front access 637mm (single-run busbar) or 837mm (two runs); double front
                 1037mm up to 2000A, 1237mm at 2500A. Front-access and double-front ArTu-K are type-tested to 50kA 1s and Form 3b (double front up
-                to 2500A) — the checks warn beyond that.
+                to 2500A) — the checks warn beyond that. <b>Internal Arc</b> (tick box next to Arrangement) switches the enclosure parts to
+                ABB&apos;s internal-arc design. Busbar supports are drawn as <span className="font-semibold text-pink-600">pink</span> marks on the
+                main and vertical busbars (hover for the part and span) and counted in the BOM.
                 The drawing shows bay widths along the top, feeder widths along the bottom, and on the left the overall height from the floor and
                 the height without the baseframe. In the side view each device sits at the front, as deep as the device; the vertical busbars
                 are at the rear and the horizontal main busbar in the front part of the chamber. <b>Fit width</b> zooms out so the whole panel
@@ -785,7 +787,14 @@ function DimensionsReference() {
               </tr>
               <tr className="border-b border-surface-container-high/60 align-top">
                 <td className="py-1.5 pr-3 font-medium">Main busbar supports</td>
-                <td className="py-1.5 pr-3">Per switchgear bay: 1–2 runs 551060-T6 ×2, 3 runs 551090-T3 ×3, 4 runs 551040-T1A INTL ×3 + neutral support ×3; bays under 900mm deep MXM8224NS / MXM6514NS ×2.</td>
+                <td className="py-1.5 pr-3">
+                  Placed by ABB&apos;s rules and drawn <span className="font-semibold text-pink-600">pink</span> in the GA front view. Max span between
+                  supports (busbar chart): ACB boards Cu 350mm at 50kA, 325mm at 65kA, 275mm at 100kA; Al 450 / 380mm; MCCB-fed boards Cu 425mm at
+                  36kA, 350 at 50kA, 325 at 65kA; Al 450 / 380mm. Main busbar per bay as ABB builds its bays: 720w 2, 920w / 1120w 3, 1320w 4 (more
+                  above 50kA if the span needs it; other widths by span). Vertical busbars by span, at least 2 (4 with internal arc). Part by runs per
+                  phase: 1–2R 551060-T6, 3R 551090-T3, 4R 551040-T1A INTL + neutral support (551040-T1NFA 100% / 551040-T2NHA 50%); bays under
+                  900mm deep MXM6514NS / MXM8224NS.
+                </td>
               </tr>
               <tr className="border-b border-surface-container-high/60 align-top">
                 <td className="py-1.5 pr-3 font-medium">ACB bay</td>
@@ -802,6 +811,23 @@ function DimensionsReference() {
               <tr className="border-b border-surface-container-high/60 align-top">
                 <td className="py-1.5 pr-3 font-medium">Line-up</td>
                 <td className="py-1.5 pr-3">One N°2 side-panel set LF20xx-1 for the deepest bay (both ends), lifting eyebolts AA9610-1, and per joint between bays a coupling kit AD1014 and lifting reinforcement SA1350-1.</td>
+              </tr>
+              <tr className="border-b border-surface-container-high/60 align-top">
+                <td className="py-1.5 pr-3 font-medium">Internal arc</td>
+                <td className="py-1.5 pr-3">
+                  Tick &ldquo;Internal Arc&rdquo; in GA Builder (ABB ELSP/ARTU-K/ENGG/04): top/base sets with arc flap &amp; gland plate (…-1FG / -2FG),
+                  2mm louvred rear panels (RF20x0-2H DML SPL) where ABB lists one, at least 4 vertical busbar supports. Also required but without a
+                  separate ABB code (flagged in the BOM): 2mm side panels and glass doors, recessed compartment doors with ≤3mm gaps, APR14/20 +
+                  AD1090 fixings, M12 grade 8.8 busbar bolts at 70Nm, ACB/MCCB conductor anchoring per ABB ENGG/03.
+                </td>
+              </tr>
+              <tr className="border-b border-surface-container-high/60 align-top">
+                <td className="py-1.5 pr-3 font-medium">Pricing</td>
+                <td className="py-1.5 pr-3">
+                  GI and CRCA parts are priced by weight: Item Master weight (kg) × the project&apos;s GI / CRCA rate (INR/kg, Project Detail).
+                  Other parts use their Item Master price. Item Master xls / Google Sheet imports take <b>material</b> (GI / CRCA) and{" "}
+                  <b>weight_kg</b> columns; a blank cell keeps what&apos;s already on file.
+                </td>
               </tr>
               <tr className="border-b border-surface-container-high/60 align-top">
                 <td className="py-1.5 pr-3 font-medium">Not automatic</td>

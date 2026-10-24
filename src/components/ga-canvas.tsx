@@ -54,6 +54,7 @@ import {
   type BusbarOverrideRow,
   type VerticalWithFeeders,
 } from "@/lib/ga-layout";
+import { planBusbarSupports } from "@/lib/busbar-supports";
 import { BusbarFrontOverlay, BusbarSchedule, BusbarSegmentPanel, BusbarSideOverlay } from "@/components/ga-busbar-layer";
 
 type PlacedWithFeeder = VerticalWithFeeders["placed"][number];
@@ -375,6 +376,8 @@ export function GaCanvas({
   const [savedCableAccess, setSavedCableAccess] = useState<Switchboard["cable_access"]>(null);
   const [arrangement, setArrangement] = useState<Switchboard["arrangement"]>("single_front");
   const [savedArrangement, setSavedArrangement] = useState<Switchboard["arrangement"]>("single_front");
+  const [internalArc, setInternalArc] = useState(false);
+  const [savedInternalArc, setSavedInternalArc] = useState(false);
   const [panelHeightSetting, setPanelHeight] = useState(2100);
   const [savedPanelHeight, setSavedPanelHeight] = useState(2100);
   const [busbarHeight, setBusbarHeight] = useState(BUSBAR_CHAMBER_HEIGHT_MM);
@@ -557,6 +560,8 @@ export function GaCanvas({
     setSavedCableAccess(data.switchboard.cable_access ?? null);
     setArrangement(data.switchboard.arrangement ?? "single_front");
     setSavedArrangement(data.switchboard.arrangement ?? "single_front");
+    setInternalArc(!!data.switchboard.internal_arc);
+    setSavedInternalArc(!!data.switchboard.internal_arc);
     setPanelHeight(panel);
     setSavedPanelHeight(panel);
     setArtukHeight(artukHeightOf(data.switchboard.panel_height_mm, busbar));
@@ -587,6 +592,8 @@ export function GaCanvas({
       setSavedCableAccess(data.switchboard.cable_access ?? null);
       setArrangement(data.switchboard.arrangement ?? "single_front");
       setSavedArrangement(data.switchboard.arrangement ?? "single_front");
+      setInternalArc(!!data.switchboard.internal_arc);
+      setSavedInternalArc(!!data.switchboard.internal_arc);
       setPanelHeight(panel);
       setSavedPanelHeight(panel);
       setArtukHeight(artukHeightOf(data.switchboard.panel_height_mm, busbar));
@@ -611,6 +618,7 @@ export function GaCanvas({
     plinthHeight !== savedPlinthHeight ||
     cableAccess !== savedCableAccess ||
     arrangement !== savedArrangement ||
+    internalArc !== savedInternalArc ||
     (isArtuk ? artukHeight !== savedArtukHeight : panelHeightSetting !== savedPanelHeight) ||
     busbarHeight !== savedBusbarHeight ||
     JSON.stringify(busbarOverrides) !== JSON.stringify(savedBusbarOverrides);
@@ -690,6 +698,20 @@ export function GaCanvas({
   // ABB height and hasn't been changed by hand this session; a custom
   // height is kept, with the ABB height offered in the chamber panel.
   const mainBar = busbarPlan?.segments.find((seg) => seg.kind === "main")?.bar ?? null;
+
+  // ArTuK busbar supports (ABB spans / per-bay counts), drawn pink in the
+  // front view and counted in the BOM's enclosure parts
+  const busbarSupports = isArtuk
+    ? planBusbarSupports({
+        plan: busbarPlan,
+        bays: bays.map((v, i) => ({ id: v.id, name: v.name, leftMm: bayOffsets[i], widthMm: v.width_mm ?? 0, depthMm: v.depth_mm })),
+        material: busbarMaterial,
+        ka: sb?.ka ?? null,
+        mccbBoard: !bays.some((v) => v.placed.some((p) => p.feeder.device_type === "ACB")),
+        internalArc,
+        poles: sb?.poles ?? 4,
+      })
+    : null;
   const abbChamberMm = isArtuk ? artukChamberHeightFor(mainBar) : null;
   if (chamberAuto && !readOnly && abbChamberMm != null && busbarHeight !== abbChamberMm) setBusbarHeight(abbChamberMm);
 
@@ -1064,6 +1086,7 @@ export function GaCanvas({
     setPlinthHeight(savedPlinthHeight);
     setCableAccess(savedCableAccess);
     setArrangement(savedArrangement);
+    setInternalArc(savedInternalArc);
     setPanelHeight(savedPanelHeight);
     setArtukHeight(savedArtukHeight);
     setBusbarHeight(savedBusbarHeight);
@@ -1217,6 +1240,7 @@ export function GaCanvas({
       if (plinthHeight !== savedPlinthHeight) paramPatch.plinth_height_mm = plinthHeight;
       if (cableAccess !== savedCableAccess) paramPatch.cable_access = cableAccess;
       if (arrangement !== savedArrangement) paramPatch.arrangement = arrangement;
+      if (internalArc !== savedInternalArc) paramPatch.internal_arc = internalArc;
       if (panelHeight !== savedPanelHeight) paramPatch.panel_height_mm = panelHeight;
       if (busbarHeight !== savedBusbarHeight) paramPatch.busbar_chamber_height_mm = busbarHeight;
       if (Object.keys(paramPatch).length > 0) {
@@ -1480,6 +1504,14 @@ export function GaCanvas({
                 <option value="single_front">Single front</option>
                 <option value="double_front">Double front</option>
               </select>
+            </Field>
+          )}
+          {isArtuk && (
+            <Field label="Internal Arc">
+              <label className="flex items-center gap-1.5 py-1 text-xs">
+                <input type="checkbox" disabled={readOnly} checked={internalArc} onChange={(e) => setInternalArc(e.target.checked)} />
+                ABB internal arc design
+              </label>
             </Field>
           )}
           <ReadOnlyField label="Cable Entry" value={sb.cable_entry} />
@@ -1821,6 +1853,23 @@ export function GaCanvas({
                         </div>
                       )}
 
+                      {busbarSupports?.supports.map((sup) => (
+                        <div
+                          key={sup.id}
+                          data-ga-tip={`Busbar support ${sup.code}${sup.neutralCode ? ` + ${sup.neutralCode}` : ""} — ${sup.kind === "hbb" ? "main busbar" : "vertical busbar"}, span ≤${sup.spanMm}mm`}
+                          className="absolute z-20 rounded-sm bg-pink-500"
+                          style={
+                            sup.kind === "hbb"
+                              ? {
+                                  left: RULER_WIDTH_PX + sup.x * pxPerMm - 2,
+                                  top: busbarYPx(sup.y) - Math.max(chamberPx * 0.35, 5),
+                                  width: 4,
+                                  height: Math.max(chamberPx * 0.7, 10),
+                                }
+                              : { left: RULER_WIDTH_PX + sup.x * pxPerMm - 7, top: busbarYPx(sup.y) - 2, width: 14, height: 4 }
+                          }
+                        />
+                      ))}
                       {showBusbars && busbarPlan && (
                         <BusbarFrontOverlay
                           plan={busbarPlan}

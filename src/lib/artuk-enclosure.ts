@@ -2,7 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BayType, Feeder, PlacedFeeder, Switchboard, Vertical } from "@/types/database";
 import { suggestAcbFrame } from "@/lib/artuk-sizing";
 import { effectiveNetRate } from "@/lib/feeder-cost";
-import { bayFunctionOf, breakerFrameOf, type BusbarPlan } from "@/lib/busbar-plan";
+import { bayFunctionOf, breakerFrameOf, type BusbarMaterial, type BusbarPlan } from "@/lib/busbar-plan";
+import { planBusbarSupports } from "@/lib/busbar-supports";
 import {
   ARTUK_FIXED_MM,
   BUSBAR_CHAMBER_HEIGHT_MM,
@@ -27,8 +28,8 @@ import {
 //  - front door: glass for switchgear bays, metal for cable/busbar alleys;
 //    rear: hinged rear door (rear access) or rear cover (front access),
 //  - screws (AD1033-1 x5, APR14/20 x3), internal hinges (AD1090),
-//  - main busbar supports by runs per phase (1-2R 551060-T6 x2, 3R
-//    551090-T3 x3, 4R 551040-T1A INTL x3 + neutral support x3),
+//  - busbar supports: counted and placed by busbar-supports.ts (span by kA
+//    and material, per-bay minimums, part by runs per phase),
 //  - ACB bays: ACB kit + segregation kit by frame and bay width, 4
 //    segregation shelves, rear segregation 200x4 + 300x2 + 400x1, cross-
 //    pieces TV1005-1 x4 and TV1211-1 (x2 on 920w and wider); bus couplers
@@ -41,6 +42,10 @@ import {
 // Per line-up: one N°2 side-panel set (the deepest bay's depth), lifting
 // eyebolts, and for every joint between bays a coupling kit (AD1014) and
 // lifting reinforcement (SA1350-1).
+// Internal arc (ABB ELSP/ARTU-K/ENGG/04): top/base sets with arc flap and
+// gland plate (…-FG), 2mm louvred rear panels where ABB lists one, at least
+// 4 supports on every vertical busbar; 2mm side panels / glass doors and
+// recessed compartment doors have no separate code in ABB's list -- flagged.
 // Not modelled (add by hand): roof filters / louvred rear doors for
 // ventilation (per incomer rating), IP31/IP41 finishing kits, corner sets,
 // double-front ICC.
@@ -141,7 +146,21 @@ export type EnclosureInput = {
   chamberHeightMm: number;
   frontAccess: boolean;
   poles: number;
+  material: BusbarMaterial;
+  ka: number | null;
+  internalArc: boolean;
 };
+
+// top/base sets ABB makes with an arc flap + gland plate (or flap only)
+const FLAP_SETS = new Set([
+  "SK4080-1FG", "SK4010-1FG", "SK4012-1FG", "SK6080-1FG", "SK6010-1FG", "SK6012-1FG", "SK8080-1FG", "SK8010-1FG", "SK8012-1FG",
+  "SK8080-2FG", "SK8010-2FG", "SK8012-2FG", "SK1060-2FG", "SK1080-2FG", "SK1010-1FG", "SK1010-2FG", "SK1012-1FG", "SK1012-2FG",
+  "SK1260-2FG", "SK1280-2F", "SK1210-1FG", "SK1212-1FG", "SK1212-2FG",
+]);
+function flapSet(code: string): string | null {
+  const stem = code.replace(/-1$/, "");
+  return [`${stem}-1FG`, `${stem}-2FG`, `${stem}-2F`, `${stem}-1F`].find((c) => FLAP_SETS.has(c)) ?? null;
+}
 
 export function artukEnclosureBom(input: EnclosureInput): { lines: EnclosureLine[]; warnings: string[] } {
   const bays = input.verticals.filter((v) => v.bay_type !== "unassigned").sort((a, b) => a.sort_order - b.sort_order);
@@ -156,9 +175,34 @@ export function artukEnclosureBom(input: EnclosureInput): { lines: EnclosureLine
     lines.set(code, l);
   };
 
-  const main = input.plan?.segments.find((s) => s.kind === "main") ?? null;
-  const runs = main?.runs ?? 1;
-  const neutralRuns = main?.neutral?.runs ?? 0;
+  // busbar supports, placed along the main busbar and droppers
+  let left = 0;
+  const supportBays = bays.map((v) => {
+    const b = { id: v.id, name: v.name, leftMm: left, widthMm: v.width_mm ?? 0, depthMm: v.depth_mm };
+    left += v.width_mm ?? 0;
+    return b;
+  });
+  const mccbBoard = !bays.some((v) => v.placed.some((p) => p.feeder.device_type === "ACB"));
+  const sup = planBusbarSupports({
+    plan: input.plan,
+    bays: supportBays,
+    material: input.material,
+    ka: input.ka,
+    mccbBoard,
+    internalArc: input.internalArc,
+    poles: input.poles,
+  });
+  warnings.push(...sup.warnings);
+  for (const s of sup.supports) {
+    const what = `${s.bayName}: ${s.kind === "hbb" ? "main" : "vertical"} busbar support (span ≤${s.spanMm}mm)`;
+    add(s.code, 1, what);
+    add(s.neutralCode, 1, what);
+  }
+  if (input.internalArc) {
+    warnings.push(
+      "Internal arc: use 2mm side panels and glass doors, recessed compartment doors (gap ≤3mm), APR14/20 + AD1090 fixings, M12 8.8 busbar bolts at 70Nm, and ACB/MCCB conductor anchoring per ABB ENGG/03 — confirm the 2mm door/side-panel part codes with ABB."
+    );
+  }
 
   let deepest: number[] = [];
   for (const bay of bays) {
@@ -167,16 +211,18 @@ export function artukEnclosureBom(input: EnclosureInput): { lines: EnclosureLine
     const prefix = WIDTH_PREFIX[w];
     const inner = innerWidth(w);
     const sections = depthSections(bay.depth_mm ?? 1037);
+    const alley = isAlley(bay.bay_type as BayType | null);
     if (sections.length > deepest.length || (sections[0] ?? 0) > (deepest[0] ?? 0)) deepest = sections;
     if (!prefix) {
       warnings.push(`${name}: ${w}mm isn't an ArTuK bay width (420/510/720/920/1120/1320) — its enclosure parts aren't listed.`);
       continue;
     }
-    const alley = isAlley(bay.bay_type as BayType | null);
-
     // structure
     sections.forEach((d, i) => {
-      add(`${prefix}${DEPTH_CODE[d]}-1`, 1, `${name}: top/base set ${w}x${d}`);
+      const set = `${prefix}${DEPTH_CODE[d]}-1`;
+      const arcSet = input.internalArc && i === 0 && !alley ? flapSet(set) : null;
+      if (input.internalArc && i === 0 && !alley && !arcSet) warnings.push(`${name}: no ABB top/base set with arc flap for ${w}x${d} — check with ABB.`);
+      add(arcSet ?? set, 1, `${name}: top/base set ${w}x${d}${arcSet ? " with arc flap & gland plate" : ""}`);
       add(`SK${H}00-1`, 1, `${name}: uprights`);
       if (i > 0) {
         add("TV1251-1", 2, `${name}: ${d}mm depth extension`);
@@ -195,22 +241,15 @@ export function artukEnclosureBom(input: EnclosureInput): { lines: EnclosureLine
     // switchgear bay: frames, door, rear, hinges
     add(`SK${H}02-1`, 1, `${name}: functional frames`);
     add(inner === 1200 ? (H === "20" ? "PV2012/2-1" : `PV${H}81/2-1`) : `PV${H}${DOOR_W[inner] ?? "61"}-1`, 1, `${name}: glass door`);
+    const arcRear = input.internalArc && H === "20" && [600, 800].includes(inner) ? `RF20${REAR_W[inner]}-2H DML SPL` : null;
+    if (input.internalArc && !arcRear) warnings.push(`${name}: no 2mm ABB rear panel listed for ${inner}mm — check with ABB.`);
     add(
-      inner === 1200 && H === "20" && !input.frontAccess ? "RF2012-2H" : `RF${H}${REAR_W[inner] ?? "60"}-1${input.frontAccess || inner === 1200 ? "" : "H"}`,
+      arcRear ??
+        (inner === 1200 && H === "20" && !input.frontAccess ? "RF2012-2H" : `RF${H}${REAR_W[inner] ?? "60"}-1${input.frontAccess || inner === 1200 ? "" : "H"}`),
       1,
-      `${name}: rear ${input.frontAccess ? "cover" : "door"}`
+      `${name}: rear ${input.frontAccess ? "cover" : "door"}${arcRear ? " (2mm, internal arc)" : ""}`
     );
     add("AD1090", 1, `${name}: internal door hinges`);
-
-    // main busbar supports
-    if ((bay.depth_mm ?? 1037) < 900) {
-      add(runs >= 2 ? "MXM8224NS" : "MXM6514NS", 2, `${name}: busbar supports (${runs}R)`);
-    } else if (runs <= 2) add("551060-T6", 2, `${name}: main busbar supports (${runs}R)`);
-    else if (runs === 3) add("551090-T3", 3, `${name}: main busbar supports (3R)`);
-    else {
-      add("551040-T1A INTL", 3, `${name}: main busbar supports (${runs}R)`);
-      if (input.poles >= 4) add(neutralRuns >= runs ? "551040-T1NFA" : "551040-T2NHA", 3, `${name}: neutral busbar supports`);
-    }
 
     const compartments = computeCompartments(bay, input.panelHeightMm);
     const feederOf = (placedId?: string) => bay.placed.find((p) => p.id === placedId)?.feeder as Feeder | undefined;
@@ -261,7 +300,6 @@ export function artukEnclosureBom(input: EnclosureInput): { lines: EnclosureLine
       }
       add(structureDepth >= 1030 ? "TV1005-1" : "TV6005-1", 4, `${name}: crosspieces (vertical)`);
       add(structureDepth >= 1030 ? "TV1211-1" : "TV1261-1", 1, `${name}: crosspieces (under roof)`);
-      add("551060-T6", 4, `${name}: dropper busbar supports`);
     }
 
     // compartments other than ACBs
@@ -301,6 +339,9 @@ export function artukEnclosureBom(input: EnclosureInput): { lines: EnclosureLine
 
 export type EnclosureTakeoffLine = EnclosureLine & {
   description: string;
+  // GI / CRCA parts are priced by weight x the project's per-kg rate
+  material: string | null;
+  weightKg: number | null;
   rate: number;
   amount: number;
   inItemMaster: boolean;
@@ -315,7 +356,8 @@ export type EnclosureTakeoff = {
   warnings: string[];
 };
 
-type ProjectSettings = { busbar_density_cu: number; busbar_density_al: number };
+type ProjectSettings = { busbar_density_cu: number; busbar_density_al: number; enclosure_rate_gi: number; enclosure_rate_crca: number };
+export type SteelRates = { GI: number; CRCA: number };
 
 // Loads the GA and prices the ArTuK enclosure BOM from Item Master. Null
 // when the switchboard isn't ArTuK.
@@ -324,7 +366,7 @@ export async function loadEnclosureTakeoff(supabase: SupabaseClient, sb: Switchb
   const [{ data: vRows }, { data: oRows }, { data: rev }] = await Promise.all([
     supabase.from("verticals").select("*").eq("switchboard_id", sb.id).order("sort_order"),
     supabase.from("busbar_overrides").select("*").eq("switchboard_id", sb.id),
-    supabase.from("revisions").select("project:projects(busbar_density_cu, busbar_density_al)").eq("id", sb.revision_id).single(),
+    supabase.from("revisions").select("project:projects(busbar_density_cu, busbar_density_al, enclosure_rate_gi, enclosure_rate_crca)").eq("id", sb.revision_id).single(),
   ]);
   const verticals = (vRows ?? []) as Vertical[];
   const vIds = verticals.map((v) => v.id);
@@ -356,24 +398,57 @@ export async function loadEnclosureTakeoff(supabase: SupabaseClient, sb: Switchb
     chamberHeightMm: chamber,
     frontAccess: sb.cable_access === "Front",
     poles: sb.poles ?? 4,
+    material: sb.busbar ?? "Cu",
+    ka: sb.ka,
+    internalArc: sb.internal_arc,
   });
   if (sb.arrangement === "double_front")
     bom.warnings.push("Double front: ABB's ICC parts for double-front (VC20xx-1DF) and the rear-side doors aren't listed automatically — add them below.");
-  return priceEnclosure(supabase, bom);
+  return priceEnclosure(supabase, bom, { GI: Number(project?.enclosure_rate_gi ?? 0), CRCA: Number(project?.enclosure_rate_crca ?? 0) });
 }
 
-export async function priceEnclosure(supabase: SupabaseClient, bom: { lines: EnclosureLine[]; warnings: string[] }): Promise<EnclosureTakeoff> {
+// A part's rate: GI / CRCA parts with a weight = weight x the project's
+// per-kg rate for that steel; anything else its Item Master net rate.
+export async function priceEnclosure(
+  supabase: SupabaseClient,
+  bom: { lines: EnclosureLine[]; warnings: string[] },
+  steel: SteelRates
+): Promise<EnclosureTakeoff> {
   const codes = bom.lines.map((l) => l.code);
   const { data: items } = codes.length
-    ? await supabase.from("item_master").select("sku, description, unit_cost, list_price, discount_pct").in("sku", codes)
+    ? await supabase.from("item_master").select("sku, description, unit_cost, list_price, discount_pct, material, weight_kg").in("sku", codes)
     : { data: [] };
-  type Row = { sku: string; description: string; unit_cost: number; list_price: number | null; discount_pct: number | null };
+  type Row = {
+    sku: string;
+    description: string;
+    unit_cost: number;
+    list_price: number | null;
+    discount_pct: number | null;
+    material: string | null;
+    weight_kg: number | null;
+  };
   const bySku = new Map(((items ?? []) as Row[]).map((r) => [r.sku, r]));
   const lines = bom.lines
     .map((l) => {
       const item = bySku.get(l.code);
-      const rate = item ? effectiveNetRate({ unit_cost: Number(item.unit_cost), list_price: item.list_price, discount_pct: item.discount_pct }) : 0;
-      return { ...l, description: item?.description ?? "Not in Item Master", rate, amount: rate * l.qty, inItemMaster: !!item, priced: rate > 0 };
+      const material = item?.material ?? null;
+      const weightKg = item?.weight_kg != null ? Number(item.weight_kg) : null;
+      const byWeight = (material === "GI" || material === "CRCA") && weightKg != null && weightKg > 0;
+      const rate = !item
+        ? 0
+        : byWeight
+          ? weightKg! * steel[material as keyof SteelRates]
+          : effectiveNetRate({ unit_cost: Number(item.unit_cost), list_price: item.list_price, discount_pct: item.discount_pct });
+      return {
+        ...l,
+        description: item?.description ?? "Not in Item Master",
+        material,
+        weightKg,
+        rate,
+        amount: rate * l.qty,
+        inItemMaster: !!item,
+        priced: rate > 0,
+      };
     })
     .sort((a, b) => a.code.localeCompare(b.code));
   return {

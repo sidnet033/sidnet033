@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
 import { createClient } from "@/lib/supabase/server";
-import { importItemRows, parseBooleanCell, parseMrpOrLpCell, type ParsedItemRow } from "@/lib/item-import";
+import { importItemRows, parseBooleanCell, parseMaterialCell, parseMrpOrLpCell, parseWeightCell, type ParsedItemRow } from "@/lib/item-import";
 
 // Reads item master rows from a Google Sheet and imports them into
 // item_master. The sheet's first row must be a header with description and
@@ -83,6 +83,8 @@ export async function POST() {
           status: get("status").toLowerCase() || "active",
           amps: get("amps") ? Number(get("amps")) : null,
           frame: get("frame") || null,
+          material: parseMaterialCell(get("material")),
+          weight_kg: parseWeightCell(get("weight_kg") || get("weight")),
           ka: get("ka") ? Number(get("ka")) : null,
           poles: get("poles") ? Number(get("poles")) : null,
           uom: get("uom") || "nos",

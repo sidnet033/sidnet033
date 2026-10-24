@@ -1730,6 +1730,11 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
                     <td className="px-3 py-1 pl-8">
                       <span className="mr-2 font-mono text-[11px]">{l.code}</span>
                       <span className={l.inItemMaster ? "" : "text-error"}>{l.description}</span>
+                      {l.material && l.weightKg != null && (
+                        <span className="ml-2 text-[10px] text-on-surface-variant">
+                          {l.weightKg} kg {l.material}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-1 text-right tabular-nums">{l.qty}</td>
                     <td className={`px-3 py-1 text-right tabular-nums ${l.priced ? "" : "text-error"}`}>{money(l.rate)}</td>
@@ -1740,7 +1745,7 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
               <tr className="border-t border-surface-container">
                 <td colSpan={5} className={`px-3 py-1 text-[11px] ${enclosureAuto.unpriced + enclosureAuto.missing > 0 ? "text-error" : "text-on-surface-variant"}`}>
                   {enclosureAuto.unpriced + enclosureAuto.missing > 0
-                    ? `${enclosureAuto.unpriced} part code(s) have no price in Item Master${enclosureAuto.missing ? ` and ${enclosureAuto.missing} aren't in Item Master` : ""} — load ABB's price list (category "ArTuK Enclosure") so the enclosure is costed. `
+                    ? `${enclosureAuto.unpriced} part code(s) aren't priced${enclosureAuto.missing ? ` and ${enclosureAuto.missing} aren't in Item Master` : ""} — GI / CRCA parts need a material and weight in Item Master and the project's GI / CRCA rate (Project Detail); other parts need a price in Item Master. `
                     : ""}
                   Built from the GA bay by bay using ABB&apos;s assembly kit lists; hover a part for where it&apos;s used. Add lines below for anything else (roof filters, louvres, finishing kits).
                   {enclosureAuto.warnings.map((w, i) => (

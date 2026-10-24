@@ -15,6 +15,8 @@ export type ParsedItemRow = {
   status: string;
   amps: number | null;
   frame: string | null;
+  material: string | null;
+  weight_kg: number | null;
   ka: number | null;
   poles: number | null;
   uom: string;
@@ -28,6 +30,21 @@ export type ParsedItemRow = {
   hsn_code: string | null;
   vendor_description: string | null;
 };
+
+// Sheet-steel material for ArTu-K enclosure parts: GI (galvanised) or CRCA;
+// other text is kept as typed (upper-cased), blank is null.
+export function parseMaterialCell(v: string): string | null {
+  const t = v.trim().toUpperCase();
+  if (!t) return null;
+  if (t === "GI" || t.startsWith("GALVAN")) return "GI";
+  if (t.startsWith("CRCA") || t.startsWith("CR ")) return "CRCA";
+  return t;
+}
+
+export function parseWeightCell(v: string): number | null {
+  const n = Number(v.replace(/[^0-9.]/g, ""));
+  return v.trim() && Number.isFinite(n) ? n : null;
+}
 
 // Shared true/false parsing for the "pricelisted" column in both the .xlsx
 // upload and the Google Sheet sync -- accepts the common spellings someone
@@ -189,26 +206,29 @@ export async function importItemRows(
   let done = summary.skipped.length;
   const total = rows.length;
 
-  // An update row with a blank frame keeps the item's existing frame (frames
-  // were backfilled from descriptions and the sheet may not carry them).
-  // Rows with and without a frame go in separate batches, because an
-  // upsert batch writes the same columns for every row.
+  // An update row with a blank frame / material / weight keeps the item's
+  // existing value (frames were backfilled from descriptions, and a sheet
+  // may not carry these columns). Rows are batched by which of these they
+  // carry, because an upsert batch writes the same columns for every row.
+  const KEEP_IF_BLANK = ["frame", "material", "weight_kg"] as const;
+  const blankKeys = (r: Resolved) => KEEP_IF_BLANK.filter((k) => r.data[k] == null);
   const rowOf = (r: Resolved, mode: "insert" | "update") => {
-    const { frame, ...rest } = r.data;
-    return mode === "update" && frame == null
-      ? { ...rest, id: r.id, updated_at: new Date().toISOString() }
-      : { ...r.data, id: r.id, updated_at: new Date().toISOString() };
+    const row: Record<string, unknown> = { ...r.data, id: r.id, updated_at: new Date().toISOString() };
+    if (mode === "update") for (const k of blankKeys(r)) delete row[k];
+    return row;
   };
 
   async function writeChunked(items: Resolved[], mode: "insert" | "update") {
     for (let i = 0; i < items.length; i += CHUNK_SIZE) {
       const chunk = items.slice(i, i + CHUNK_SIZE);
       if (mode === "update") {
-        const withFrame = chunk.filter((r) => r.data.frame != null);
-        const without = chunk.filter((r) => r.data.frame == null);
-        if (withFrame.length && without.length) {
-          await writeChunked(withFrame, mode);
-          await writeChunked(without, mode);
+        const groups = new Map<string, Resolved[]>();
+        for (const r of chunk) {
+          const sig = blankKeys(r).join(",");
+          groups.set(sig, [...(groups.get(sig) ?? []), r]);
+        }
+        if (groups.size > 1) {
+          for (const g of groups.values()) await writeChunked(g, mode);
           continue;
         }
       }

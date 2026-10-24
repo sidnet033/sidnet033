@@ -3,13 +3,14 @@
 import { useRef, useState } from "react";
 import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase/client";
-import { importItemRows, logImport, parseBooleanCell, parseMrpOrLpCell, type ImportSummary, type ParsedItemRow } from "@/lib/item-import";
+import { importItemRows, logImport, parseBooleanCell, parseMaterialCell, parseMrpOrLpCell, parseWeightCell, type ImportSummary, type ParsedItemRow } from "@/lib/item-import";
 import { Icon } from "@/components/icon";
 
 // Expected columns in the sheet's header row (any order, case-insensitive):
 // sku, vendor_cat, description, make, category, source, status, amps,
 // frame, ka, poles, uom, unit_cost, list_price, discount_pct, supplier,
-// notes, pricelisted, mrp_or_lp, hsn_code, vendor_description. Every row
+// notes, pricelisted, mrp_or_lp, hsn_code, vendor_description, material
+// (GI / CRCA), weight_kg (or "weight"). Every row
 // needs a sku or a vendor_cat (or both), a description, and a Source
 // (Design or Estimation) — everything else is optional. frame only means
 // anything for ACB/MCCB/MCB items, but it's a plain optional column like
@@ -86,6 +87,8 @@ export function XlsUpload({ onDone, currentUserName }: { onDone: () => void; cur
             status: cellText("status").trim().toLowerCase() || "active",
             amps: cellText("amps") ? Number(cellText("amps")) : null,
             frame: cellText("frame").trim() || null,
+            material: parseMaterialCell(cellText("material")),
+            weight_kg: parseWeightCell(cellText("weight_kg") || cellText("weight")),
             ka: cellText("ka") ? Number(cellText("ka")) : null,
             poles: cellText("poles") ? Number(cellText("poles")) : null,
             uom: cellText("uom").trim() || "nos",

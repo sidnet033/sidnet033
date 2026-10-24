@@ -24,6 +24,8 @@ const EMPTY_DRAFT = {
   status: "active" as ItemStatus,
   amps: "",
   frame: "",
+  material: "",
+  weight_kg: "",
   ka: "",
   poles: "",
   uom: "nos",
@@ -52,6 +54,8 @@ const CSV_FIELDS: (keyof ItemMaster)[] = [
   "frame",
   "ka",
   "poles",
+  "material",
+  "weight_kg",
   "uom",
   "unit_cost",
   "list_price",
@@ -93,6 +97,8 @@ type ColumnKey =
   | "discount_pct"
   | "amps"
   | "frame"
+  | "material"
+  | "weight_kg"
   | "poles"
   | "ka"
   | "status"
@@ -116,6 +122,8 @@ const ALL_COLUMNS: ColumnKey[] = [
   "frame",
   "poles",
   "ka",
+  "material",
+  "weight_kg",
   "status",
   "pricelisted",
   "mrp_or_lp",
@@ -136,6 +144,8 @@ const COLUMN_LABELS: Record<ColumnKey, string> = {
   discount_pct: "Disc %",
   amps: "Amps",
   frame: "Frame",
+  material: "Material",
+  weight_kg: "Weight (kg)",
   poles: "Poles",
   ka: "kA",
   status: "Status",
@@ -158,6 +168,8 @@ const COLUMN_ALIGN: Record<ColumnKey, "left" | "right" | "center"> = {
   discount_pct: "center",
   amps: "right",
   frame: "center",
+  material: "center",
+  weight_kg: "right",
   poles: "center",
   ka: "right",
   status: "left",
@@ -180,6 +192,8 @@ const CELL_CLASS: Record<ColumnKey, string> = {
   discount_pct: "px-2 text-center",
   amps: "px-2 text-right font-display font-semibold tabular-nums text-on-surface",
   frame: "px-2 text-center font-display text-secondary",
+  material: "px-2 text-center font-display text-secondary",
+  weight_kg: "px-2 text-right font-display tabular-nums text-on-surface",
   poles: "px-2 text-center font-display tabular-nums text-on-surface",
   ka: "px-2 text-right font-display font-bold tabular-nums text-primary",
   status: "px-2",
@@ -271,6 +285,8 @@ function draftToRow(d: Draft) {
     status: d.status,
     amps: d.amps.trim() ? Number(d.amps) : null,
     frame: d.frame.trim() || null,
+    material: d.material.trim().toUpperCase() || null,
+    weight_kg: d.weight_kg.trim() ? Number(d.weight_kg) : null,
     ka: d.ka.trim() ? Number(d.ka) : null,
     poles: d.poles.trim() ? Number(d.poles) : null,
     uom: d.uom.trim() || "nos",
@@ -619,6 +635,8 @@ export function ItemMasterTable({
       status: item.status,
       amps: item.amps === null ? "" : String(item.amps),
       frame: item.frame ?? "",
+      material: item.material ?? "",
+      weight_kg: item.weight_kg === null ? "" : String(item.weight_kg),
       ka: item.ka === null ? "" : String(item.ka),
       poles: item.poles === null ? "" : String(item.poles),
       uom: item.uom,
@@ -772,6 +790,10 @@ export function ItemMasterTable({
         return item.amps ?? "—";
       case "frame":
         return item.frame || "—";
+      case "material":
+        return item.material || "—";
+      case "weight_kg":
+        return item.weight_kg ?? "—";
       case "poles":
         return item.poles ?? "—";
       case "ka":
@@ -840,6 +862,17 @@ export function ItemMasterTable({
             onChange={(e) => setEditDraft({ ...editDraft, frame: e.target.value })}
           />
         );
+      case "material":
+        return (
+          <select className="rounded border px-1 py-0.5" value={editDraft.material} onChange={(e) => setEditDraft({ ...editDraft, material: e.target.value })}>
+            <option value="">—</option>
+            <option value="GI">GI</option>
+            <option value="CRCA">CRCA</option>
+            {editDraft.material && !["GI", "CRCA"].includes(editDraft.material) && <option value={editDraft.material}>{editDraft.material}</option>}
+          </select>
+        );
+      case "weight_kg":
+        return <input type="text" inputMode="decimal" onKeyDown={numericKeyGuard()} className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.weight_kg} onChange={(e) => setEditDraft({ ...editDraft, weight_kg: e.target.value })} />;
       case "poles":
         return <input type="text" inputMode="numeric" onKeyDown={numericKeyGuard()} className="w-14 rounded border px-1 py-0.5 text-right" value={editDraft.poles} onChange={(e) => setEditDraft({ ...editDraft, poles: e.target.value })} />;
       case "ka":

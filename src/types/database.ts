@@ -66,6 +66,10 @@ export type ItemMaster = {
   frame: string | null;
   ka: number | null;
   poles: number | null;
+  // ArTu-K enclosure parts: sheet steel material (GI / CRCA) and weight,
+  // priced as weight x the project's per-kg rate for that material
+  material: string | null;
+  weight_kg: number | null;
   uom: string;
   unit_cost: number;
   list_price: number | null;
@@ -145,6 +149,8 @@ export type Project = {
   busbar_density_al: number;
   busbar_rate_cu: number;
   busbar_rate_al: number;
+  enclosure_rate_gi: number;
+  enclosure_rate_crca: number;
 };
 
 export type Consultant = { id: string; name: string; created_by: string | null; created_at: string };
@@ -200,6 +206,8 @@ export type Switchboard = {
   cable_access: "Front" | "Rear" | null;
   // ArTu-K: single front (default) or double front (back-to-back feeders)
   arrangement: "single_front" | "double_front";
+  // ArTu-K internal arc compliance (ABB ELSP/ARTU-K/ENGG/04)
+  internal_arc: boolean;
   std: "ArTuK" | "61439" | "60439" | null;
   qty: number;
   sort_order: number;

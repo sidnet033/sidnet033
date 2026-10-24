@@ -81,6 +81,8 @@ type ProjectPatch = {
   busbar_density_al: number;
   busbar_rate_cu: number;
   busbar_rate_al: number;
+  enclosure_rate_gi: number;
+  enclosure_rate_crca: number;
 };
 
 function densitiesOf(p: ProjectPatch): Densities {
@@ -105,6 +107,8 @@ function snapshotOf(project: Project): ProjectPatch {
     busbar_density_al: project.busbar_density_al,
     busbar_rate_cu: project.busbar_rate_cu,
     busbar_rate_al: project.busbar_rate_al,
+    enclosure_rate_gi: project.enclosure_rate_gi,
+    enclosure_rate_crca: project.enclosure_rate_crca,
   };
 }
 
@@ -818,6 +822,24 @@ export function ProjectDetailTab({
                     value={form.busbar_rate_al}
                     allowZero
                     onCommit={(v) => patch("busbar_rate_al", v)}
+                  />
+                </Field>
+                <Field label="Enclosure Steel Rate — GI (INR/kg)">
+                  <DensityInput
+                    key={`rgi-${savedSnapshot.enclosure_rate_gi}`}
+                    disabled={revisionArchived}
+                    value={form.enclosure_rate_gi}
+                    allowZero
+                    onCommit={(v) => patch("enclosure_rate_gi", v)}
+                  />
+                </Field>
+                <Field label="Enclosure Steel Rate — CRCA (INR/kg)">
+                  <DensityInput
+                    key={`rcrca-${savedSnapshot.enclosure_rate_crca}`}
+                    disabled={revisionArchived}
+                    value={form.enclosure_rate_crca}
+                    allowZero
+                    onCommit={(v) => patch("enclosure_rate_crca", v)}
                   />
                 </Field>
               </div>

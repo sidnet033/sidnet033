@@ -19,6 +19,8 @@ const EMPTY_DRAFT = {
   status: "active" as ItemStatus,
   amps: "",
   frame: "",
+  material: "",
+  weight_kg: "",
   ka: "",
   poles: "",
   uom: "nos",
@@ -68,6 +70,8 @@ function draftToRow(d: Draft) {
     status: d.status,
     amps: d.amps.trim() ? Number(d.amps) : null,
     frame: d.frame.trim() || null,
+    material: d.material.trim().toUpperCase() || null,
+    weight_kg: d.weight_kg.trim() ? Number(d.weight_kg) : null,
     ka: d.ka.trim() ? Number(d.ka) : null,
     poles: d.poles.trim() ? Number(d.poles) : null,
     uom: d.uom.trim() || "nos",
@@ -187,6 +191,12 @@ export function CreateItemDialog({
             </datalist>
             <Field label="kA" value={draft.ka} onChange={(v) => patch({ ka: v })} numeric required={isBreaker} />
             <Field label="Poles" value={draft.poles} onChange={(v) => patch({ poles: v })} numeric required={isBreaker} />
+            <Field label="Material (GI / CRCA)" value={draft.material} onChange={(v) => patch({ material: v })} list="item-material-suggestions" />
+            <datalist id="item-material-suggestions">
+              <option value="GI" />
+              <option value="CRCA" />
+            </datalist>
+            <Field label="Weight (kg)" value={draft.weight_kg} onChange={(v) => patch({ weight_kg: v })} numeric />
             <Field label="UOM" value={draft.uom} onChange={(v) => patch({ uom: v })} />
             <Field label="List price" value={draft.list_price} onChange={(v) => patch({ list_price: v })} numeric />
             <Field label="Discount %" value={draft.discount_pct} onChange={(v) => patch({ discount_pct: v })} numeric />
