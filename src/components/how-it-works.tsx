@@ -273,7 +273,10 @@ export function HowItWorks() {
                 load them without losing your unsaved edits. If any item used on the page has changed price since you opened it, a
                 dialog lists each one (old vs new list price, discount and net rate, and which feeders use it): tick the ones to move to the
                 new price; unticked ones keep the old price, saved as a price override on their lines (in BOM Builder, click Save; in
-                Feeder Master it saves straight away). Lines that already have their own price override aren&apos;t affected. Inside a feeder, the qty, list price and discount boxes work like
+                Feeder Master it saves straight away). Lines that already have their own price override aren&apos;t affected. To split a feeder in two, click the
+                split icon on its card, tick the items to move (and how many of each), and name the new feeder: it becomes a custom
+                feeder with the same feeder qty, right below the original. Click Save to keep it, then place it in GA Builder (it starts
+                unassigned). Splitting a library feeder turns the original into a custom feeder for this board; the library stays as it is. Inside a feeder, the qty, list price and discount boxes work like
                 a spreadsheet: arrow keys and Enter move between them, and typing replaces the value.
               </>,
               <>

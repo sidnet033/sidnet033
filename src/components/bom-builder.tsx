@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { CostBreakdownCard } from "@/components/cost-breakdown-card";
 import { AdHocFeederPanel } from "@/components/ad-hoc-feeder-panel";
 import { RefreshItemsButton } from "@/components/refresh-items-button";
+import { SplitFeederDialog, type SplitPick } from "@/components/split-feeder-dialog";
 import type { PriceDecision, PricedLine } from "@/lib/price-changes";
 import { CreateItemDialog } from "@/components/create-item-dialog";
 import { BulkAddItemsDialog } from "@/components/bulk-add-items-dialog";
@@ -521,6 +522,33 @@ export function BomBuilder({
     router.refresh();
   }
 
+  // Moves the picked items (whole lines, or part of a line's qty) out of
+  // this feeder into a new custom feeder with the same feeder qty, placed
+  // right after it. Draft only -- the new feeder (id "new-...") is created
+  // on Save and starts in GA Builder's unassigned list.
+  function splitModule(mod: DraftModule, picks: SplitPick[], newName: string) {
+    if (!sb) return;
+    const pickOf = new Map(picks.map((p) => [p.lineId, p.qty]));
+    const kept: DraftLine[] = [];
+    const moved: DraftLine[] = [];
+    for (const l of mod.lines) {
+      const q = pickOf.get(l.id);
+      if (q == null) kept.push(l);
+      else {
+        moved.push({ ...l, id: newId(), qty: Math.min(q, l.qty) });
+        if (q < l.qty) kept.push({ ...l, qty: Math.round((l.qty - q) * 1000) / 1000 });
+      }
+    }
+    if (!moved.length || !kept.length) return;
+    const feeder: Feeder = { ...mod.feeder, id: newId(), name: newName, tag: null, is_library: false, switchboard_id: sb.id };
+    const newModule: DraftModule = { feeder, baselineFeeder: feeder, qty: mod.qty, lines: moved, baselineLines: [], baselinePlacements: [] };
+    setDraft((d) =>
+      d
+        ? { ...d, modules: d.modules.flatMap((m) => (m.feeder.id === mod.feeder.id ? [{ ...m, lines: kept }, newModule] : [m])) }
+        : d
+    );
+  }
+
   function deleteModule(mod: DraftModule) {
     setDraft((d) => (d ? { ...d, modules: d.modules.filter((m) => m.feeder.id !== mod.feeder.id) } : d));
   }
@@ -740,6 +768,38 @@ export function BomBuilder({
 
         let feederId = m.feeder.id;
         let forked = false;
+        // A feeder split off another one in this session exists only in the
+        // draft so far; create it now. Its lines are all "new-" and get
+        // inserted below, its placement in the isNewModule branch.
+        if (m.feeder.id.startsWith("new-")) {
+          if (currentUserId === undefined) {
+            const {
+              data: { user },
+            } = await supabase.auth.getUser();
+            currentUserId = user?.id;
+          }
+          const { data: newFeeder, error: createError } = await supabase
+            .from("feeders")
+            .insert({
+              name: m.feeder.name,
+              description: m.feeder.description,
+              category: m.feeder.category,
+              tag: null,
+              rating_summary: m.feeder.rating_summary,
+              rated_current: m.feeder.rated_current,
+              pole_config: m.feeder.pole_config,
+              breaking_capacity: m.feeder.breaking_capacity,
+              device_type: m.feeder.device_type,
+              rated_kw: m.feeder.rated_kw,
+              switchboard_id: sb.id,
+              is_library: false,
+              created_by: currentUserId,
+            })
+            .select("id")
+            .single();
+          if (createError || !newFeeder) throw createError ?? new Error("Could not create the split feeder.");
+          feederId = (newFeeder as { id: string }).id;
+        }
         if (m.feeder.is_library && (feederFieldsChanged || linesChanged)) {
           if (currentUserId === undefined) {
             const {
@@ -1090,9 +1150,10 @@ export function BomBuilder({
             onLineQtyChange={(lineId, qty) => updateLineQty(mod, lineId, qty)}
             onLineOverrideChange={(lineId, field, value) => updateLineOverride(mod, lineId, field, value)}
             onRemoveLine={(lineId) => removeLine(mod, lineId)}
-            onDuplicate={!readOnly ? () => duplicateModule(mod) : undefined}
+            onDuplicate={!readOnly && !mod.feeder.id.startsWith("new-") ? () => duplicateModule(mod) : undefined}
             onDelete={!readOnly ? () => deleteModule(mod) : undefined}
-            onPromote={!readOnly && !mod.feeder.is_library ? () => promoteToLibrary(mod) : undefined}
+            onPromote={!readOnly && !mod.feeder.is_library && !mod.feeder.id.startsWith("new-") ? () => promoteToLibrary(mod) : undefined}
+            onSplit={!readOnly && (isAdmin || !mod.feeder.is_library) ? (picks, name) => splitModule(mod, picks, name) : undefined}
           />
         ))}
         {draft.modules.length === 0 && (
@@ -1253,6 +1314,7 @@ function FeederModuleCard({
   onDuplicate,
   onDelete,
   onPromote,
+  onSplit,
 }: {
   mod: DraftModule;
   ampsError: string | null;
@@ -1271,8 +1333,10 @@ function FeederModuleCard({
   onDuplicate?: () => void;
   onDelete?: () => void;
   onPromote?: () => void;
+  onSplit?: (picks: SplitPick[], newName: string) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
+  const [splitOpen, setSplitOpen] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [createItemOpen, setCreateItemOpen] = useState(false);
   const [bulkAddOpen, setBulkAddOpen] = useState(false);
@@ -1417,6 +1481,27 @@ function FeederModuleCard({
               <button onClick={onPromote} className="flex items-center gap-1 text-primary hover:underline">
                 <Icon name="upload" size={13} /> Save In Library
               </button>
+            )}
+            {onSplit && (
+              <button
+                onClick={() => setSplitOpen(true)}
+                disabled={mod.lines.length < 2 && !(mod.lines[0]?.qty > 1)}
+                title="Split feeder — move some of its items into a new feeder"
+                className="text-secondary hover:text-on-surface disabled:opacity-40"
+              >
+                <Icon name="call_split" size={15} />
+              </button>
+            )}
+            {splitOpen && onSplit && (
+              <SplitFeederDialog
+                feederName={mod.feeder.name}
+                lines={mod.lines}
+                onClose={() => setSplitOpen(false)}
+                onSplit={(picks, name) => {
+                  onSplit(picks, name);
+                  setSplitOpen(false);
+                }}
+              />
             )}
             {onDuplicate && (
               <button onClick={onDuplicate} title="Duplicate feeder structure" className="text-secondary hover:text-on-surface">
