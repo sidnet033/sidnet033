@@ -6,6 +6,7 @@ import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { CreateItemDialog } from "@/components/create-item-dialog";
 import { RefreshItemsButton } from "@/components/refresh-items-button";
+import type { PriceDecision, PricedLine } from "@/lib/price-changes";
 import { itemCode, fetchAllItemMaster, itemRowClass } from "@/lib/item-display";
 import { numericKeyGuard } from "@/lib/numeric-input";
 import { effectiveNetRate } from "@/lib/feeder-cost";
@@ -145,6 +146,43 @@ export function FeederMasterWorkspace({
       (nextLinesByFeeder[line.feeder_id] ??= []).push(line);
     }
     setLinesByFeeder(nextLinesByFeeder);
+  }
+
+  // "Refresh items" price check across every library feeder's lines. Lines
+  // save as they're edited here, so a kept old price is written straight to
+  // the line's price override; a new price needs no write (lines read the
+  // live Item Master price).
+  const pricedLines: PricedLine[] = feeders.flatMap((f) =>
+    (linesByFeeder[f.id] ?? []).map((l) => ({ lineId: l.id, item: l.item, where: f.name, list_price_override: l.list_price_override, discount_pct_override: l.discount_pct_override }))
+  );
+
+  async function applyPriceDecisions(decisions: PriceDecision[]) {
+    const byLine = new Map(decisions.map((d) => [d.lineId, d]));
+    const pinned = Object.values(linesByFeeder)
+      .flat()
+      .filter((l) => {
+        const d = byLine.get(l.id);
+        return d && (d.list_price_override !== l.list_price_override || d.discount_pct_override !== l.discount_pct_override);
+      });
+    setLinesByFeeder((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).map(([fid, lines]) => [fid, lines.map((l) => {
+          const d = byLine.get(l.id);
+          return d ? { ...l, item: d.item, list_price_override: d.list_price_override, discount_pct_override: d.discount_pct_override } : l;
+        })])
+      )
+    );
+    if (!pinned.length) return;
+    setSaving(true);
+    const results = await Promise.all(
+      pinned.map((l) => {
+        const d = byLine.get(l.id)!;
+        return supabase.from("feeder_items").update({ list_price_override: d.list_price_override, discount_pct_override: d.discount_pct_override }).eq("id", l.id);
+      })
+    );
+    setSaving(false);
+    const failed = results.find((r) => r.error);
+    if (failed?.error) alert(`Could not save the kept prices: ${failed.error.message}`);
   }
 
   async function handleCreate() {
@@ -348,7 +386,7 @@ export function FeederMasterWorkspace({
             <h1 className="font-headline-lg text-headline-lg leading-none tracking-tight text-on-surface">Feeder Master</h1>
           </div>
           <div className="flex shrink-0 items-center gap-space-sm self-start md:self-auto">
-          <RefreshItemsButton items={items} onRefreshed={setItems} />
+          <RefreshItemsButton items={items} onRefreshed={setItems} lines={pricedLines} onPriceDecisions={applyPriceDecisions} />
           {isAdmin && (
             <div className="flex shrink-0 items-center gap-space-sm">
               <FeederImportDialog feeders={feeders} items={items} currentUserName={currentUserName} onDone={refreshAll} />

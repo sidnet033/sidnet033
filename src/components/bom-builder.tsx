@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { CostBreakdownCard } from "@/components/cost-breakdown-card";
 import { AdHocFeederPanel } from "@/components/ad-hoc-feeder-panel";
 import { RefreshItemsButton } from "@/components/refresh-items-button";
+import type { PriceDecision, PricedLine } from "@/lib/price-changes";
 import { CreateItemDialog } from "@/components/create-item-dialog";
 import { BulkAddItemsDialog } from "@/components/bulk-add-items-dialog";
 import { findDuplicateLibraryFeeder } from "@/lib/feeder-duplicate";
@@ -269,6 +270,40 @@ export function BomBuilder({
   // in this same session, without waiting on a page reload.
   function handleItemCreated(item: ItemMaster) {
     setItems((prev) => [...prev, item]);
+  }
+
+  // "Refresh items" compares these lines' item prices with Item Master and
+  // hands back the user's pick per changed item: the fresh item, plus the
+  // old price pinned as a line override where they chose to keep it. The
+  // fresh item also goes into the saved snapshot, so only a kept price (an
+  // override that needs saving) shows as an unsaved change.
+  const pricedLines: PricedLine[] = (draft?.modules ?? []).flatMap((m) =>
+    m.lines.map((l) => ({ lineId: l.id, item: l.item, where: m.feeder.name, list_price_override: l.list_price_override, discount_pct_override: l.discount_pct_override }))
+  );
+
+  function applyPriceDecisions(decisions: PriceDecision[]) {
+    const byLine = new Map(decisions.map((d) => [d.lineId, d]));
+    const freshById = new Map(decisions.map((d) => [d.item.id, d.item]));
+    const withFreshItem = (l: DraftLine): DraftLine => (freshById.has(l.item_id) ? { ...l, item: freshById.get(l.item_id)! } : l);
+    const swapItems = (d: BomDraft): BomDraft => ({
+      ...d,
+      modules: d.modules.map((m) => ({ ...m, lines: m.lines.map(withFreshItem), baselineLines: m.baselineLines.map(withFreshItem) })),
+    });
+    setSaved((d) => (d ? swapItems(d) : d));
+    setDraft((d) => {
+      if (!d) return d;
+      const swapped = swapItems(d);
+      return {
+        ...swapped,
+        modules: swapped.modules.map((m) => ({
+          ...m,
+          lines: m.lines.map((l) => {
+            const pick = byLine.get(l.id);
+            return pick ? { ...l, list_price_override: pick.list_price_override, discount_pct_override: pick.discount_pct_override } : l;
+          }),
+        })),
+      };
+    });
   }
 
   useEffect(() => {
@@ -934,7 +969,7 @@ export function BomBuilder({
           >
             <Icon name="file_save" size={16} /> Export BOM (PDF/XLSX)
           </button>
-          <RefreshItemsButton items={items} onRefreshed={setItems} />
+          <RefreshItemsButton items={items} onRefreshed={setItems} lines={pricedLines} onPriceDecisions={applyPriceDecisions} />
           {!readOnly && (
             <>
               <button onClick={handleCancel} disabled={!dirty || saving} className="btn btn-outline">

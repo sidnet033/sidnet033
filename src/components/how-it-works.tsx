@@ -270,7 +270,10 @@ export function HowItWorks() {
                 (with quantities, straight from Excel), check which ones were found, then add them. <b>Copy missing codes</b> copies the codes not in
                 Item Master (with qty) to paste into Excel and create later; items already in the feeder are highlighted amber (adding them
                 tops up the existing line&apos;s qty — untick to skip). If someone else adds items to Item Master while you work, click <b>Refresh items</b> (BOM Builder and Feeder Master) to
-                load them without losing your unsaved edits. Inside a feeder, the qty, list price and discount boxes work like
+                load them without losing your unsaved edits. If any item used on the page has changed price since you opened it, a
+                dialog lists each one (old vs new list price, discount and net rate, and which feeders use it): tick the ones to move to the
+                new price; unticked ones keep the old price, saved as a price override on their lines (in BOM Builder, click Save; in
+                Feeder Master it saves straight away). Lines that already have their own price override aren&apos;t affected. Inside a feeder, the qty, list price and discount boxes work like
                 a spreadsheet: arrow keys and Enter move between them, and typing replaces the value.
               </>,
               <>
