@@ -429,6 +429,17 @@ export function HowItWorks() {
                 where to fix them.
               </>,
               <>
+                <b>Site conditions &amp; breaker derating</b>: Project Detail needs the site <b>altitude (m)</b> and maximum <b>ambient
+                temperature (°C)</b> before it saves. Breakers carry less current when it&apos;s hot or high up, so BOM Builder and Project
+                Detail warn (saving is still allowed) when an ACB / MCCB can&apos;t carry its feeder&apos;s rated current at the site — or its
+                own rating when the feeder has none — and suggest the next size that would. From ABB&apos;s catalogues: <b>Emax 2</b>{" "}
+                (E1.2–E6.2; ArTuK boards use ABB&apos;s in-switchgear table — IP31, HR terminals — which already allows for the heat inside the
+                panel), <b>Formula Air</b> (FA1/FA2/FA4) and <b>Tmax XT</b> (XT1–XT7: thermal-magnetic trip shift, or the maximum L setting for
+                electronic trips, fixed vs plug-in / withdrawable read from the description). Above 2000 m all three lose current (98% at
+                3000 m, 93% at 4000 m, 90% at 5000 m) and maximum voltage. A temperature between catalogue columns uses the hotter column.
+                Other makes aren&apos;t checked.
+              </>,
+              <>
                 <b>Amps guard</b>: a switchboard&apos;s Amps can&apos;t be saved below its highest-rated feeder, and a BOM can&apos;t be saved with a
                 feeder above the switchboard rating. The error shows the fix (e.g. &ldquo;Set to 2500A&rdquo;).
               </>,

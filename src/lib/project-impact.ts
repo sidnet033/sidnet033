@@ -1,4 +1,5 @@
 import { isFormulaSeries } from "@/lib/item-display";
+import { deratingMessage, deratingWarnings } from "@/lib/breaker-derating";
 import type { createClient } from "@/lib/supabase/client";
 import type {
   Feeder,
@@ -43,7 +44,17 @@ export type Densities = Record<BusbarMaterial, number>;
 
 // unpriced: the line's effective net rate is zero (no list price, line
 // override or net cost) -- it adds nothing to the cost
-export type FeederItemRating = { itemId: string; description: string; ka: number | null; unpriced: boolean; formula: boolean };
+export type FeederItemRating = {
+  itemId: string;
+  description: string;
+  ka: number | null;
+  unpriced: boolean;
+  formula: boolean;
+  // for the site derating check
+  category: string | null;
+  frame: string | null;
+  amps: number | null;
+};
 
 export type BoardData = {
   revision: { id: string; label: string };
@@ -52,6 +63,8 @@ export type BoardData = {
   overrides: Record<string, BusbarOverride>;
   // item lines of each feeder used on the board (for the kA check)
   feederItems: Record<string, FeederItemRating[]>;
+  // project site conditions, for breaker derating (null until entered)
+  site: { ambientC: number | null; altitudeM: number | null };
 };
 
 export type ProjectData = { boards: BoardData[] };
@@ -177,7 +190,7 @@ export async function loadProjectData(
   const { data: fiRows } = feederIds.length
     ? await supabase
         .from("feeder_items")
-        .select("feeder_id, list_price_override, discount_pct_override, item:item_master(id, description, ka, unit_cost, list_price, discount_pct, category, frame, vendor_description)")
+        .select("feeder_id, list_price_override, discount_pct_override, item:item_master(id, description, ka, amps, unit_cost, list_price, discount_pct, category, frame, vendor_description)")
         .in("feeder_id", feederIds)
     : { data: [] };
   const feederItems: Record<string, FeederItemRating[]> = {};
@@ -189,6 +202,7 @@ export async function loadProjectData(
       id: string;
       description: string;
       ka: number | null;
+      amps: number | null;
       unit_cost: number;
       list_price: number | null;
       discount_pct: number | null;
@@ -210,8 +224,17 @@ export async function loadProjectData(
       ka: r.item.ka != null ? Number(r.item.ka) : null,
       unpriced: !(net > 0),
       formula: isFormulaSeries(r.item),
+      category: r.item.category,
+      frame: r.item.frame,
+      amps: r.item.amps != null ? Number(r.item.amps) : null,
     });
   }
+
+  const { data: proj } = await supabase.from("projects").select("site_ambient_temp_c, site_altitude_m").eq("id", projectId).single();
+  const site = {
+    ambientC: proj?.site_ambient_temp_c != null ? Number(proj.site_ambient_temp_c) : null,
+    altitudeM: proj?.site_altitude_m != null ? Number(proj.site_altitude_m) : null,
+  };
 
   const multipleNames = new Set(revs.map((r) => r.name)).size > 1;
   return {
@@ -235,6 +258,7 @@ export async function loadProjectData(
           overrideRows.filter((r) => r.switchboard_id === sb.id),
         ),
         feederItems,
+        site,
       };
     }),
   };
@@ -351,6 +375,31 @@ export function auditBoard(
         });
       }
     }
+  }
+  // ACB / MCCB that can't carry its feeder's current at the site (ABB
+  // temperature / altitude derating) -- a warning, saving is allowed
+  const deratingFeeders = new Map<string, Feeder>();
+  for (const v of board.verticals) for (const p of v.placed) deratingFeeders.set(p.feeder.id, p.feeder);
+  for (const w of deratingWarnings({
+    feeders: [...deratingFeeders.values()].map((f) => ({
+      id: f.id,
+      name: f.name,
+      rated_current: f.rated_current != null ? Number(f.rated_current) : null,
+      items: (board.feederItems[f.id] ?? []).map((it) => ({ id: it.itemId, category: it.category, frame: it.frame, amps: it.amps, description: it.description })),
+    })),
+    ambientC: board.site.ambientC,
+    altitudeM: board.site.altitudeM,
+    inPanel: sb.std === "ArTuK",
+  })) {
+    items.push({
+      ...base,
+      id: `${sb.id}|derating|${w.key}`,
+      area: "BOM",
+      severity: "warning",
+      message: deratingMessage(w),
+      apply: null,
+      applyLabel: null,
+    });
   }
   // a switchboard with a BOM but no profit margin set (Costing tab)
   if (pricedChecked.size > 0 && !(Number(sb.profit_pct) > 0)) {

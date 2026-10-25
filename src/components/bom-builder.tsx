@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { CostBreakdownCard } from "@/components/cost-breakdown-card";
 import { AdHocFeederPanel } from "@/components/ad-hoc-feeder-panel";
 import { RefreshItemsButton } from "@/components/refresh-items-button";
+import { deratingMessage, deratingWarnings } from "@/lib/breaker-derating";
 import { SplitFeederDialog, type SplitPick } from "@/components/split-feeder-dialog";
 import type { PriceDecision, PricedLine } from "@/lib/price-changes";
 import { CreateItemDialog } from "@/components/create-item-dialog";
@@ -117,6 +118,13 @@ async function loadBomData(supabase: ReturnType<typeof createClient>, switchboar
     loadBusbarTakeoff(supabase, switchboard as Switchboard),
     loadEnclosureTakeoff(supabase, switchboard as Switchboard),
   ]);
+  // site conditions (Project Detail) for the breaker derating check
+  const { data: rev } = await supabase.from("revisions").select("project:projects(site_ambient_temp_c, site_altitude_m)").eq("id", (switchboard as Switchboard).revision_id).single();
+  const proj = (rev as unknown as { project: { site_ambient_temp_c: number | null; site_altitude_m: number | null } | null } | null)?.project ?? null;
+  const site = {
+    ambientC: proj?.site_ambient_temp_c != null ? Number(proj.site_ambient_temp_c) : null,
+    altitudeM: proj?.site_altitude_m != null ? Number(proj.site_altitude_m) : null,
+  };
 
   type PlacedRow = { id: string; vertical_id: string; tier_number: number; qty: number; feeder: Feeder };
   const placedRows = (placed ?? []) as unknown as PlacedRow[];
@@ -164,6 +172,7 @@ async function loadBomData(supabase: ReturnType<typeof createClient>, switchboar
     libraryFeedersAll: (libraryFeeders ?? []) as LibraryFeederOption[],
     busbarTakeoff,
     enclosureTakeoff,
+    site,
   };
 }
 
@@ -275,6 +284,7 @@ export function BomBuilder({
   }
   const [busbarTakeoff, setBusbarTakeoff] = useState<BusbarTakeoff | null>(null);
   const [enclosureTakeoff, setEnclosureTakeoff] = useState<EnclosureTakeoff | null>(null);
+  const [site, setSite] = useState<{ ambientC: number | null; altitudeM: number | null }>({ ambientC: null, altitudeM: null });
   // the warnings box starts collapsed -- just its one-line summary shows
   const [warningsOpen, setWarningsOpen] = useState(false);
 
@@ -332,6 +342,7 @@ export function BomBuilder({
       setLibraryFeedersAll(data.libraryFeedersAll);
       setBusbarTakeoff(data.busbarTakeoff);
       setEnclosureTakeoff(data.enclosureTakeoff);
+      setSite(data.site);
       setLoading(false);
     })();
     return () => {
@@ -377,6 +388,23 @@ export function BomBuilder({
       }
     }
   }
+
+  // ACB / MCCB lines that can't carry their feeder's current at the site's
+  // ambient temperature and altitude (ABB derating) -- warning only.
+  const derating = draft
+    ? deratingWarnings({
+        feeders: draft.modules.map((m) => ({
+          id: m.feeder.id,
+          name: m.feeder.name,
+          rated_current: m.feeder.rated_current != null ? Number(m.feeder.rated_current) : null,
+          items: m.lines.map((l) => ({ id: l.item_id, category: l.item.category, frame: l.item.frame, amps: l.item.amps != null ? Number(l.item.amps) : null, description: l.item.description })),
+        })),
+        ambientC: site.ambientC,
+        altitudeM: site.altitudeM,
+        inPanel: sb?.std === "ArTuK",
+      })
+    : [];
+  const siteMissing = site.ambientC == null || site.altitudeM == null;
 
   // Ctrl+S / Cmd+S saves the BOM, same as clicking "Save Changes". handleSave
   // closes over the latest draft/saved on every render, so it's tracked via a
@@ -1133,6 +1161,29 @@ export function BomBuilder({
             ))}
           </ul>
           <p className="mt-1 text-xs text-on-surface-variant">You can still save. Prefer Emax 2 ACBs and Tmax XT / T MCCBs.</p>
+        </div>
+      )}
+
+      {(derating.length > 0 || siteMissing) && (
+        <div className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-4 py-2 text-sm text-on-surface">
+          <p className="flex items-center gap-2 font-semibold text-amber-800">
+            <Icon name="device_thermostat" size={18} />
+            {siteMissing
+              ? "Site altitude / ambient temperature not set — breaker derating can't be checked"
+              : `Warning: ${derating.length} breaker${derating.length === 1 ? "" : "s"} derated below what the feeder needs (site ${site.ambientC} °C, ${site.altitudeM} m)`}
+          </p>
+          {siteMissing ? (
+            <p className="mt-1 text-xs text-on-surface-variant">Enter them in Project Detail.</p>
+          ) : (
+            <>
+              <ul className="mt-1 list-disc pl-6 text-xs">
+                {derating.map((w) => (
+                  <li key={w.key}>{deratingMessage(w)}</li>
+                ))}
+              </ul>
+              <p className="mt-1 text-xs text-on-surface-variant">You can still save. Covers ABB Emax 2, Formula Air and Tmax XT.</p>
+            </>
+          )}
         </div>
       )}
 
