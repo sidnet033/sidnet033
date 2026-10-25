@@ -265,7 +265,8 @@ export function HowItWorks() {
               </>,
               <>
                 Each feeder card shows its items. Change quantities, add items from the Item Master (or create a new item on the spot), and set the
-                feeder&apos;s Device Type and rating. Editing a library feeder here makes a switchboard-only copy — the library stays untouched.
+                feeder&apos;s <b>Function</b> (Incomer, Outgoing, Bus Coupler, Sub-Incomer, APFC…), Device Type and rating — the function drives the
+                incomer checks, busbar routing and ACB bay size. Editing a library feeder here makes a switchboard-only copy — the library stays untouched.
               </>,
               <>
                 <b>Discounts</b>: every item line can override its list price or discount % for this BOM only. To discount a whole category at once

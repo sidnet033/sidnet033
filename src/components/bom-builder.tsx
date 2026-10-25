@@ -15,7 +15,7 @@ import { BulkAddItemsDialog } from "@/components/bulk-add-items-dialog";
 import { findDuplicateLibraryFeeder } from "@/lib/feeder-duplicate";
 import { ensureUnassignedVertical } from "@/lib/switchboard-bom";
 import { effectiveNetRate } from "@/lib/feeder-cost";
-import { computeFeederTag } from "@/lib/feeder-tag";
+import { FEEDER_TYPES, computeFeederTag } from "@/lib/feeder-tag";
 import { DEVICE_TYPE_LABELS, MOTOR_STARTER_TYPES } from "@/lib/artuk-sizing";
 import { isFormulaSeries, itemCode, itemRowClass } from "@/lib/item-display";
 import { numericGridKeys, numericKeyGuard } from "@/lib/numeric-input";
@@ -716,7 +716,7 @@ export function BomBuilder({
     );
   }
 
-  function renameFeeder(mod: DraftModule, field: "name" | "tag" | "device_type", value: string) {
+  function renameFeeder(mod: DraftModule, field: "name" | "tag" | "device_type" | "category", value: string) {
     setDraft((d) =>
       d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, feeder: { ...m.feeder, [field]: value || null } } : m)) } : d
     );
@@ -1447,7 +1447,7 @@ function FeederModuleCard({
   readOnly: boolean;
   canEditLines: boolean;
   allItems: ItemMaster[];
-  onRename: (field: "name" | "tag" | "device_type", value: string) => void;
+  onRename: (field: "name" | "tag" | "device_type" | "category", value: string) => void;
   onRatingChange: (field: "rated_current" | "rated_kw", value: string) => void;
   onQtyChange: (qty: number) => void;
   onAddLine: (item: ItemMaster, qty: number) => void;
@@ -1549,6 +1549,20 @@ function FeederModuleCard({
           >
             {mod.feeder.is_library ? "Library Feeder" : "Custom Feeder"}
           </span>
+          <select
+            disabled={readOnly || !canEditLines}
+            value={mod.feeder.category ?? ""}
+            onChange={(e) => onRename("category", e.target.value)}
+            title="Function -- incomer / outgoing / bus coupler... drives the incomer checks, busbar routing and the ACB bay size"
+            className="w-32 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-0.5 text-[11px] text-secondary disabled:border-transparent disabled:bg-transparent"
+          >
+            <option value="">Function...</option>
+            {[...FEEDER_TYPES, ...(mod.feeder.category && !FEEDER_TYPES.includes(mod.feeder.category) ? [mod.feeder.category] : [])].map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
           <select
             disabled={readOnly || !canEditLines}
             value={mod.feeder.device_type ?? ""}
