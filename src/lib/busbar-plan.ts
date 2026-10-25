@@ -381,7 +381,8 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
       const placed = bay.placed.find((p) => p.id === c.placedId);
       if (!placed) continue;
       const f = placed.feeder;
-      if ((f.category ?? "").toLowerCase() === "spare") continue;
+      // spares and "Others" (meters, switches, CTs...) take no busbar
+      if ((f.category ?? "").toLowerCase() === "spare" || isNoBusbarFeeder(f)) continue;
       const unitName = placed.qty > 1 ? `${f.name} #${c.unitIndex + 1}` : f.name;
       const noRating = f.rated_current == null ? ["No rated current on this feeder — set it in BOM Builder to size this bar."] : [];
 
@@ -649,7 +650,14 @@ export function breakerFrameOf(feeder: Feeder): string | null {
   return line?.item?.frame?.trim().toUpperCase() ?? null;
 }
 
+// Function "Others": a compartment for meters, switches, CTs... with no
+// busbar connection.
+export function isNoBusbarFeeder(feeder: Pick<Feeder, "category">): boolean {
+  return (feeder.category ?? "").trim().toLowerCase() === "others";
+}
+
 export function isIncomerFeeder(feeder: Feeder, bayType: BayType | null): boolean {
+  if (isNoBusbarFeeder(feeder)) return false;
   const fn = bayFunctionOf(feeder);
   if (fn === "incomer") return true;
   return bayType === "incomer" && fn !== "outgoing" && fn !== "bus_coupler";

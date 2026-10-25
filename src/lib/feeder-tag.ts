@@ -1,7 +1,9 @@
 // The 5 feeder function categories -- shared so Feeder Master's dropdown,
 // the ad-hoc feeder panel, and the feeder xlsx import all validate/offer
 // exactly the same set.
-export const FEEDER_TYPES = ["Incomer", "Outgoing", "Bus Coupler", "Sub-Incomer", "APFC Capacitor Bank"];
+// "Others": no busbar connection -- a compartment for meters, switches,
+// CTs and the like.
+export const FEEDER_TYPES = ["Incomer", "Outgoing", "Bus Coupler", "Sub-Incomer", "APFC Capacitor Bank", "Others"];
 
 // FDR-{IG incomer / OG outgoing / ...}-{rated amps}-{make of the first
 // device added}-{incrementing number, unique among feeders sharing the
@@ -20,6 +22,8 @@ export function typeCode(category: string): string {
       return "BC";
     case "APFC Capacitor Bank":
       return "PFC";
+    case "Others":
+      return "OTH";
     default:
       return "GEN";
   }
