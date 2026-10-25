@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Icon } from "@/components/icon";
 import { formatMoney } from "@/lib/money";
 import { numericKeyGuard } from "@/lib/numeric-input";
 import type { CostBreakdown } from "@/lib/switchboard-cost";
@@ -23,10 +24,17 @@ export function CostBreakdownCard({
 }) {
   const rmShare = breakdown.mfgTotal > 0 ? (breakdown.rmTotal / breakdown.mfgTotal) * 100 : 0;
   const valueAddShare = 100 - rmShare;
+  // Starts collapsed -- the header still shows the grand total.
+  const [open, setOpen] = useState(false);
 
   return (
     <div className="space-y-space-sm">
-      <h3 className="font-headline-md text-headline-md text-on-surface">Cost Breakdown</h3>
+      <button onClick={() => setOpen(!open)} className="flex w-full items-center gap-2 text-left">
+        <Icon name={open ? "expand_less" : "expand_more"} size={20} className="text-on-surface-variant" />
+        <h3 className="font-headline-md text-headline-md text-on-surface">Cost Breakdown</h3>
+        {!open && <span className="ml-auto font-display text-sm font-semibold text-primary">Total MFG Cost {money(breakdown.mfgTotal)}</span>}
+      </button>
+      {open && (
       <div className="grid grid-cols-1 gap-space-md lg:grid-cols-3">
         <div className="space-y-1.5 rounded-xl bg-surface-container-lowest p-space-md shadow-sm">
           <p className="flex items-center gap-1.5 font-label-md text-label-md text-on-surface-variant">
@@ -93,6 +101,7 @@ export function CostBreakdownCard({
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }
