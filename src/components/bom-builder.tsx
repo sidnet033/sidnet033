@@ -7,6 +7,7 @@ import { CostBreakdownCard } from "@/components/cost-breakdown-card";
 import { AdHocFeederPanel } from "@/components/ad-hoc-feeder-panel";
 import { RefreshItemsButton } from "@/components/refresh-items-button";
 import { deratingMessage, deratingWarnings } from "@/lib/breaker-derating";
+import { isIncomerFeeder } from "@/lib/busbar-plan";
 import { SplitFeederDialog, type SplitPick } from "@/components/split-feeder-dialog";
 import type { PriceDecision, PricedLine } from "@/lib/price-changes";
 import { CreateItemDialog } from "@/components/create-item-dialog";
@@ -23,7 +24,7 @@ import { SavingOverlay } from "@/components/saving-overlay";
 import { formatMoney } from "@/lib/money";
 import { loadBusbarTakeoff, type BusbarTakeoff } from "@/lib/busbar-bom";
 import { loadEnclosureTakeoff, type EnclosureTakeoff } from "@/lib/artuk-enclosure";
-import { ampsViolations, nextStandardAmps } from "@/lib/amps-check";
+import { ampsViolations, incomerShortfall, mainSwitchgear, nextStandardAmps, switchgearBelowFeeder } from "@/lib/amps-check";
 import type {
   DeviceType,
   Feeder,
@@ -359,6 +360,31 @@ export function BomBuilder({
   const ampsIssueIds = new Set(ampsIssues.map((f) => f.id));
   // a feeder rated above the switchboard is a warning only -- saving is allowed
   const saveBlocked = false;
+  // switchgear rated below its feeder, and a panel with no incomer at its
+  // Amps -- warnings only
+  const switchgearLow = (draft?.modules ?? []).flatMap((m) => {
+    const rating = m.feeder.rated_current != null ? Number(m.feeder.rated_current) : null;
+    const low = switchgearBelowFeeder(
+      rating,
+      m.lines.map((l) => ({ category: l.item.category, amps: l.item.amps != null ? Number(l.item.amps) : null, description: l.item.description }))
+    );
+    return low ? [{ id: m.feeder.id, feeder: m.feeder.name, rating: rating!, item: low.description, amps: low.amps! }] : [];
+  });
+  const incomerWarning =
+    sb && draft && draft.modules.length > 0
+      ? incomerShortfall(
+          sb.amps != null ? Number(sb.amps) : null,
+          draft.modules
+            .filter((m) => isIncomerFeeder(m.feeder, null))
+            .map((m) => ({
+              name: m.feeder.name,
+              rating:
+                m.feeder.rated_current != null
+                  ? Number(m.feeder.rated_current)
+                  : mainSwitchgear(m.lines.map((l) => ({ category: l.item.category, amps: l.item.amps != null ? Number(l.item.amps) : null, description: l.item.description })))?.amps ?? null,
+            }))
+        )
+      : null;
 
   // Items rated below the switchboard's fault level -- a warning only;
   // saving is still allowed.
@@ -1119,6 +1145,23 @@ export function BomBuilder({
             If that isn&apos;t intended: raise the switchboard&apos;s Amps to at least <b>{nextStandardAmps(Math.max(...ampsIssues.map((f) => f.rated_current!)))}A</b> in Project
             Detail → Switchboards (save there first), or lower the rating of / replace the feeder{ampsIssues.length > 1 ? "s" : ""} highlighted below.
           </p>
+        </div>
+      )}
+
+      {(switchgearLow.length > 0 || incomerWarning) && (
+        <div className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-4 py-2 text-sm text-on-surface">
+          <p className="flex items-center gap-2 font-semibold text-amber-800">
+            <Icon name="warning" size={18} /> Warning: switchgear rating check
+          </p>
+          <ul className="mt-1 list-disc pl-6 text-xs">
+            {incomerWarning && <li>{incomerWarning}</li>}
+            {switchgearLow.map((w) => (
+              <li key={w.id}>
+                <b>{w.feeder}</b> is rated {w.rating}A but its switchgear <b>{w.item}</b> is only {w.amps}A — use one of at least {w.rating}A.
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-xs text-on-surface-variant">You can still save.</p>
         </div>
       )}
 

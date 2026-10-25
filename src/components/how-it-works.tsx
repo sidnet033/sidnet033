@@ -423,9 +423,10 @@ export function HowItWorks() {
               </>,
               <>
                 <b>Alerts &amp; Warnings</b> (top of Project Detail). <span className="font-semibold text-error">Alerts</span> are real conflicts
-                and <b>block saving</b> the revision they&apos;re in until fixed: an incomer rated below the switchboard Amps,
+                and <b>block saving</b> the revision they&apos;re in until fixed:
                 undersized busbars, a main busbar with no rating. <span className="font-semibold text-amber-700">Warnings</span> are worth checking
-                but <b>don&apos;t stop you saving</b>: feeders rated above the switchboard Amps, items or breakers rated below the switchboard kA, ArTuK bays below the switchboard IP or at a
+                but <b>don&apos;t stop you saving</b>: feeders rated above the switchboard Amps, a panel with no incomer rated at or above its
+                Amps, a feeder whose switchgear is rated below the feeder, items or breakers rated below the switchboard kA, ArTuK bays below the switchboard IP or at a
                 non-standard size, hand-set bars that differ from the rules, ABB <b>Formula</b> series ACB / MCCB (FA1/FA2/FA4, A1–A3) in an
                 ArTuK panel (discouraged by ABB — also shown in BOM Builder). A panel ticked for busduct entries with none placed is an alert. Tick fixable lines and click <b>Apply selected fixes</b>; the rest say
                 where to fix them.
@@ -442,10 +443,24 @@ export function HowItWorks() {
                 Other makes aren&apos;t checked.
               </>,
               <>
-                <b>Amps check</b>: a switchboard&apos;s Amps can be set below its highest-rated feeder (e.g. a breaker oversized on purpose), but
-                Project Detail and BOM Builder show a warning with the suggested rating (e.g. &ldquo;Set to 2500A&rdquo;). Busbars are always sized
-                on the <b>feeder&apos;s rated current</b>, not the breaker fitted in it — the breaker&apos;s frame only chooses between ABB chart rows
-                of the same rating.
+                <b>Amps checks</b> (warnings only — saving is never stopped):
+                <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                  <li>
+                    <b>Switchgear vs feeder</b>: in every feeder — incomer, outgoing or bus coupler — the main switching device can&apos;t be
+                    rated below the feeder&apos;s rated current. The main device is the highest-rated ACB / MCCB / MCB / SFU / switch-disconnector
+                    / RCBO / RCCB / ATS / changeover in the feeder, so a small control-circuit MCB isn&apos;t flagged.
+                  </li>
+                  <li>
+                    <b>Incomer vs panel</b>: at least one incomer (or sub-incomer) must be rated at or above the panel&apos;s Amps — its feeder
+                    rating, else its main switchgear&apos;s. A BOM with no incomer is flagged too.
+                  </li>
+                  <li>
+                    <b>Panel vs feeders</b>: the panel&apos;s Amps can be set below its highest-rated feeder; Project Detail and BOM Builder warn
+                    and suggest the rating (e.g. &ldquo;Set to 2500A&rdquo;).
+                  </li>
+                </ul>
+                Busbars are always sized on the <b>feeder&apos;s rated current</b>, not the breaker fitted in it — the breaker&apos;s frame only
+                chooses between ABB chart rows of the same rating.
               </>,
             ]}
           />

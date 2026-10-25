@@ -1,5 +1,6 @@
 import { isFormulaSeries } from "@/lib/item-display";
 import { deratingMessage, deratingWarnings } from "@/lib/breaker-derating";
+import { incomerShortfall, mainSwitchgear, switchgearBelowFeeder } from "@/lib/amps-check";
 import type { createClient } from "@/lib/supabase/client";
 import type {
   Feeder,
@@ -376,6 +377,41 @@ export function auditBoard(
       }
     }
   }
+  // Amps checks -- warnings only, saving is never stopped:
+  //  - each feeder's main switchgear can't be rated below the feeder
+  //    (incomer, outgoing or bus coupler alike),
+  //  - the panel needs at least one incomer rated at or above its Amps.
+  const ampsSeen = new Set<string>();
+  const incomers: { name: string; rating: number | null }[] = [];
+  for (const v of board.verticals) {
+    for (const p of v.placed) {
+      const f = p.feeder;
+      if (ampsSeen.has(f.id)) continue;
+      ampsSeen.add(f.id);
+      const its = board.feederItems[f.id] ?? [];
+      const rating = f.rated_current != null ? Number(f.rated_current) : null;
+      if (isIncomerFeeder(f, v.bay_type)) incomers.push({ name: f.name, rating: rating ?? mainSwitchgear(its)?.amps ?? null });
+      const low = switchgearBelowFeeder(rating, its);
+      if (low) {
+        items.push({
+          ...base,
+          id: `${sb.id}|switchgear-amps|${f.id}`,
+          area: "BOM",
+          severity: "warning",
+          message: `"${f.name}" is rated ${rating}A but its switchgear "${low.description}" is only ${low.amps}A — use a breaker / switch of at least ${rating}A.`,
+          apply: null,
+          applyLabel: null,
+        });
+      }
+    }
+  }
+  if (ampsSeen.size > 0) {
+    const short = incomerShortfall(sb.amps != null ? Number(sb.amps) : null, incomers);
+    if (short) {
+      items.push({ ...base, id: `${sb.id}|incomer-amps`, area: "BOM", severity: "warning", message: short, apply: null, applyLabel: null });
+    }
+  }
+
   // ACB / MCCB that can't carry its feeder's current at the site (ABB
   // temperature / altitude derating) -- a warning, saving is allowed
   const deratingFeeders = new Map<string, Feeder>();
@@ -487,22 +523,6 @@ export function auditBoard(
       const f = p.feeder;
       if (seen.has(f.id)) continue;
       seen.add(f.id);
-      if (
-        sb.amps != null &&
-        f.rated_current != null &&
-        isIncomerFeeder(f, v.bay_type) &&
-        f.rated_current < sb.amps
-      ) {
-        items.push({
-          ...base,
-          id: `${sb.id}|incomer-amps|${f.id}`,
-          area: "BOM",
-          severity: "alert",
-          message: `Incomer "${f.name}" is rated ${f.rated_current}A but the switchboard is ${sb.amps}A — change the feeder in BOM Builder.`,
-          apply: null,
-          applyLabel: null,
-        });
-      }
       if (sb.amps != null && f.rated_current != null && f.rated_current > sb.amps) {
         items.push({
           ...base,
