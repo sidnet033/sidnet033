@@ -513,10 +513,20 @@ export function HowItWorks() {
                 </table>
               </div>
             ))}
-            <p className="text-xs text-secondary">
-              Source: ABB SACE Emax 2 technical catalogue (2024), Formula Air ACB technical catalogue (2024), SACE Tmax XT technical catalogue
-              (2024). Amber = below the breaker&apos;s rating.
-            </p>
+            <p className="text-xs text-secondary">Amber = below the breaker&apos;s rating.</p>
+            <div className="rounded-lg bg-surface-container-low px-3 py-2 text-xs">
+              <p className="font-semibold text-on-surface">Source documents (ABB Library — opens in a new tab)</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-on-surface-variant">
+                {DERATING_SOURCES.map((d) => (
+                  <li key={d.doc}>
+                    <a href={d.url} target="_blank" rel="noopener noreferrer" className="font-medium text-primary underline">
+                      {d.title}
+                    </a>{" "}
+                    ({d.doc}) — {d.pages}
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </Section>
 
@@ -636,6 +646,28 @@ export function HowItWorks() {
     </div>
   );
 }
+
+// ABB catalogues the derating data comes from (see src/lib/breaker-derating.ts)
+const DERATING_SOURCES = [
+  {
+    title: "SACE Emax 2 technical catalogue",
+    doc: "1SDC200023D0209",
+    url: "https://library.abb.com/d/1SDC200023D0209",
+    pages: "temperature derating p. 7/8, altitude p. 7/9, performance in switchgear p. 7/16–7/21",
+  },
+  {
+    title: "Formula Air ACB technical catalogue",
+    doc: "1SDC200044D0202",
+    url: "https://library.abb.com/d/1SDC200044D0202",
+    pages: "temperature derating p. 36, altitude p. 37",
+  },
+  {
+    title: "SACE Tmax XT technical catalogue",
+    doc: "1SDC210099D0206",
+    url: "https://library.abb.com/d/1SDC210099D0206",
+    pages: "altitude p. 1/2, thermal-magnetic trip p. 1/4–1/5, electronic trip max setting p. 1/6–1/7",
+  },
+];
 
 function Steps({ items }: { items: React.ReactNode[] }) {
   return (
