@@ -151,6 +151,17 @@ export const ACB_BAY_SPECS: AcbBaySpec[] = [
     label: "ArTu-K Emax 2 920+420w E2.2 Bus Coupler (External Cable Chamber)",
     pairedWith: { bayType: "cable_alley", widthMm: 420, name: "Cable Chamber" },
   },
+  // not in ABB's samples -- our standard: the E4.2 incomer bay width
+  {
+    frame: "E4.2",
+    function: "bus_coupler",
+    widthMm: 920,
+    heightMm: 2231,
+    depthMm: 1037,
+    ipRating: 42,
+    form: "4b",
+    label: "ArTu-K Emax 2 920w E4.2 Bus Coupler (our standard; not in ABB's samples)",
+  },
 ];
 
 // Wider/alternate variants the source sheet also lists, not chosen
@@ -237,10 +248,10 @@ export function lookupFeederBoxHeight(feeder: {
   }
 }
 
-// No row for this frame + function -- ABB's samples have no E4.2 / E6.2 bus
-// coupler. ABB's E1.2 / E2.2 bus couplers are one standard width wider than
+// No row for this frame + function -- ABB's samples have no E6.2 bus
+// coupler (E4.2 has our own 920mm row above). ABB's E1.2 / E2.2 bus couplers are one standard width wider than
 // their incomer bay (720 -> 920, room for the bus riser), so a missing bus
-// coupler takes its frame's incomer bay one width up (E4.2 920 -> 1120);
+// coupler takes its frame's incomer bay one width up (E6.2 1120 -> 1320);
 // anything else missing takes the frame's incomer bay. Always a standard
 // ArTuK width, never the bare breaker width.
 const BAY_WIDTH_STEPS = [720, 920, 1120, 1320];
