@@ -1664,7 +1664,7 @@ export function GaCanvas({
                 title={zoomMode === "standard" ? "Zoom out to see the whole panel width" : "Back to the standard zoom"}
                 className="btn btn-outline btn-sm"
               >
-                <Icon name={zoomMode === "standard" ? "zoom_out" : "zoom_in"} size={14} /> {zoomMode === "standard" ? "Fit width" : "Standard zoom"}
+                <Icon name={zoomMode === "standard" ? "zoom_out" : "zoom_in"} size={14} /> {zoomMode === "standard" ? "Zoom out (fit width)" : "Zoom in (standard)"}
               </button>
               <button
                 onClick={() => {
