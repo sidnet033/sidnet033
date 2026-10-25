@@ -39,7 +39,9 @@ import {
 //    shelves, horizontal bus segregation, rear segregation 100 + 300,
 //    crosspieces, and droppers' busbar supports,
 //  - blank / DUMMY spaces and the busbar chamber: blind panel + back plate.
-// Per line-up: one N°2 side-panel set (the deepest bay's depth), lifting
+// Per line-up: side panels only on the two ends -- the leftmost bay's left
+// side and the rightmost bay's right side, each at that bay's own depth;
+// bays in between get none (one N°2 pair when both ends match), lifting
 // eyebolts, and for every joint between bays a coupling kit (AD1014) and
 // lifting reinforcement (SA1350-1).
 // Internal arc (ABB ELSP/ARTU-K/ENGG/04): top/base sets with arc flap and
@@ -204,7 +206,6 @@ export function artukEnclosureBom(input: EnclosureInput): { lines: EnclosureLine
     );
   }
 
-  let deepest: number[] = [];
   for (const bay of bays) {
     const w = bay.width_mm ?? 0;
     const name = bay.name;
@@ -212,7 +213,6 @@ export function artukEnclosureBom(input: EnclosureInput): { lines: EnclosureLine
     const inner = innerWidth(w);
     const sections = depthSections(bay.depth_mm ?? 1037);
     const alley = isAlley(bay.bay_type as BayType | null);
-    if (sections.length > deepest.length || (sections[0] ?? 0) > (deepest[0] ?? 0)) deepest = sections;
     if (!prefix) {
       warnings.push(`${name}: ${w}mm isn't an ArTuK bay width (420/510/720/920/1120/1320) — its enclosure parts aren't listed.`);
       continue;
@@ -328,7 +328,19 @@ export function artukEnclosureBom(input: EnclosureInput): { lines: EnclosureLine
 
   // line-up
   if (bays.length > 0) {
-    for (const d of deepest) add(`LF${H}${SIDE_D[d]}-1`, 1, `side panels (line-up ends, ${d}mm)`);
+    // ABB sells side panels as a pair (N°2): one pair covers both ends when
+    // the end bays are the same depth; otherwise one pair per end depth,
+    // each with a spare panel
+    const leftEnd = depthSections(bays[0].depth_mm ?? 1037);
+    const rightEnd = depthSections(bays[bays.length - 1].depth_mm ?? 1037);
+    const same = leftEnd.length === rightEnd.length && leftEnd.every((d, i) => d === rightEnd[i]);
+    if (same) {
+      for (const d of leftEnd) add(`LF${H}${SIDE_D[d]}-1`, 1, `side panels: left of ${bays[0].name}, right of ${bays[bays.length - 1].name} (${d}mm)`);
+    } else {
+      for (const d of leftEnd) add(`LF${H}${SIDE_D[d]}-1`, 1, `side panel: left of ${bays[0].name} (${d}mm; pair — 1 spare)`);
+      for (const d of rightEnd) add(`LF${H}${SIDE_D[d]}-1`, 1, `side panel: right of ${bays[bays.length - 1].name} (${d}mm; pair — 1 spare)`);
+      warnings.push(`End bays ${bays[0].name} and ${bays[bays.length - 1].name} differ in depth — ABB side panels come in pairs, so one pair per end is listed (one spare panel each).`);
+    }
     add("AA9610-1", 1, "lifting eyebolts");
     add("SA1350-1", Math.max(0, bays.length - 1), "lifting reinforcement per joint between bays");
     add("AD1014", Math.max(0, bays.length - 1), "coupling kit per joint between bays");
