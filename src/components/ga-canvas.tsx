@@ -31,10 +31,8 @@ import {
 import { bayFunctionOf, type BusbarOverride, type BusbarPlan, type BusbarSegment } from "@/lib/busbar-plan";
 import {
   ARTUK_CHAMBER_HEIGHTS_MM,
-  ARTUK_FIXED_MM,
   ARTUK_HEIGHTS_MM,
   artukChamberHeightFor,
-  ARTUK_LEVEL_GAP_MM,
   ARTUK_STRIP_MM,
   BUSBAR_CHAMBER_HEIGHT_MM,
   DEFAULT_ARTUK_HEIGHT_MM,
@@ -400,7 +398,7 @@ export function GaCanvas({
   const isArtuk = sb?.std === "ArTuK";
   // feeder area: ArTuK -- the ArTuK height less strip, levels and chamber;
   // otherwise the panel height (full height without base) less the chamber
-  const panelHeight = isArtuk ? artukHeight - ARTUK_FIXED_MM - busbarHeight : panelHeightSetting - busbarHeight;
+  const panelHeight = isArtuk ? artukHeight - ARTUK_STRIP_MM - busbarHeight : panelHeightSetting - busbarHeight;
   const [busbarOverrides, setBusbarOverrides] = useState<Record<string, BusbarOverride>>({});
   const [savedBusbarOverrides, setSavedBusbarOverrides] = useState<Record<string, BusbarOverride>>({});
   const [densities, setDensities] = useState<{ Cu: number; Al: number }>({ Cu: 1.6, Al: 1.0 });
@@ -694,6 +692,9 @@ export function GaCanvas({
   // panel (more room to route cable near the entry side); the base plinth
   // is always the floor support, so it stays at the very bottom regardless.
   const busbarPosition = chamberPositionFor(sb?.cable_entry ?? null);
+  // ArTuK, chamber at the top: blank space goes above the feeders so the
+  // bottom feeder sits on the baseframe
+  const blankFirst = isArtuk && busbarPosition === "top";
 
   // Live busbar routing/sizing for the current draft layout -- recomputed on
   // every render so it always follows the bays/feeders as they're edited;
@@ -985,7 +986,7 @@ export function GaCanvas({
     // four merged MCCBs can leave the group -- then the rows are rebuilt:
     // runs of identical adjacent units merge back into one row, a split row
     // keeps its id on its first run and the rest get new rows.
-    const seq = computeCompartments(bay, panelHeight).map((c) => ({ isBlank: c.isBlank, placedId: c.placedId!, unitIndex: c.unitIndex ?? 0 }));
+    const seq = computeCompartments(bay, panelHeight, blankFirst).map((c) => ({ isBlank: c.isBlank, placedId: c.placedId!, unitIndex: c.unitIndex ?? 0 }));
     const pos = seq.findIndex((e) => (placedId === dummyId ? e.isBlank : !e.isBlank && e.placedId === placedId && e.unitIndex === unitIndex));
     const target = direction === "up" ? pos - 1 : pos + 1;
     if (pos === -1 || target < 0 || target >= seq.length) return;
@@ -1441,9 +1442,9 @@ export function GaCanvas({
   // 16px minimum)
   // ArTuK: red strip, then a 60mm level above the topmost feeder, and a 60mm
   // level between the bottommost feeder and the baseframe.
-  const frontStripPx = isArtuk ? ARTUK_FIXED_MM * pxPerMm : 0;
+  const frontStripPx = isArtuk ? ARTUK_STRIP_MM * pxPerMm : 0;
   const plinthPx = Math.max(plinthHeight * pxPerMm, 16);
-  const heightNoBaseMm = bayHeightMm + (isArtuk ? ARTUK_FIXED_MM : 0);
+  const heightNoBaseMm = bayHeightMm + (isArtuk ? ARTUK_STRIP_MM : 0);
 
   const busbarLabel = `BUSBAR CHAMBER${sb.amps ? ` · ${sb.amps}A` : ""}${sb.ka ? ` · ${sb.ka}kA` : ""} · ${sb.busbar ?? "Cu"}`;
   // With the busbar layer on, the main bar's own label (size + rating)
@@ -1491,7 +1492,7 @@ export function GaCanvas({
                 >
                   {ARTUK_HEIGHTS_MM.map((v) => (
                     <option key={v} value={v}>
-                      {v + plinthHeight}mm ({v - ARTUK_FIXED_MM} uprights, {v}mm without base)
+                      {v + plinthHeight}mm ({v - ARTUK_STRIP_MM} uprights, {v}mm without base)
                     </option>
                   ))}
                 </select>
@@ -1828,10 +1829,6 @@ export function GaCanvas({
                             ))}
                           </div>
                         </div>
-                        <div className="flex">
-                          <div style={{ width: RULER_WIDTH_PX }} />
-                          <ArtukLevelRow widths={bays.map((v) => (v.width_mm ?? 0) * pxPerMm)} heightPx={ARTUK_LEVEL_GAP_MM * pxPerMm} />
-                        </div>
                       </>
                     )}
 
@@ -1877,6 +1874,7 @@ export function GaCanvas({
                               readOnly={readOnly}
                               pxPerMm={pxPerMm}
                               panelHeightMm={panelHeight}
+                              blankFirst={blankFirst}
                               bayLeftMm={bayOffsets[i]}
                               isSelected={selectedBayId === v.id}
                               selectedPlacedId={selectedBayId === v.id ? selectedPlacedId : null}
@@ -1970,12 +1968,6 @@ export function GaCanvas({
                       </div>
                     </div>
 
-                    {sb.std === "ArTuK" && (
-                      <div className="flex">
-                        <div style={{ width: RULER_WIDTH_PX }} />
-                        <ArtukLevelRow widths={bays.map((v) => (v.width_mm ?? 0) * pxPerMm)} heightPx={ARTUK_LEVEL_GAP_MM * pxPerMm} />
-                      </div>
-                    )}
                     <div className="flex">
                       <div style={{ width: RULER_WIDTH_PX }} />
                       <DrawingBar label={`BASEFRAME · ${plinthHeight}mm`} heightPx={plinthHeight * pxPerMm} widthPx={totalWidth * pxPerMm} tip={`Baseframe — ${totalWidth}mm W × ${plinthHeight}mm H`} />
@@ -2026,7 +2018,6 @@ export function GaCanvas({
                     {sb.std === "ArTuK" && (
                       <>
                         <div className="bg-red-600" style={{ width: sideViewWidthPx, height: ARTUK_STRIP_MM * pxPerMm }} />
-                        <ArtukLevelRow widths={[sideViewWidthPx]} heightPx={ARTUK_LEVEL_GAP_MM * pxPerMm} />
                       </>
                     )}
                     <div className="relative">
@@ -2050,7 +2041,7 @@ export function GaCanvas({
                               ? {
                                   id: sideBay.id,
                                   name: sideBay.name,
-                                  compartments: computeCompartments(sideBay, panelHeight).map((c) => {
+                                  compartments: computeCompartments(sideBay, panelHeight, blankFirst).map((c) => {
                                     const f = sideBay.placed.find((p) => p.id === c.placedId)?.feeder;
                                     return { ...c, deviceDepthMm: f ? deviceDepthFor(f) : undefined };
                                   }),
@@ -2063,7 +2054,6 @@ export function GaCanvas({
                         />
                       )}
                     </div>
-                    {sb.std === "ArTuK" && <ArtukLevelRow widths={[sideViewWidthPx]} heightPx={ARTUK_LEVEL_GAP_MM * pxPerMm} />}
                     <DrawingBar label={`PLINTH · ${plinthHeight}mm`} heightPx={plinthHeight * pxPerMm} widthPx={sideViewWidthPx} />
                     <HorizontalDimension widthPx={sideViewWidthPx} label={`${sideViewDepthMm}mm`} />
                     <PanelSummaryTable
@@ -2155,6 +2145,7 @@ export function GaCanvas({
                     placedId={selectedPlacedId}
                     unitIndex={selectedUnitIndex}
                     panelHeightMm={panelHeight}
+                    blankFirst={blankFirst}
                     readOnly={readOnly}
                     onUnitHeight={(h) => setUnitHeight(selectedBay.id, selectedPlacedId, selectedUnitIndex, h)}
                     onDummyHeight={(h) => setDummyHeight(selectedBay.id, h)}
@@ -2458,18 +2449,6 @@ function ArtukStripSegment({ widthPx, heightPx }: { widthPx: number; heightPx: n
   );
 }
 
-// The 60mm ArTuK level (empty space) above the topmost and below the
-// bottommost feeder, one bordered cell per bay.
-function ArtukLevelRow({ widths, heightPx }: { widths: number[]; heightPx: number }) {
-  return (
-    <div className="flex">
-      {widths.map((w, i) => (
-        <div key={i} className="border-x border-black/70 bg-neutral-100" style={{ width: w, height: heightPx }} />
-      ))}
-    </div>
-  );
-}
-
 function PanelSummaryTable({
   widthMm,
   depthMm,
@@ -2548,6 +2527,7 @@ function BayColumn({
   readOnly,
   pxPerMm,
   panelHeightMm,
+  blankFirst,
   bayLeftMm,
   isSelected,
   selectedPlacedId,
@@ -2568,6 +2548,7 @@ function BayColumn({
   readOnly: boolean;
   pxPerMm: number;
   panelHeightMm: number;
+  blankFirst: boolean;
   bayLeftMm: number;
   isSelected: boolean;
   selectedPlacedId: string | null;
@@ -2588,7 +2569,7 @@ function BayColumn({
   const widthMm = vertical.width_mm ?? 0;
   const widthPx = widthMm * pxPerMm;
   const heightPx = panelHeightMm * pxPerMm;
-  const compartments = computeCompartments(vertical, panelHeightMm);
+  const compartments = computeCompartments(vertical, panelHeightMm, blankFirst);
   // the 60mm side gaps -- every bay, cable/busbar alleys included
   const gapPx = widthMm <= 2 * FEEDER_SIDE_GAP_MM ? 0 : FEEDER_SIDE_GAP_MM * pxPerMm;
   const feederWidthMm = widthMm <= 2 * FEEDER_SIDE_GAP_MM ? widthMm : widthMm - 2 * FEEDER_SIDE_GAP_MM;
@@ -2801,6 +2782,7 @@ function PlacedItemPanel({
   placedId,
   unitIndex,
   panelHeightMm,
+  blankFirst,
   readOnly,
   onUnitHeight,
   onDummyHeight,
@@ -2811,6 +2793,7 @@ function PlacedItemPanel({
   placedId: string;
   unitIndex: number;
   panelHeightMm: number;
+  blankFirst: boolean;
   readOnly: boolean;
   onUnitHeight: (heightMm: number | null) => void;
   onDummyHeight: (heightMm: number | null) => void;
@@ -2819,7 +2802,7 @@ function PlacedItemPanel({
 }) {
   const isDummy = placedId.endsWith("::dummy");
   const row = bay.placed.find((p) => p.id === placedId) ?? null;
-  const compartments = computeCompartments(bay, panelHeightMm);
+  const compartments = computeCompartments(bay, panelHeightMm, blankFirst);
   const current = compartments.find((c) => (isDummy ? c.isBlank : c.placedId === placedId && (c.unitIndex ?? 0) === unitIndex));
   const custom = isDummy ? bay.dummy_height_mm : (row?.unit_heights?.[unitIndex] ?? null);
   const standard = row ? compartmentHeightFor(row.feeder) : null;

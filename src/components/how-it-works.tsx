@@ -338,8 +338,10 @@ export function HowItWorks() {
                 change its unit height in the bay panel. On ArTuK boards you pick the <b>ArTuK height</b>{" "}
                 as ABB defines it: <b>2231mm overall</b> on the 100mm baseframe (2131mm without it), or 2031 / 1831mm with ABB&apos;s 1800 / 1600mm
                 uprights. The uprights&apos; modular height (2000mm = 20 × 100mm modules) holds the horizontal busbar chamber and the feeders; the
-                other 131mm is the 31mm red strip plus the 50mm margins above and below the modules (so 2100mm below the strip + 31mm strip =
-                2131mm, 2231mm with the baseframe). On other boards, <b>Panel Height</b> is the panel&apos;s full height without the base, with the
+                uprights run from the bottom of the 31mm red strip to the top of the baseframe (2100mm on a 2131mm bay, so 2231mm with the
+                baseframe), and the busbar chamber and feeders fill them with no gaps: with the chamber at the <b>top</b>, the bottom feeder sits
+                on the baseframe (spare height is left just under the chamber); with the chamber at the <b>bottom</b>, the top feeder sits under
+                the strip (spare height is left just above the chamber). Drag the blank space to put it elsewhere. On other boards, <b>Panel Height</b> is the panel&apos;s full height without the base, with the
                 busbar chamber inside it — not added on top. The red strip shows &ldquo;ABB&rdquo; at the left
                 and &ldquo;ArTu&rdquo; at the right corner of every bay. The <b>busbar chamber height</b> is <b>300mm minimum</b> on every board; on ArTuK it
                 follows ABB&apos;s rule for the main bar above that: up to 160 wide → 300mm, 200×10 → 400mm (set automatically; type a height to override, and the chamber panel offers
