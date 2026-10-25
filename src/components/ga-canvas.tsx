@@ -41,6 +41,8 @@ import {
   artukHeightOf,
   DEFAULT_BAY_DEPTH_MM,
   FEEDER_SIDE_GAP_MM,
+  ALLEY_MIN_WIDTH_MM,
+  isAlley,
   bayWidthFor,
   deviceDepthFor,
   DEFAULT_COMPARTMENT_HEIGHT_MM,
@@ -107,8 +109,9 @@ type HoverExtent = { topMm: number; heightMm: number; bayLeftMm: number; bayWidt
 // Auto-generate GA uses, so it stays accurate for auto-generated bays and
 // still useful (naming what a manual bay is missing) for hand-built ones.
 function explainBay(v: VerticalWithFeeders): string[] {
-  if (v.bay_type === "cable_alley") return ["Cable Alley — structural bay for cable routing; width/depth set by hand."];
-  if (v.bay_type === "busbar_alley") return ["Busbar Alley — structural bay for the busbar run; width/depth set by hand."];
+  const alleyMin = (v.width_mm ?? 0) < ALLEY_MIN_WIDTH_MM ? [`Narrower than the ${ALLEY_MIN_WIDTH_MM}mm minimum (300mm opening + 60mm each side) — widen it.`] : [];
+  if (v.bay_type === "cable_alley") return ["Cable Alley — structural bay for cable routing; width/depth set by hand, minimum " + ALLEY_MIN_WIDTH_MM + "mm (60mm each side, like every bay).", ...alleyMin];
+  if (v.bay_type === "busbar_alley") return ["Busbar Alley — structural bay for the busbar run; width/depth set by hand, minimum " + ALLEY_MIN_WIDTH_MM + "mm (60mm each side, like every bay).", ...alleyMin];
   if (v.placed.length === 0) return ["No feeders placed yet — width/depth set by hand."];
 
   const lines: string[] = [];
@@ -143,7 +146,7 @@ function explainBay(v: VerticalWithFeeders): string[] {
   }
 
   if (unclassified.length > 0) {
-    lines.push(`${unclassified.length} feeder(s) with no Device Type set — sized with a flat ${DEFAULT_COMPARTMENT_HEIGHT_MM}mm fallback slot; set Device Type + rating in BOM Builder for a real ArTuK height.`);
+    lines.push(`${unclassified.length} feeder(s) with no Device Type set — sized at a default ${DEFAULT_COMPARTMENT_HEIGHT_MM}mm — adjust the unit height here, or set Device Type + rating in BOM Builder for a real ArTuK height.`);
   }
 
   return lines;
@@ -817,8 +820,8 @@ export function GaCanvas({
       switchboard_id: sb.id,
       name: `${template.namePrefix} ${count}`,
       bay_type: template.bay_type,
-      // a 600mm feeder + 60mm each side; alleys are narrower
-      width_mm: template.bay_type === "cable_alley" || template.bay_type === "busbar_alley" ? 300 : 600 + 2 * FEEDER_SIDE_GAP_MM,
+      // a 600mm feeder + 60mm each side; alleys a 300mm opening + 60mm each side
+      width_mm: template.bay_type === "cable_alley" || template.bay_type === "busbar_alley" ? ALLEY_MIN_WIDTH_MM : 600 + 2 * FEEDER_SIDE_GAP_MM,
       depth_mm: null,
       sort_order: bays.length,
       created_at: new Date().toISOString(),
@@ -837,7 +840,14 @@ export function GaCanvas({
 
   function setBayDim(id: string, field: "width_mm" | "depth_mm", value: string) {
     const num = value ? Number(value) : null;
-    setVerticals(verticals.map((v) => (v.id === id ? { ...v, [field]: num } : v)));
+    setVerticals(
+      verticals.map((v) => {
+        if (v.id !== id) return v;
+        // alleys keep the 60mm side gaps: never narrower than 420mm
+        const val = field === "width_mm" && num != null && isAlley(v.bay_type) ? Math.max(num, ALLEY_MIN_WIDTH_MM) : num;
+        return { ...v, [field]: val };
+      })
+    );
   }
 
   function deleteBay(id: string) {
@@ -2937,7 +2947,13 @@ function BayDetailsPanel({
             disabled={readOnly}
             onChange={(e) => setLocalWidth(e.target.value)}
             onKeyDown={numericKeyGuard()}
-            onBlur={() => onDimChange("width_mm", localWidth)}
+            onBlur={() => {
+              // alleys can't go below 420mm -- show the clamped value
+              const n = Number(localWidth);
+              const v = localWidth && vertical && isAlley(vertical.bay_type) && n < ALLEY_MIN_WIDTH_MM ? String(ALLEY_MIN_WIDTH_MM) : localWidth;
+              if (v !== localWidth) setLocalWidth(v);
+              onDimChange("width_mm", v);
+            }}
             className="w-20 rounded border border-surface-container-high px-2 py-1 text-sm disabled:bg-surface-container-low"
           />
         </label>

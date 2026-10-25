@@ -14,12 +14,17 @@ export type VerticalWithFeeders = Vertical & {
 // Defaults used when a switchboard has no value set yet.
 export const BUSBAR_CHAMBER_HEIGHT_MM = 100;
 export const DEFAULT_PANEL_HEIGHT_MM = 2100;
-export const DEFAULT_COMPARTMENT_HEIGHT_MM = 150;
+// height of a feeder whose size can't be looked up (no ACB / MCCB / rated
+// starter to read it from) -- the user adjusts it per unit in GA Builder
+export const DEFAULT_COMPARTMENT_HEIGHT_MM = 300;
 export const DEFAULT_BAY_DEPTH_MM = 600;
 
 // Every switchgear bay leaves a 60mm gap each side of its feeders: a 600mm
 // wide feeder sits in a 720mm bay (drawn as dotted lines inside the bay).
 export const FEEDER_SIDE_GAP_MM = 60;
+// Cable / busbar alleys keep the same 60mm each side: a 300mm alley
+// opening, so 420mm minimum.
+export const ALLEY_MIN_WIDTH_MM = 300 + 2 * FEEDER_SIDE_GAP_MM;
 // ArTuK heights, per ABB's assembly guideline (WK-003): a standard bay is
 // 2231mm overall on its 100mm baseframe -- 2131mm without it. Inside that
 // is the modular height of the uprights (2000mm = 20 x 100mm modules; ABB

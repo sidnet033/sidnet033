@@ -332,7 +332,9 @@ export function HowItWorks() {
               <>
                 Layout rules: each switchgear bay leaves a <b>60mm gap</b> each side of its feeders (dotted lines), so a 600mm feeder sits in a
                 720mm bay, and a bay&apos;s width follows its <b>widest feeder</b> (updated whenever feeders are added, moved or removed; you can
-                still type a width) — the gaps apply to every bay, cable and busbar alleys included. On ArTuK boards you pick the <b>ArTuK height</b>{" "}
+                still type a width) — the gaps apply to every bay, cable and busbar alleys included, so an alley is at least <b>420mm</b> wide (300mm
+                opening + 60mm each side). A feeder whose height can&apos;t be looked up (no ACB / MCCB, or no rating / kW) starts at <b>300mm</b>;
+                change its unit height in the bay panel. On ArTuK boards you pick the <b>ArTuK height</b>{" "}
                 as ABB defines it: <b>2231mm overall</b> on the 100mm baseframe (2131mm without it), or 2031 / 1831mm with ABB&apos;s 1800 / 1600mm
                 uprights. The uprights&apos; modular height (2000mm = 20 × 100mm modules) holds the horizontal busbar chamber and the feeders; the
                 other 131mm is the 25mm red strip plus the margins above and below the modules. The red strip shows &ldquo;ABB&rdquo; at the left
