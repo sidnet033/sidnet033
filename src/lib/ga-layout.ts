@@ -32,10 +32,10 @@ export const ALLEY_MIN_WIDTH_MM = 300 + 2 * FEEDER_SIDE_GAP_MM;
 // is the modular height of the uprights (2000mm = 20 x 100mm modules; ABB
 // also makes 1800 and 1600mm uprights), which holds the horizontal busbar
 // chamber and the feeders. The remaining 131mm is the red ArTuK strip
-// (25mm) plus the margins above and below the modules.
+// (31mm) plus the 50mm margins above and below the modules.
 // ARTUK_HEIGHTS_MM are heights WITHOUT the baseframe (strip to bottom of
 // the frame); the GA shows them with the baseframe added (2231 etc.).
-export const ARTUK_STRIP_MM = 25;
+export const ARTUK_STRIP_MM = 31;
 export const ARTUK_FIXED_MM = 131;
 // the margin above the topmost and below the bottommost module
 export const ARTUK_LEVEL_GAP_MM = (ARTUK_FIXED_MM - ARTUK_STRIP_MM) / 2;
@@ -69,13 +69,14 @@ export function artukHeightOf(panelMm: number | null, chamberMm: number): number
 
 // Panel (feeder) height actually used for a switchboard: on ArTuK, the
 // ArTuK height less the strip and busbar chamber; otherwise the panel
-// height set on the switchboard.
+// height set on the switchboard (its full height without the base, busbar
+// chamber included) less the chamber.
 export function effectivePanelHeight(
   sb: Pick<Switchboard, "std" | "panel_height_mm" | "busbar_chamber_height_mm">,
   chamberMm: number = sb.busbar_chamber_height_mm ?? BUSBAR_CHAMBER_HEIGHT_MM
 ): number {
   if (sb.std === "ArTuK") return artukHeightOf(sb.panel_height_mm, chamberMm) - ARTUK_FIXED_MM - chamberMm;
-  return sb.panel_height_mm ?? DEFAULT_PANEL_HEIGHT_MM;
+  return (sb.panel_height_mm ?? DEFAULT_PANEL_HEIGHT_MM) - chamberMm;
 }
 
 // A feeder's own width (without the side gaps): an ACB is its ArTuK bay

@@ -394,11 +394,13 @@ export function GaCanvas({
   const [chamberAuto, setChamberAuto] = useState(false);
   // ArTuK: you pick an ArTuK height (top of the strip to the top of the
   // baseframe, baseframe NOT included); the feeders get whatever's left after
-  // the 25mm strip, the two 60mm levels and the busbar chamber.
+  // the 31mm strip, the two 50mm levels and the busbar chamber.
   const [artukHeight, setArtukHeight] = useState(DEFAULT_ARTUK_HEIGHT_MM);
   const [savedArtukHeight, setSavedArtukHeight] = useState(DEFAULT_ARTUK_HEIGHT_MM);
   const isArtuk = sb?.std === "ArTuK";
-  const panelHeight = isArtuk ? artukHeight - ARTUK_FIXED_MM - busbarHeight : panelHeightSetting;
+  // feeder area: ArTuK -- the ArTuK height less strip, levels and chamber;
+  // otherwise the panel height (full height without base) less the chamber
+  const panelHeight = isArtuk ? artukHeight - ARTUK_FIXED_MM - busbarHeight : panelHeightSetting - busbarHeight;
   const [busbarOverrides, setBusbarOverrides] = useState<Record<string, BusbarOverride>>({});
   const [savedBusbarOverrides, setSavedBusbarOverrides] = useState<Record<string, BusbarOverride>>({});
   const [densities, setDensities] = useState<{ Cu: number; Al: number }>({ Cu: 1.6, Al: 1.0 });
@@ -1270,7 +1272,10 @@ export function GaCanvas({
       if (arrangement !== savedArrangement) paramPatch.arrangement = arrangement;
       if (internalArc !== savedInternalArc) paramPatch.internal_arc = internalArc;
       if (hasBusduct !== savedHasBusduct) paramPatch.has_busduct = hasBusduct;
-      if (panelHeight !== savedPanelHeight) paramPatch.panel_height_mm = panelHeight;
+      // stored: ArTuK -- the feeder area (the ArTuK height is recovered from
+      // it); otherwise the panel's full height without the base
+      const storedPanel = isArtuk ? panelHeight : panelHeightSetting;
+      if (storedPanel !== savedPanelHeight) paramPatch.panel_height_mm = storedPanel;
       if (busbarHeight !== savedBusbarHeight) paramPatch.busbar_chamber_height_mm = busbarHeight;
       if (Object.keys(paramPatch).length > 0) {
         const { error } = await supabase.from("switchboards").update(paramPatch).eq("id", sb.id);
@@ -1495,7 +1500,7 @@ export function GaCanvas({
           <Field label="Panel Height">
             <select
               disabled={readOnly}
-              value={panelHeight}
+              value={panelHeightSetting}
               onChange={(e) => setPanelHeight(Number(e.target.value))}
               className="rounded border border-surface-container-high px-1.5 py-1"
             >
