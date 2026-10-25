@@ -678,6 +678,12 @@ export function BusbarSegmentPanel({
           <dd className="text-right font-mono text-on-surface">{segment.chart.sheet}</dd>
           <dt className="text-on-surface-variant">Chart size</dt>
           <dd className="text-right font-mono text-on-surface">{formatJoints(segment.chart.joints)}</dd>
+          <dt className="text-on-surface-variant">Design current</dt>
+          <dd className="text-right font-mono text-on-surface">{segment.designCurrentA != null ? `${segment.designCurrentA} A` : "—"}</dd>
+          <dt className="text-on-surface-variant" title="What ABB's size works out to: design current ÷ phase bar area (per phase, at the breaker terminal)">
+            Works out to
+          </dt>
+          <dd className="text-right font-mono text-on-surface">{segment.effectiveDensity != null ? `${segment.effectiveDensity} A/mm² ${material}` : "—"}</dd>
         </dl>
       ) : (
       <dl className="mb-3 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px]">
@@ -849,7 +855,10 @@ export function BusbarSchedule({
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-secondary">Busbar Schedule</p>
           <p className="text-[11px] text-on-surface-variant">
-            {material} at {density} A/mm² · {poles >= 4 ? `3 phases + neutral at ${neutralPct}%` : "3-pole, no neutral"} · total{" "}
+            {plan.segments.some((x) => x.chart)
+              ? `${material} sized by ABB's ArTuK charts (A/mm² column shows what each works out to) · ${poles >= 4 ? "neutral as ABB charts it" : "3-pole, no neutral"}`
+              : `${material} at ${density} A/mm² · ${poles >= 4 ? `3 phases + neutral at ${neutralPct}%` : "3-pole, no neutral"}`}{" "}
+            · total{" "}
             <span className="font-semibold text-on-surface">{plan.totalWeightKg.toFixed(1)} kg</span>. Click a row or a bar in the drawing to edit it.
           </p>
         </div>
@@ -928,7 +937,9 @@ export function BusbarSchedule({
               <th className="px-2 py-1.5">Busbar</th>
               <th className="px-2 py-1.5">From → To</th>
               <th className="px-2 py-1.5 text-right">Design A</th>
-              <th className="px-2 py-1.5 text-right">Req. mm²</th>
+              <th className="px-2 py-1.5 text-right" title="Current density: sized from it on non-ArTuK boards; on ArTuK, what ABB's chart size works out to">
+                A/mm²
+              </th>
               <th className="px-2 py-1.5">Phase bar</th>
               <th className="px-2 py-1.5">Neutral</th>
               <th className="px-2 py-1.5 text-right">Length</th>
@@ -955,7 +966,9 @@ export function BusbarSchedule({
                     {s.fromLabel} → {s.toLabel}
                   </td>
                   <td className="px-2 py-1 text-right font-mono">{s.designCurrentA ?? "—"}</td>
-                  <td className="px-2 py-1 text-right font-mono">{s.requiredAreaMm2 ?? "—"}</td>
+                  <td className="px-2 py-1 text-right font-mono" title={s.chart ? "ABB chart size ÷ design current" : `needs ${s.requiredAreaMm2 ?? "—"} mm² per phase`}>
+                    {s.chart ? (s.effectiveDensity ?? "—") : s.capacityA != null && s.bar ? density : "—"}
+                  </td>
                   <td className={`px-2 py-1 font-mono ${s.undersized ? "font-semibold text-red-700" : "text-on-surface"}`}>
                     {formatBar(s.bar, s.runs)}
                   </td>

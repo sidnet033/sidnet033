@@ -12,7 +12,9 @@ export type VerticalWithFeeders = Vertical & {
 };
 
 // Defaults used when a switchboard has no value set yet.
-export const BUSBAR_CHAMBER_HEIGHT_MM = 100;
+// main (horizontal) busbar chamber: 300mm minimum by default; GA Builder
+// lets the user type another height
+export const BUSBAR_CHAMBER_HEIGHT_MM = 300;
 export const DEFAULT_PANEL_HEIGHT_MM = 2100;
 // height of a feeder whose size can't be looked up (no ACB / MCCB / rated
 // starter to read it from) -- the user adjusts it per unit in GA Builder
@@ -42,10 +44,12 @@ export const ARTUK_HEIGHTS_MM = ARTUK_MODULAR_HEIGHTS_MM.map((m) => m + ARTUK_FI
 export const DEFAULT_ARTUK_HEIGHT_MM = ARTUK_HEIGHTS_MM[0];
 
 // ABB's horizontal busbar section height by main bar size (ArTuK sizing
-// sheet): up to 80x10 -> 200mm, 100-160 -> 300mm, 200x10 -> 400mm.
+// sheet: up to 80x10 -> 200mm, 100-160 -> 300mm, 200x10 -> 400mm), with
+// our 300mm minimum on top -- so 300mm up to 160 wide, 400mm for 200x10.
+// The user can still pick another height by hand.
 export function artukChamberHeightFor(bar: { widthMm: number } | null | undefined): number | null {
   if (!bar) return null;
-  return bar.widthMm <= 80 ? 200 : bar.widthMm <= 160 ? 300 : 400;
+  return Math.max(BUSBAR_CHAMBER_HEIGHT_MM, bar.widthMm <= 80 ? 200 : bar.widthMm <= 160 ? 300 : 400);
 }
 export const ARTUK_CHAMBER_HEIGHTS_MM = [200, 300, 400];
 

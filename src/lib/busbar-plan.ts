@@ -166,6 +166,9 @@ export type BusbarSegment = {
   overridden: { size: boolean; runs: boolean; length: boolean };
   capacityA: number | null;
   undersized: boolean;
+  // ArTuK: the current density ABB's chart size works out to (design A ÷
+  // phase copper/aluminium per phase), A/mm² -- sized by ABB, density follows
+  effectiveDensity: number | null;
   weightKg: number | null;
   // ArTuK: the ABB chart this bar was taken from (not current density)
   chart: SegmentChart | null;
@@ -223,7 +226,7 @@ export type BusbarPlan = {
 
 type DraftSegment = Omit<
   BusbarSegment,
-  "key" | "requiredAreaMm2" | "auto" | "bar" | "runs" | "neutral" | "lengthMm" | "overridden" | "capacityA" | "undersized" | "weightKg" | "chart" | "pieces"
+  "key" | "requiredAreaMm2" | "auto" | "bar" | "runs" | "neutral" | "lengthMm" | "overridden" | "capacityA" | "undersized" | "effectiveDensity" | "weightKg" | "chart" | "pieces"
 > & { chart?: SegmentChart | null };
 
 function isAlley(t: BayType | null) {
@@ -323,6 +326,20 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
     }
   }
 
+  // ArTuK with no ABB main-bar chart for the way it's fed (copper MCCB-fed,
+  // or no rated ACB incomer): ABB's main busbar size at the board's rating
+  // still beats current density
+  if (artuk && !mainChart && mainCurrent != null) {
+    const pick = chartFor(mainCurrent, null, null);
+    if (pick) {
+      mainChart = { sheet: pick.chart.sheet, joints: [pick.chart.main], pieces: null };
+      mainNotes.push(
+        `ArTuK ${matName} — ABB has no main busbar table for how this board is fed, so ABB's main busbar size for ${pick.chart.ratingLabel} ("${pick.chart.sheet}") is used: ${formatJoints([pick.chart.main])}, ${neutralNote}.`
+      );
+      mainWarnings.push(...pick.warnings.filter((w) => !w.includes("isn't in ABB's")));
+    }
+  }
+
   if (bays.length > 0 && totalWidth > 0) {
     drafts.push({
       chart: mainChart,
@@ -370,10 +387,10 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
 
       // ArTuK ACBs (incomers and outgoings): links from ABB's chart
       const pick =
-        f.device_type === "ACB" && bayFunctionOf(f) !== "bus_coupler" ? chartFor(f.rated_current ?? (isIncomerFeeder(f, bay.bayType) ? mainCurrent : null), bay, breakerFrameOf(f)) : null;
+        f.device_type === "ACB" ? chartFor(f.rated_current ?? (isIncomerFeeder(f, bay.bayType) ? mainCurrent : null), bay, breakerFrameOf(f)) : null;
       // ArTuK MCCB incomer: ABB's MCCB link size on both terminals
       const incomerMccb =
-        artuk && !pick && f.device_type === "MCCB" && isIncomerFeeder(f, bay.bayType) && (f.rated_current ?? mainCurrent) != null
+        artuk && !pick && f.device_type === "MCCB" && (isIncomerFeeder(f, bay.bayType) || bayFunctionOf(f) === "bus_coupler") && (f.rated_current ?? mainCurrent) != null
           ? pickMccbLink(material, f.rated_current ?? mainCurrent, breakerFrameOf(f) ?? suggestMccbFrame((f.rated_current ?? mainCurrent)!), breakerFrameOf(f) != null)
           : null;
       const mccbChart: SegmentChart | null = incomerMccb
@@ -509,7 +526,15 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
       }
       group.links.push({ bay, c, feeder: f });
       // ArTuK MCCBs: ABB's link size at the MCCB terminal
-      const mccb = artuk && f.device_type === "MCCB" && f.rated_current != null ? pickMccbLink(material, f.rated_current, breakerFrameOf(f) ?? suggestMccbFrame(f.rated_current), breakerFrameOf(f) != null) : null;
+      // ArTuK MCCBs: ABB's link size at the MCCB terminal; other devices
+      // (starters, MPCB / fuse feeders...) take ABB's MCCB link size for
+      // their rating -- ABB has no separate table for them
+      const mccb =
+        artuk && f.rated_current != null
+          ? f.device_type === "MCCB"
+            ? pickMccbLink(material, f.rated_current, breakerFrameOf(f) ?? suggestMccbFrame(f.rated_current), breakerFrameOf(f) != null)
+            : pickMccbLink(material, f.rated_current, suggestMccbFrame(f.rated_current), false)
+          : null;
       const towardDropper = group.x >= centreX ? bay.leftMm + bay.widthMm : bay.leftMm;
       const terminalX = (towardDropper + centreX) / 2;
       drafts.push({
@@ -531,7 +556,11 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
         notes: [
           "Feeder busbar from the dropper to this outgoing device's incoming terminal.",
           ...(mccb
-            ? [`ArTuK ${matName} — ABB's MCCB link size for ${mccb.row.frame} ${mccb.row.ratingLabel} (${mccb.row.terminal} terminal): ${formatJoints([mccb.row.link])}; neutral taken the same.`]
+            ? [
+                f.device_type === "MCCB"
+                  ? `ArTuK ${matName} — ABB's MCCB link size for ${mccb.row.frame} ${mccb.row.ratingLabel} (${mccb.row.terminal} terminal): ${formatJoints([mccb.row.link])}; neutral taken the same.`
+                  : `ArTuK ${matName} — ABB has no link table for this device, so ABB's MCCB link size for its ${f.rated_current}A rating (${mccb.row.frame} ${mccb.row.ratingLabel}) is used: ${formatJoints([mccb.row.link])}; neutral taken the same.`,
+              ]
             : []),
         ],
         warnings: [...noRating, ...(mccb?.warnings ?? [])],
@@ -547,7 +576,31 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
     const capped = mainCurrent != null && sum > mainCurrent;
     const current = sum > 0 ? (capped ? mainCurrent : sum) : null;
     const servedBays = Array.from(new Set(group.links.map((l) => l.bay.name)));
+    // ArTuK: ABB has no vertical busbar (VBB) size table -- use ABB's
+    // horizontal busbar size for the same current (aluminium MCCB boards:
+    // ABB's lower-rating HBB table first)
+    let dropperChart: SegmentChart | null = null;
+    const dropperNotes: string[] = [];
+    const dropperWarnings: string[] = [];
+    if (artuk && current != null) {
+      const hbb = material === "Al" ? pickAlMccbHbb(current, artuk.ka) : null;
+      if (hbb && hbb.row.maxA >= current) {
+        dropperChart = { sheet: `Al MCCB HBB ${hbb.row.ratingLabel}`, joints: [hbb.row.main], pieces: null };
+        dropperNotes.push(`ArTuK aluminium — ABB has no vertical busbar table, so ABB's horizontal busbar size for ${hbb.row.ratingLabel} is used: ${formatJoints([hbb.row.main])}.`);
+        dropperWarnings.push(...hbb.warnings);
+      } else {
+        const pick = chartFor(current, null, null);
+        if (pick) {
+          dropperChart = { sheet: pick.chart.sheet, joints: [pick.chart.main], pieces: null };
+          dropperNotes.push(
+            `ArTuK ${matName} — ABB has no vertical busbar table, so ABB's horizontal busbar size for ${pick.chart.ratingLabel} ("${pick.chart.sheet}") is used: ${formatJoints([pick.chart.main])}.`
+          );
+          dropperWarnings.push(...pick.warnings.filter((w) => !w.includes("isn't in ABB's")));
+        }
+      }
+    }
     drafts.push({
+      chart: dropperChart,
       kind: "dropper",
       verticalId: group.host.id,
       placedFeederId: null,
@@ -564,10 +617,12 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
       autoLengthMm: Math.round(Math.abs(farY - chamberMidY)),
       notes: [
         `Sized on the full sum of the feeders it serves (${sum}A, no diversity)${capped ? `, capped at the ${mainCurrent}A main busbar rating` : ""}.`,
+        ...dropperNotes,
       ],
       warnings: [
         ...(group.insideBay ? [`No busbar alley next to ${group.host.name} — dropper drawn inside the bay. Add a Busbar Alley beside it.`] : []),
         ...(unrated > 0 ? [`${unrated} served feeder(s) have no rated current and were left out of the sum.`] : []),
+        ...dropperWarnings,
       ],
     });
   }
@@ -687,6 +742,7 @@ function finishSegment(
     overridden: { size: sizeOverridden, runs: runsOverridden, length: lengthOverridden },
     capacityA,
     undersized,
+    effectiveDensity: first && bar && d.designCurrentA != null && d.designCurrentA > 0 ? Math.round((d.designCurrentA / (barArea(bar) * runs)) * 100) / 100 : null,
     weightKg,
     chart,
     pieces,

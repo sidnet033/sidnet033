@@ -236,7 +236,8 @@ export function HowItWorks() {
                 in the project.
               </>,
               <>
-                <b>Busbar current density</b> (A/mm², Cu and Al) sets how large busbars are made. <b>Busbar rate</b> (INR/kg, Cu and Al) prices the
+                <b>Busbar current density</b> (A/mm², Cu and Al) sets how large busbars are made on non-ArTuK boards (ArTuK boards follow ABB&apos;s
+                charts). <b>Busbar rate</b> (INR/kg, Cu and Al) prices the
                 busbar weight in the BOM — leave it at 0 and the BOM will remind you to set it.
               </>,
               <>
@@ -338,8 +339,8 @@ export function HowItWorks() {
                 as ABB defines it: <b>2231mm overall</b> on the 100mm baseframe (2131mm without it), or 2031 / 1831mm with ABB&apos;s 1800 / 1600mm
                 uprights. The uprights&apos; modular height (2000mm = 20 × 100mm modules) holds the horizontal busbar chamber and the feeders; the
                 other 131mm is the 25mm red strip plus the margins above and below the modules. The red strip shows &ldquo;ABB&rdquo; at the left
-                and &ldquo;ArTu&rdquo; at the right corner of every bay. The <b>busbar chamber height</b> follows ABB&apos;s rule for the main bar:
-                up to 80×10 → 200mm, 100–160 → 300mm, 200×10 → 400mm (set automatically; type a height to override, and the chamber panel offers
+                and &ldquo;ArTu&rdquo; at the right corner of every bay. The <b>busbar chamber height</b> is <b>300mm minimum</b> on every board; on ArTuK it
+                follows ABB&apos;s rule for the main bar above that: up to 160 wide → 300mm, 200×10 → 400mm (set automatically; type a height to override, and the chamber panel offers
                 ABB&apos;s value again). <b>Arrangement</b> (next to Cable Access) is Single front by default; Double front is ABB&apos;s back-to-back
                 layout. MCC bay depth follows ABB: rear access 1037mm; front access 637mm (single-run busbar) or 837mm (two runs); double front
                 1037mm up to 2000A, 1237mm at 2500A. Front-access and double-front ArTu-K are type-tested to 50kA 1s and Form 3b (double front up
@@ -380,8 +381,12 @@ export function HowItWorks() {
                 and whose kA and IP cover the board&apos;s. The main busbar follows the largest incomer&apos;s chart (an MCCB-fed aluminium board
                 uses ABB&apos;s lower-rating HBB table). MCCB feeder links use ABB&apos;s MCCB link sizes. Neutral is as ABB charts it,
                 whatever the board&apos;s 50% / 100% setting (copper is mostly 100%; aluminium usually smaller). Copper ACB link weights use ABB&apos;s own
-                cut lengths; other chart bars use the drawn length. Droppers and copper MCCB-fed main busbars aren&apos;t in ABB&apos;s charts and
-                are still sized by current density. These bars show an <b>ABB chart</b> tag when clicked.
+                cut lengths; other chart bars use the drawn length. Where ABB has no table, the nearest ABB rule is used — never current density:
+                a copper MCCB-fed main busbar and every <b>dropper</b> (vertical busbar) take ABB&apos;s horizontal busbar size for their current
+                (aluminium: ABB&apos;s lower-rating HBB table first); starters and other non-MCCB feeders take ABB&apos;s MCCB link size for their
+                rating; bus-coupler ACBs use the ACB chart. Current density is then <b>worked out from ABB&apos;s size</b> (design current ÷ phase
+                bar area) and shown as &ldquo;Works out to … A/mm²&rdquo; on each bar and in the schedule&apos;s A/mm² column. These bars show an{" "}
+                <b>ABB chart</b> tag when clicked.
               </>,
               <>
                 To change a bar, click it in the drawing (or a row in the <b>Busbar Schedule</b>) and pick a size, runs per phase or
@@ -913,7 +918,8 @@ function DimensionsReference() {
         </table>
         <p className="mt-2 text-xs text-secondary">
           The MCCB link frame follows the frame ArTuK sizing picks for the rating (e.g. 630A → T6/XT6). ABB has no HBB table for copper
-          MCCB-fed boards, so those stay on current density, as do droppers (vertical busbars) on every ArTuK board.
+          MCCB-fed boards and no vertical busbar table: those (and droppers on every ArTuK board) take ABB&apos;s horizontal busbar size for their
+          current.
         </p>
       </Section>
 
