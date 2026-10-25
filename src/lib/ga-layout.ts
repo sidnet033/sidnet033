@@ -120,11 +120,29 @@ export function isAlley(bayType: BayType | null): boolean {
   return bayType === "cable_alley" || bayType === "busbar_alley";
 }
 
-// A bay's width is set by its widest feeder plus the two side gaps; null
+// Standard ArTuK bay widths, smallest first.
+export const ARTUK_BAY_WIDTHS_MM = [720, 920, 1120, 1320];
+
+// A bay with two or more ACBs, or an ACB and an MCCB: the busbars from the
+// main busbar to each breaker can't share one route, so the bay goes up a
+// standard width (720 -> 920 ...). The user can still type any width.
+export function sharedBreakerBay(v: Pick<VerticalWithFeeders, "placed">): boolean {
+  const units = (t: string) => v.placed.filter((p) => p.feeder.device_type === t).reduce((s, p) => s + (p.qty || 1), 0);
+  const acbs = units("ACB");
+  return acbs >= 2 || (acbs >= 1 && units("MCCB") >= 1);
+}
+
+export function nextBayWidth(widthMm: number): number {
+  return ARTUK_BAY_WIDTHS_MM.find((w) => w > widthMm) ?? widthMm + 200;
+}
+
+// A bay's width is set by its widest feeder plus the two side gaps -- one
+// standard size up when several ACBs / an ACB and an MCCB share it; null
 // for empty bays (nothing to size from).
 export function bayWidthFor(v: Pick<VerticalWithFeeders, "bay_type" | "placed">): number | null {
   if (v.bay_type === "unassigned" || v.placed.length === 0) return null;
-  return Math.max(...v.placed.map((p) => feederWidthFor(p.feeder))) + 2 * FEEDER_SIDE_GAP_MM;
+  const w = Math.max(...v.placed.map((p) => feederWidthFor(p.feeder))) + 2 * FEEDER_SIDE_GAP_MM;
+  return sharedBreakerBay(v) ? nextBayWidth(w) : w;
 }
 
 export type Compartment = { id: string; label: string; heightMm: number; topMm: number; isBlank: boolean; placedId?: string; unitIndex?: number };
@@ -231,7 +249,8 @@ export function artukBaySize(v: VerticalWithFeeders, opts: ArtukBayOptions = {})
     const frame = (["E1.2", "E2.2", "E4.2", "E6.2"].includes(itemFrame ?? "") ? itemFrame : suggestAcbFrame(p.feeder.rated_current)) as ReturnType<typeof suggestAcbFrame>;
     const fn = bayFunctionOf(p.feeder) ?? "outgoing";
     const spec = lookupAcbBaySpec(frame, fn);
-    if (spec) return { widthMm: spec.widthMm, depthMm: spec.depthMm };
+    // several ACBs / ACB + MCCB in one bay: one standard width up
+    if (spec) return { widthMm: sharedBreakerBay(v) ? nextBayWidth(spec.widthMm) : spec.widthMm, depthMm: spec.depthMm };
     // No dedicated ArTuK bay-spec row for this combination (only happens for
     // E4.2/E6.2 bus-coupler, absent from the source's 11 sample rows) -- fall
     // back to the device's own generic dimensions, using the same 1037mm

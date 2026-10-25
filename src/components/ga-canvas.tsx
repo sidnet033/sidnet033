@@ -44,6 +44,8 @@ import {
   ALLEY_MIN_WIDTH_MM,
   isAlley,
   bayWidthFor,
+  sharedBreakerBay,
+  nextBayWidth,
   deviceDepthFor,
   DEFAULT_COMPARTMENT_HEIGHT_MM,
   artukBaySize,
@@ -127,14 +129,20 @@ function explainBay(v: VerticalWithFeeders): string[] {
       const spec = lookupAcbBaySpec(frame, fn);
       if (spec) {
         lines.push(`ACB ${p.feeder.rated_current}A → frame ${frame}, ${fn.replace("_", " ")} → ArTuK spec: ${spec.widthMm}×${spec.heightMm}×${spec.depthMm}mm (IP${spec.ipRating}, Form ${spec.form}).`);
-        if (v.width_mm !== spec.widthMm) lines.push(`Current width ${v.width_mm ?? "—"}mm differs from the ${spec.widthMm}mm standard — likely adjusted by hand.`);
+        const expected = sharedBreakerBay(v) ? nextBayWidth(spec.widthMm) : spec.widthMm;
+        if (v.width_mm !== expected) lines.push(`Current width ${v.width_mm ?? "—"}mm differs from the ${expected}mm standard — likely adjusted by hand.`);
       } else {
         lines.push(`ACB ${p.feeder.rated_current}A → frame ${frame}, ${fn.replace("_", " ")} → no ArTuK bay-spec row for this combination; generic device dimensions used, 1037mm depth assumed.`);
       }
     } else {
       lines.push("ACB with no rated current set — width/depth set by hand; give it a rating in BOM Builder for a real ArTuK size.");
     }
-    if (acbUnits.length > 1) lines.push(`${acbUnits.length} ACB units share this bay — unusual; each ACB normally gets its own dedicated bay.`);
+    if (sharedBreakerBay(v)) {
+      const spec = p.feeder.rated_current != null ? lookupAcbBaySpec(suggestAcbFrame(p.feeder.rated_current), bayFunctionOf(p.feeder) ?? "outgoing") : null;
+      lines.push(
+        `${otherClassified.some((o) => o.feeder.device_type === "MCCB") && acbUnits.reduce((s, u) => s + (u.qty || 1), 0) < 2 ? "An ACB and an MCCB" : "Several ACBs"} share this bay — their busbars from the main busbar can't take the same route, so the bay is one standard width up${spec ? ` (${spec.widthMm} → ${nextBayWidth(spec.widthMm)}mm)` : ""}. Type another width to override.`
+      );
+    }
   }
 
   if (otherClassified.length > 0) {
