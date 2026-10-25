@@ -1850,16 +1850,23 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
 }) {
   const total = lines.reduce((s, l) => s + l.qty * l.rate, 0) + (autoLines?.total ?? 0) + (enclosureAuto?.total ?? 0);
   const [partsOpen, setPartsOpen] = useState(false);
+  // Starts collapsed -- the header still shows the section total.
+  const [open, setOpen] = useState(false);
   return (
     <div className="overflow-hidden rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-xs">
-      <div className="flex items-center justify-between border-b border-surface-container bg-surface-container-low/60 px-4 py-2.5">
-        <h3 className="text-sm font-semibold text-on-surface">{title}</h3>
-        {!readOnly && (
+      <div className="flex items-center justify-between gap-3 border-b border-surface-container bg-surface-container-low/60 px-4 py-2.5">
+        <button onClick={() => setOpen(!open)} className="flex flex-1 items-center gap-2 text-left">
+          <Icon name={open ? "expand_less" : "expand_more"} size={18} className="text-on-surface-variant" />
+          <h3 className="text-sm font-semibold text-on-surface">{title}</h3>
+          {!open && <span className="ml-auto text-sm font-semibold tabular-nums text-on-surface">{money(total)}</span>}
+        </button>
+        {open && !readOnly && (
           <button onClick={onAdd} className="flex items-center gap-1 text-xs font-medium text-primary hover:underline">
             <Icon name="add" size={14} /> Add line
           </button>
         )}
       </div>
+      {open && (
       <table className="w-full text-xs">
         <thead className="text-left uppercase tracking-wide text-on-surface-variant">
           <tr>
@@ -2000,6 +2007,7 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
           </tr>
         </tfoot>
       </table>
+      )}
     </div>
   );
 }
