@@ -25,6 +25,7 @@ import {
   formatJoints,
   type ArtukChart,
 } from "@/lib/artuk-busbar-chart";
+import { ALTITUDE_TABLE, deratingGuide } from "@/lib/breaker-derating";
 import { BAR_SIZES, MATERIAL_DENSITY, barArea, type BusbarMaterial } from "@/lib/busbar-plan";
 
 // Reference capacity uses the project defaults; each project can set its own
@@ -47,6 +48,7 @@ const NAV: NavItem[] = [
   { id: "busbars", label: "6. Busbar routing & sizing" },
   { id: "costing", label: "7. Costing" },
   { id: "checks", label: "Checks & alerts" },
+  { id: "derating", label: "Site derating (breakers)" },
   { id: "shortcuts", label: "Keyboard shortcuts" },
   { id: "colors", label: "What the colors mean" },
   {
@@ -445,6 +447,77 @@ export function HowItWorks() {
               </>,
             ]}
           />
+        </Section>
+
+        <Section
+          id="derating"
+          title="Site derating — choosing breakers for hot or high sites"
+          note="ABB rates its breakers at 40 °C ambient and up to 2000 m. Above either, a breaker carries less than its nameplate current."
+        >
+          <Steps
+            items={[
+              <>
+                <b>When it applies</b>: the project&apos;s site ambient is above <b>40 °C</b> or its altitude is above <b>2000 m</b> (Project
+                Detail shows a notice). On <b>ArTuK</b> boards, a few large Emax 2 ratings lose current even at 35 °C because of the heat inside
+                the panel — see the first table.
+              </>,
+              <>
+                <b>How to select</b>: for every incomer and outgoing breaker, read the column for the site ambient (between columns, use the
+                hotter one) and pick a breaker whose value is <b>at least the feeder&apos;s rated current</b>. Then apply the altitude factor
+                below. BOM Builder and Project Detail check this for you and suggest the next size up.
+              </>,
+              <>
+                <b>Ways to comply</b>: go up a rating or frame (e.g. E2.2 2500A → E4.2 3200A); for Emax 2 use vertical rear (VR) terminals,
+                which run cooler than horizontal ones; for Tmax XT prefer a fixed breaker over plug-in / withdrawable, and an electronic trip
+                over thermal-magnetic; improve panel ventilation (consult ABB / type-test). Ratings not listed below carry full current up to
+                70 °C.
+              </>,
+              <>
+                <b>Altitude</b> (all three families): rated current{" "}
+                {ALTITUDE_TABLE.map(([m, f]) => `${Math.round(f * 100)}% at ${m} m`).join(", ")}. Maximum service voltage also drops — on a
+                690 V system above 2000 m use ABB&apos;s 900 V Emax 2 version.
+              </>,
+            ]}
+          />
+          <div className="mt-4 space-y-5">
+            {deratingGuide().map((t) => (
+              <div key={t.title}>
+                <p className="text-sm font-semibold text-on-surface">{t.title}</p>
+                <p className="mb-1 text-xs text-secondary">{t.note}</p>
+                <table className="w-full text-xs">
+                  <thead className="bg-surface-container-low text-on-surface-variant">
+                    <tr>
+                      <th className="px-2 py-1 text-left">Breaker</th>
+                      {t.temps.map((c) => (
+                        <th key={c} className="px-2 py-1 text-right">
+                          {c === 40 ? "≤40" : c} °C
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {t.rows.map((r) => (
+                      <tr key={r.label} className="border-t border-surface-container">
+                        <td className="px-2 py-1 font-medium">{r.label}</td>
+                        {r.values.map((v, i) => {
+                          const rated = Number(r.label.match(/(\d+)A$/)?.[1] ?? 0);
+                          return (
+                            <td key={i} className={`px-2 py-1 text-right tabular-nums ${v < rated ? "font-semibold text-amber-700" : "text-on-surface-variant"}`}>
+                              {v}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+            <p className="text-xs text-secondary">
+              Source: ABB SACE Emax 2 technical catalogue (2024), Formula Air ACB technical catalogue (2024), SACE Tmax XT technical catalogue
+              (2024). Amber = below the breaker&apos;s rating.
+            </p>
+          </div>
         </Section>
 
         <Section id="shortcuts" title="Keyboard shortcuts" note="On a Mac, use Cmd in place of Ctrl.">

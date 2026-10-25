@@ -299,3 +299,44 @@ export function deratingMessage(w: DeratingWarning): string {
     (r.notes.length ? ` Note: ${r.notes.join("; ")}.` : "")
   );
 }
+
+// Why a site needs derating at all: breakers are rated at 40 °C ambient
+// and up to 2000 m. Empty when the site is within both.
+export const DERATING_FREE_MAX_C = 40;
+export const DERATING_FREE_MAX_M = 2000;
+export function siteDeratingReasons(ambientC: number | null, altitudeM: number | null): string[] {
+  const out: string[] = [];
+  if (ambientC != null && ambientC > DERATING_FREE_MAX_C) out.push(`ambient ${ambientC} °C is above ${DERATING_FREE_MAX_C} °C`);
+  if (altitudeM != null && altitudeM > DERATING_FREE_MAX_M) out.push(`altitude ${altitudeM} m is above ${DERATING_FREE_MAX_M} m`);
+  return out;
+}
+
+// Selection tables for How it works: what each standard breaker carries at
+// each ambient (sea level), computed from the same catalogue data as the
+// check. Only ratings that lose current somewhere up to 70 °C are listed.
+export type GuideTable = { title: string; note: string; temps: number[]; rows: { label: string; values: number[] }[] };
+export function deratingGuide(): GuideTable[] {
+  const at = (frame: string, amps: number, t: number, inPanel: boolean, description = "") =>
+    derateBreaker({ category: frame.startsWith("XT") ? "MCCB" : "ACB", frame, amps, description, ambientC: t, altitudeM: 0, inPanel })?.deratedA ?? amps;
+  const build = (list: [string, number][], temps: number[], inPanel: boolean, description = "") =>
+    list
+      .map(([frame, amps]) => ({ label: `${frame} ${amps}A`, values: temps.map((t) => at(frame, amps, t, inPanel, description)), amps }))
+      .filter((r) => r.values.some((v) => v < r.amps))
+      .map(({ label, values }) => ({ label, values }));
+  const hot = [40, 45, 50, 55, 60, 65, 70];
+  const emaxAll: [string, number][] = [
+    ["E1.2", 1250], ["E1.2", 1600], ["E2.2", 1600], ["E2.2", 2000], ["E2.2", 2500], ["E4.2", 2500], ["E4.2", 3200], ["E4.2", 4000], ["E6.2", 5000], ["E6.2", 6300],
+  ];
+  const xtAll: [string, number][] = [
+    ["XT1", 160], ["XT2", 160], ["XT3", 250], ["XT4", 250], ["XT5", 400], ["XT5", 630], ["XT6", 800], ["XT6", 1000], ["XT7", 800], ["XT7", 1000], ["XT7", 1250], ["XT7", 1600],
+  ];
+  return [
+    { title: "Emax 2 — in an ArTuK panel (A)", note: "ABB in-switchgear table: IP31, HR terminals, one breaker in the column. Columns are the site ambient around the panel.", temps: [35, 45, 55], rows: build(emaxAll, [35, 45, 55], true) },
+    { title: "Emax 2 — breaker alone (A)", note: "Fixed or withdrawable, copper connections. Used for non-ArTuK boards.", temps: hot, rows: build(emaxAll, hot, false) },
+    { title: "Formula Air (A)", note: "Fixed or withdrawable.", temps: hot, rows: build(FORMULA_RATINGS, hot, false) },
+    { title: "Tmax XT, electronic trip — fixed (A)", note: "Maximum L setting with front terminals.", temps: hot, rows: build(xtAll, hot, false) },
+    { title: "Tmax XT, electronic trip — plug-in / withdrawable (A)", note: "Maximum L setting.", temps: hot, rows: build(xtAll, hot, false, "3p W") },
+    { title: "Tmax XT, thermal-magnetic trip (A)", note: "The thermal trip point drops above 40 °C.", temps: hot, rows: build(xtAll.filter(([f, a]) => f !== "XT7" && !(f === "XT6" && a > 800)), hot, false, "TMA") },
+  ];
+}
+export const ALTITUDE_TABLE = ALTITUDE;

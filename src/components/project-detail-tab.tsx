@@ -25,6 +25,7 @@ import { CURRENCIES } from "@/lib/currencies";
 import { formatMoneyDual } from "@/lib/money";
 import { ampsViolations, nextStandardAmps } from "@/lib/amps-check";
 import { numericKeyGuard } from "@/lib/numeric-input";
+import { siteDeratingReasons } from "@/lib/breaker-derating";
 import type { SwitchboardListItem } from "@/lib/revision-context";
 import type { Customer, Feeder, Project, ProjectStage, Revision, Switchboard } from "@/types/database";
 import type { Tab } from "@/components/revision-workspace";
@@ -240,6 +241,7 @@ export function ProjectDetailTab({
   const liveRemainingAlerts = useMemo(() => (projectData ? remainingAlerts(projectData, draftBoardChanges()) : []), [projectData, form, savedSnapshot, boards, boardsSnapshot]);
   // Site conditions drive switchgear derating -- required before any save.
   const siteMissing = form.site_altitude_m == null || form.site_ambient_temp_c == null;
+  const siteDerating = siteDeratingReasons(form.site_ambient_temp_c, form.site_altitude_m);
   const saveBlocked = ampsErrors.length > 0 || liveRemainingAlerts.length > 0 || siteMissing;
 
   const [review, setReview] = useState<ReviewItem[] | null>(null);
@@ -761,6 +763,21 @@ export function ProjectDetailTab({
                     onChange={(v) => patch("site_ambient_temp_c", v)}
                   />
                 </Field>
+                {siteDerating.length > 0 && (
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-300/70 bg-amber-50/70 px-3 py-2 text-xs text-on-surface sm:col-span-2 lg:col-span-4">
+                    <Icon name="device_thermostat" size={18} className="mt-0.5 shrink-0 text-amber-700" />
+                    <div>
+                      <p className="font-semibold text-amber-800">Switchgear derating applies at this site — {siteDerating.join(" and ")}.</p>
+                      <p className="mt-0.5 text-on-surface-variant">
+                        ACBs and MCCBs carry less than their rating here, so some feeders may need a bigger breaker. BOM Builder flags the ones
+                        that fall short.{" "}
+                        <a href="/how-it-works#derating" target="_blank" rel="noopener noreferrer" className="font-medium text-primary underline">
+                          How to select breakers for this site
+                        </a>
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 <Field label="Consultant">
                   {revisionArchived ? (
