@@ -251,10 +251,8 @@ export function artukBaySize(v: VerticalWithFeeders, opts: ArtukBayOptions = {})
     const spec = lookupAcbBaySpec(frame, fn);
     // several ACBs / ACB + MCCB in one bay: one standard width up
     if (spec) return { widthMm: sharedBreakerBay(v) ? nextBayWidth(spec.widthMm) : spec.widthMm, depthMm: spec.depthMm };
-    // No dedicated ArTuK bay-spec row for this combination (only happens for
-    // E4.2/E6.2 bus-coupler, absent from the source's 11 sample rows) -- fall
-    // back to the device's own generic dimensions, using the same 1037mm
-    // depth as the rest of the board.
+    // No ArTuK bay row even for the frame's incomer (shouldn't happen) --
+    // fall back to the device's own dimensions.
     const bracket = ACB_SIZES.find((b) => b.frame === frame);
     return bracket ? { widthMm: bracket.width4P100, depthMm: 1037 } : null;
   }

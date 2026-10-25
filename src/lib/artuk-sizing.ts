@@ -237,8 +237,20 @@ export function lookupFeederBoxHeight(feeder: {
   }
 }
 
+// No row for this frame + function -- ABB's samples have no E4.2 / E6.2 bus
+// coupler. ABB's E1.2 / E2.2 bus couplers are one standard width wider than
+// their incomer bay (720 -> 920, room for the bus riser), so a missing bus
+// coupler takes its frame's incomer bay one width up (E4.2 920 -> 1120);
+// anything else missing takes the frame's incomer bay. Always a standard
+// ArTuK width, never the bare breaker width.
+const BAY_WIDTH_STEPS = [720, 920, 1120, 1320];
 export function lookupAcbBaySpec(frame: AcbFrame, fn: BayFunction): AcbBaySpec | undefined {
-  return ACB_BAY_SPECS.find((s) => s.frame === frame && s.function === fn);
+  const exact = ACB_BAY_SPECS.find((s) => s.frame === frame && s.function === fn);
+  if (exact) return exact;
+  const incomer = ACB_BAY_SPECS.find((s) => s.frame === frame && s.function === "incomer");
+  if (!incomer || fn !== "bus_coupler") return incomer;
+  const widthMm = BAY_WIDTH_STEPS.find((w) => w > incomer.widthMm) ?? incomer.widthMm + 200;
+  return { ...incomer, function: "bus_coupler", widthMm, label: `ArTu-K Emax 2 ${widthMm}w ${frame} Bus Coupler (no ABB row -- ${frame} incomer bay one width up, as ABB does for E1.2 / E2.2)` };
 }
 
 export const DEVICE_TYPE_LABELS: Record<DeviceType, string> = {
