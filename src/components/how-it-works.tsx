@@ -335,7 +335,8 @@ export function HowItWorks() {
               <>
                 Layout rules: each switchgear bay leaves a <b>60mm gap</b> each side of its feeders (dotted lines), so a 600mm feeder sits in a
                 720mm bay, and a bay&apos;s width follows its <b>widest feeder</b> (updated whenever feeders are added, moved or removed; you can
-                still type a width) — a <b>bus coupler</b> ACB bay is one standard width wider than the same frame&apos;s incomer bay, as ABB does for E1.2 / E2.2
+                still type a width) — the whole panel has <b>one depth</b> — its deepest bay&apos;s — so every bay, alleys included, is drawn, saved and costed at
+                that depth (typing a depth on any bay sets it for all; Update GA uses the deepest any bay needs); a <b>bus coupler</b> ACB bay is one standard width wider than the same frame&apos;s incomer bay, as ABB does for E1.2 / E2.2
                 (E6.2 → 1320mm, as ABB has no row for it); an <b>E4.2</b> bus coupler is <b>920mm</b> by default; a bay holding <b>two or more ACBs, or an ACB and an MCCB</b>, goes one standard width up (720 → 920 → 1120 → 1320mm) because
                 the busbars from the main busbar to each breaker can&apos;t share one route — type another width in the bay panel to override it; the gaps apply to every bay, cable and busbar alleys included, so an alley is at least <b>420mm</b> wide (300mm
                 opening + 60mm each side). A feeder whose height can&apos;t be looked up (no ACB / MCCB, or no rating / kW) starts at <b>300mm</b>;
@@ -977,9 +978,8 @@ function DimensionsReference() {
               </tr>
               <tr className="border-b border-surface-container-high/60 align-top">
                 <td className="py-1.5 pr-3 font-medium">Line-up</td>
-                <td className="py-1.5 pr-3">Side panels LF20xx-1 only on the two ends of the line-up — left of the leftmost bay and right of the rightmost bay, each at
-                  that bay&apos;s own depth; bays in between get none (one N°2 pair when both end bays are the same depth, else a pair per end with
-                  a spare panel each), lifting eyebolts AA9610-1, and per joint between bays a coupling kit AD1014 and lifting reinforcement SA1350-1.</td>
+                <td className="py-1.5 pr-3">Side panels LF20xx-1 only on the two ends of the line-up — left of the leftmost bay and right of the rightmost bay (one N°2
+                  pair, at the panel&apos;s depth); bays in between get only their front and rear doors, lifting eyebolts AA9610-1, and per joint between bays a coupling kit AD1014 and lifting reinforcement SA1350-1.</td>
               </tr>
               <tr className="border-b border-surface-container-high/60 align-top">
                 <td className="py-1.5 pr-3 font-medium">Internal arc</td>

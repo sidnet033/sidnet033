@@ -44,6 +44,7 @@ import {
   ALLEY_MIN_WIDTH_MM,
   isAlley,
   bayWidthFor,
+  panelDepthOf,
   sharedBreakerBay,
   nextBayWidth,
   deviceDepthFor,
@@ -733,7 +734,7 @@ export function GaCanvas({
   const busbarSupports = isArtuk
     ? planBusbarSupports({
         plan: busbarPlan,
-        bays: bays.map((v, i) => ({ id: v.id, name: v.name, leftMm: bayOffsets[i], widthMm: v.width_mm ?? 0, depthMm: v.depth_mm })),
+        bays: bays.map((v, i) => ({ id: v.id, name: v.name, leftMm: bayOffsets[i], widthMm: v.width_mm ?? 0, depthMm: panelDepthOf(bays) ?? v.depth_mm })),
         material: busbarMaterial,
         ka: sb?.ka ?? null,
         mccbBoard: !bays.some((v) => v.placed.some((p) => p.feeder.device_type === "ACB")),
@@ -847,6 +848,8 @@ export function GaCanvas({
       placed: [],
     };
     created.sort_order = nextBaySortOrder();
+    // a new bay takes the panel's one depth
+    created.depth_mm = panelDepthOf(bays);
     setVerticals([...verticals, created]);
   }
 
@@ -856,6 +859,11 @@ export function GaCanvas({
 
   function setBayDim(id: string, field: "width_mm" | "depth_mm", value: string) {
     const num = value ? Number(value) : null;
+    // the whole panel has one depth -- a depth typed on any bay applies to all
+    if (field === "depth_mm") {
+      setVerticals(verticals.map((v) => (v.bay_type === "unassigned" ? v : { ...v, depth_mm: num })));
+      return;
+    }
     setVerticals(
       verticals.map((v) => {
         if (v.id !== id) return v;
@@ -946,6 +954,8 @@ export function GaCanvas({
         });
         return size ? { ...v, width_mm: size.widthMm, depth_mm: size.depthMm } : v;
       })
+      // one depth for the whole panel: the deepest bay's, alleys included
+    .map((v, _i, all) => (v.bay_type === "unassigned" ? v : { ...v, depth_mm: panelDepthOf(all) ?? v.depth_mm }))
     );
     if (abbChamberMm != null) {
       setBusbarHeight(abbChamberMm);
@@ -1135,6 +1145,9 @@ export function GaCanvas({
   }
 
   async function handleSave() {
+    // every bay is saved at the panel's one depth (its deepest bay's)
+    const boardDepth = panelDepthOf(verticals);
+    const depthToSave = (v: VerticalWithFeeders) => (v.bay_type === "unassigned" || boardDepth == null ? v.depth_mm : boardDepth);
     if (!sb || readOnly) return;
     if (hasBusduct && busductTotal === 0) {
       alert("Busduct entries is ticked for this panel — select a bay and add at least one busduct top entry before saving (or untick Busduct entries).");
@@ -1155,7 +1168,7 @@ export function GaCanvas({
             name: v.name,
             bay_type: v.bay_type,
             width_mm: v.width_mm,
-            depth_mm: v.depth_mm,
+            depth_mm: depthToSave(v),
             sort_order: v.sort_order,
             dummy_slot: v.dummy_slot,
             dummy_height_mm: v.dummy_height_mm,
@@ -1174,7 +1187,7 @@ export function GaCanvas({
         const fieldPatch: Partial<Vertical> = {};
         if (v.name !== prev.name) fieldPatch.name = v.name;
         if (v.width_mm !== prev.width_mm) fieldPatch.width_mm = v.width_mm;
-        if (v.depth_mm !== prev.depth_mm) fieldPatch.depth_mm = v.depth_mm;
+        if (depthToSave(v) !== prev.depth_mm) fieldPatch.depth_mm = depthToSave(v);
         if (v.dummy_slot !== prev.dummy_slot) fieldPatch.dummy_slot = v.dummy_slot;
         if (v.dummy_height_mm !== prev.dummy_height_mm) fieldPatch.dummy_height_mm = v.dummy_height_mm;
         if ((v.busduct_entries ?? 0) !== (prev.busduct_entries ?? 0)) fieldPatch.busduct_entries = v.busduct_entries ?? 0;

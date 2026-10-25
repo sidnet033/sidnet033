@@ -116,6 +116,13 @@ export function deviceDepthFor(feeder: Feeder): number {
   }
 }
 
+// A switchboard has one depth: its deepest bay's. Every bay -- alleys
+// included -- is built (and drawn, costed) at that depth.
+export function panelDepthOf(bays: Pick<VerticalWithFeeders, "bay_type" | "depth_mm">[]): number | null {
+  const ds = bays.filter((v) => v.bay_type !== "unassigned").map((v) => Number(v.depth_mm ?? 0)).filter((d) => d > 0);
+  return ds.length ? Math.max(...ds) : null;
+}
+
 export function isAlley(bayType: BayType | null): boolean {
   return bayType === "cable_alley" || bayType === "busbar_alley";
 }
@@ -322,7 +329,7 @@ export function planForSwitchboard(args: {
         name: v.name,
         bayType: v.bay_type as BayType | null,
         widthMm: v.width_mm ?? 0,
-        depthMm: v.depth_mm,
+        depthMm: panelDepthOf(bays) ?? v.depth_mm,
         leftMm,
         placed: v.placed.map((p) => ({ id: p.id, qty: p.qty, feeder: p.feeder as Feeder })),
         compartments: computeCompartments(v, args.panelHeightMm, args.params.std === "ArTuK" && chamberPositionFor(args.params.cable_entry) === "top")

@@ -606,8 +606,15 @@ export function auditBoard(
         });
       }
     }
+    // one depth for the whole board: the deepest any bay needs (or has)
+    const boardDepth = Math.max(
+      0,
+      ...board.verticals.filter((v) => v.bay_type !== "unassigned").map((v) => Number(v.depth_mm ?? 0)),
+      ...placedBays.map((v) => artukBaySize(v, bayOpts)?.depthMm ?? 0),
+    );
     for (const v of placedBays) {
-      const size = artukBaySize(v, bayOpts);
+      const own = artukBaySize(v, bayOpts);
+      const size = own ? { widthMm: own.widthMm, depthMm: boardDepth || own.depthMm } : null;
       if (
         size &&
         (v.width_mm !== size.widthMm || v.depth_mm !== size.depthMm)
