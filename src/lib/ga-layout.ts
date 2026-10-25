@@ -32,13 +32,14 @@ export const ALLEY_MIN_WIDTH_MM = 300 + 2 * FEEDER_SIDE_GAP_MM;
 // is the modular height of the uprights (2000mm = 20 x 100mm modules; ABB
 // also makes 1800 and 1600mm uprights), which holds the horizontal busbar
 // chamber and the feeders. The remaining 131mm is the red ArTuK strip
-// (31mm) plus 100mm. In the GA the feeders and chamber fill everything
-// from the bottom of the strip to the top of the baseframe (the uprights,
-// 2100mm on a 2131mm bay) -- no gaps above or below.
+// (31mm) plus the 50mm levels left empty under the strip and above the
+// baseframe -- e.g. 2100mm uprights = 50 + 2000 (chamber + feeders) + 50.
 // ARTUK_HEIGHTS_MM are heights WITHOUT the baseframe (strip to bottom of
 // the frame); the GA shows them with the baseframe added (2231 etc.).
 export const ARTUK_STRIP_MM = 31;
 export const ARTUK_FIXED_MM = 131;
+// the margin above the topmost and below the bottommost module
+export const ARTUK_LEVEL_GAP_MM = (ARTUK_FIXED_MM - ARTUK_STRIP_MM) / 2;
 export const ARTUK_MODULAR_HEIGHTS_MM = [2000, 1800, 1600];
 export const ARTUK_HEIGHTS_MM = ARTUK_MODULAR_HEIGHTS_MM.map((m) => m + ARTUK_FIXED_MM);
 export const DEFAULT_ARTUK_HEIGHT_MM = ARTUK_HEIGHTS_MM[0];
@@ -63,7 +64,7 @@ export function artukModularHeight(artukHeightMm: number): number {
 // height (boards saved under the old 145mm strip/levels rule fall back to
 // the 2000mm-upright default).
 export function artukHeightOf(panelMm: number | null, chamberMm: number): number {
-  const h = panelMm != null ? panelMm + chamberMm + ARTUK_STRIP_MM : null;
+  const h = panelMm != null ? panelMm + chamberMm + ARTUK_FIXED_MM : null;
   return h != null && ARTUK_HEIGHTS_MM.includes(h) ? h : DEFAULT_ARTUK_HEIGHT_MM;
 }
 
@@ -75,7 +76,7 @@ export function effectivePanelHeight(
   sb: Pick<Switchboard, "std" | "panel_height_mm" | "busbar_chamber_height_mm">,
   chamberMm: number = sb.busbar_chamber_height_mm ?? BUSBAR_CHAMBER_HEIGHT_MM
 ): number {
-  if (sb.std === "ArTuK") return artukHeightOf(sb.panel_height_mm, chamberMm) - ARTUK_STRIP_MM - chamberMm;
+  if (sb.std === "ArTuK") return artukHeightOf(sb.panel_height_mm, chamberMm) - ARTUK_FIXED_MM - chamberMm;
   return (sb.panel_height_mm ?? DEFAULT_PANEL_HEIGHT_MM) - chamberMm;
 }
 
@@ -165,9 +166,9 @@ export function unitHeightFor(row: Pick<PlacedFeeder, "unit_heights"> & { feeder
 // its own dummy_height_mm -- then it's that tall and any height still left
 // over simply stays empty at the bottom. Where it sits by default:
 // blankFirst (ArTuK with the busbar chamber at the top) puts it at the top
-// so the bottom feeder sits on the baseframe; otherwise at the bottom, so
-// the top feeder sits under the strip / chamber. A bay's dummy_slot (set
-// by dragging) wins over both.
+// so the bottom feeder sits on the bottom 50mm level above the baseframe;
+// otherwise at the bottom, so the top feeder sits under the top level /
+// chamber. A bay's dummy_slot (set by dragging) wins over both.
 export function computeCompartments(vertical: VerticalWithFeeders, panelHeightMm: number, blankFirst = false): Compartment[] {
   const sorted = [...vertical.placed].sort((a, b) => a.tier_number - b.tier_number || a.sort_order - b.sort_order);
   let usedByRows = 0;

@@ -31,8 +31,10 @@ import {
 import { bayFunctionOf, type BusbarOverride, type BusbarPlan, type BusbarSegment } from "@/lib/busbar-plan";
 import {
   ARTUK_CHAMBER_HEIGHTS_MM,
+  ARTUK_FIXED_MM,
   ARTUK_HEIGHTS_MM,
   artukChamberHeightFor,
+  ARTUK_LEVEL_GAP_MM,
   ARTUK_STRIP_MM,
   BUSBAR_CHAMBER_HEIGHT_MM,
   DEFAULT_ARTUK_HEIGHT_MM,
@@ -398,7 +400,7 @@ export function GaCanvas({
   const isArtuk = sb?.std === "ArTuK";
   // feeder area: ArTuK -- the ArTuK height less strip, levels and chamber;
   // otherwise the panel height (full height without base) less the chamber
-  const panelHeight = isArtuk ? artukHeight - ARTUK_STRIP_MM - busbarHeight : panelHeightSetting - busbarHeight;
+  const panelHeight = isArtuk ? artukHeight - ARTUK_FIXED_MM - busbarHeight : panelHeightSetting - busbarHeight;
   const [busbarOverrides, setBusbarOverrides] = useState<Record<string, BusbarOverride>>({});
   const [savedBusbarOverrides, setSavedBusbarOverrides] = useState<Record<string, BusbarOverride>>({});
   const [densities, setDensities] = useState<{ Cu: number; Al: number }>({ Cu: 1.6, Al: 1.0 });
@@ -693,7 +695,7 @@ export function GaCanvas({
   // is always the floor support, so it stays at the very bottom regardless.
   const busbarPosition = chamberPositionFor(sb?.cable_entry ?? null);
   // ArTuK, chamber at the top: blank space goes above the feeders so the
-  // bottom feeder sits on the baseframe
+  // bottom feeder sits on the bottom level, just above the baseframe
   const blankFirst = isArtuk && busbarPosition === "top";
 
   // Live busbar routing/sizing for the current draft layout -- recomputed on
@@ -1442,9 +1444,9 @@ export function GaCanvas({
   // 16px minimum)
   // ArTuK: red strip, then a 60mm level above the topmost feeder, and a 60mm
   // level between the bottommost feeder and the baseframe.
-  const frontStripPx = isArtuk ? ARTUK_STRIP_MM * pxPerMm : 0;
+  const frontStripPx = isArtuk ? ARTUK_FIXED_MM * pxPerMm : 0;
   const plinthPx = Math.max(plinthHeight * pxPerMm, 16);
-  const heightNoBaseMm = bayHeightMm + (isArtuk ? ARTUK_STRIP_MM : 0);
+  const heightNoBaseMm = bayHeightMm + (isArtuk ? ARTUK_FIXED_MM : 0);
 
   const busbarLabel = `BUSBAR CHAMBER${sb.amps ? ` · ${sb.amps}A` : ""}${sb.ka ? ` · ${sb.ka}kA` : ""} · ${sb.busbar ?? "Cu"}`;
   // With the busbar layer on, the main bar's own label (size + rating)
@@ -1829,6 +1831,10 @@ export function GaCanvas({
                             ))}
                           </div>
                         </div>
+                        <div className="flex">
+                          <div style={{ width: RULER_WIDTH_PX }} />
+                          <ArtukLevelRow widths={bays.map((v) => (v.width_mm ?? 0) * pxPerMm)} heightPx={ARTUK_LEVEL_GAP_MM * pxPerMm} />
+                        </div>
                       </>
                     )}
 
@@ -1968,6 +1974,12 @@ export function GaCanvas({
                       </div>
                     </div>
 
+                    {sb.std === "ArTuK" && (
+                      <div className="flex">
+                        <div style={{ width: RULER_WIDTH_PX }} />
+                        <ArtukLevelRow widths={bays.map((v) => (v.width_mm ?? 0) * pxPerMm)} heightPx={ARTUK_LEVEL_GAP_MM * pxPerMm} />
+                      </div>
+                    )}
                     <div className="flex">
                       <div style={{ width: RULER_WIDTH_PX }} />
                       <DrawingBar label={`BASEFRAME · ${plinthHeight}mm`} heightPx={plinthHeight * pxPerMm} widthPx={totalWidth * pxPerMm} tip={`Baseframe — ${totalWidth}mm W × ${plinthHeight}mm H`} />
@@ -2018,6 +2030,7 @@ export function GaCanvas({
                     {sb.std === "ArTuK" && (
                       <>
                         <div className="bg-red-600" style={{ width: sideViewWidthPx, height: ARTUK_STRIP_MM * pxPerMm }} />
+                        <ArtukLevelRow widths={[sideViewWidthPx]} heightPx={ARTUK_LEVEL_GAP_MM * pxPerMm} />
                       </>
                     )}
                     <div className="relative">
@@ -2054,6 +2067,7 @@ export function GaCanvas({
                         />
                       )}
                     </div>
+                    {sb.std === "ArTuK" && <ArtukLevelRow widths={[sideViewWidthPx]} heightPx={ARTUK_LEVEL_GAP_MM * pxPerMm} />}
                     <DrawingBar label={`PLINTH · ${plinthHeight}mm`} heightPx={plinthHeight * pxPerMm} widthPx={sideViewWidthPx} />
                     <HorizontalDimension widthPx={sideViewWidthPx} label={`${sideViewDepthMm}mm`} />
                     <PanelSummaryTable
@@ -2445,6 +2459,18 @@ function ArtukStripSegment({ widthPx, heightPx }: { widthPx: number; heightPx: n
     <div className="flex items-center justify-between overflow-hidden border-r border-red-800/40 px-0.5" style={{ width: widthPx, height: heightPx }}>
       <span className={box} style={{ fontSize, height: heightPx * 0.8 }}>ABB</span>
       <span className={box} style={{ fontSize, height: heightPx * 0.8 }}>ArTu</span>
+    </div>
+  );
+}
+
+// The 60mm ArTuK level (empty space) above the topmost and below the
+// bottommost feeder, one bordered cell per bay.
+function ArtukLevelRow({ widths, heightPx }: { widths: number[]; heightPx: number }) {
+  return (
+    <div className="flex">
+      {widths.map((w, i) => (
+        <div key={i} className="border-x border-black/70 bg-neutral-100" style={{ width: w, height: heightPx }} />
+      ))}
     </div>
   );
 }
