@@ -242,7 +242,8 @@ export function ProjectDetailTab({
   // Site conditions drive switchgear derating -- required before any save.
   const siteMissing = form.site_altitude_m == null || form.site_ambient_temp_c == null;
   const siteDerating = siteDeratingReasons(form.site_ambient_temp_c, form.site_altitude_m);
-  const saveBlocked = ampsErrors.length > 0 || liveRemainingAlerts.length > 0 || siteMissing;
+  // Amps below a feeder's rating is a warning (allowed), not a blocker.
+  const saveBlocked = liveRemainingAlerts.length > 0 || siteMissing;
 
   const [review, setReview] = useState<ReviewItem[] | null>(null);
   const [applyingFixes, setApplyingFixes] = useState(false);
@@ -285,19 +286,6 @@ export function ProjectDetailTab({
     try {
       const data = await loadProjectData(supabase, project.id);
       setProjectData(data);
-      const blocked = data.boards.find((bd) => {
-        const draft = draftBoards.get(bd.switchboard.id);
-        return (
-          draft &&
-          "amps" in draft &&
-          ampsViolations(draft.amps ?? null, bd.verticals.flatMap((v) => v.placed.map((p) => p.feeder))).length > 0
-        );
-      });
-      if (blocked) {
-        setSaving(false);
-        alert(`${blocked.switchboard.tag}: Amps is below the rating of a feeder in its BOM. Fix the highlighted Amps before saving.`);
-        return;
-      }
       const remaining = remainingAlerts(data, draftBoards);
       if (remaining.length > 0) {
         setSaving(false);
@@ -586,8 +574,6 @@ export function ProjectDetailTab({
               title={
                 siteMissing
                   ? "Enter the site altitude and ambient temperature first"
-                  : ampsErrors.length > 0
-                  ? "Fix the switchboard Amps error first"
                   : liveRemainingAlerts.length > 0
                     ? "Fix the alerts in this revision first (see Alerts & Warnings)"
                     : undefined
@@ -931,9 +917,9 @@ export function ProjectDetailTab({
           </div>
 
           {ampsErrors.length > 0 && (
-            <div className="mx-space-lg mb-space-md space-y-1 rounded-lg border border-error/40 bg-error/5 px-4 py-3 text-sm">
-              <div className="flex items-center gap-2 font-semibold text-error">
-                <Icon name="error" size={18} /> Amps set below a feeder&apos;s rating — can&apos;t save until fixed
+            <div className="mx-space-lg mb-space-md space-y-1 rounded-lg border border-amber-300/70 bg-amber-50/70 px-4 py-3 text-sm">
+              <div className="flex items-center gap-2 font-semibold text-amber-800">
+                <Icon name="warning" size={18} /> Warning: Amps set below a feeder&apos;s rating — you can still save
               </div>
               {ampsErrors.map(({ sb, savedAmps, over }) => {
                 const needed = nextStandardAmps(over[0].rated_current!);
@@ -941,8 +927,8 @@ export function ProjectDetailTab({
                   <div key={sb.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-on-surface">
                     <span>
                       <b>{sb.tag}</b> is set to <b>{sb.amps}A</b>, but its BOM has <b>{over[0].name}</b> at {over[0].rated_current}A
-                      {over.length > 1 ? ` (and ${over.length - 1} more above ${sb.amps}A)` : ""}. Set Amps to {needed}A or more, or lower/replace the feeder in
-                      BOM Builder first.
+                      {over.length > 1 ? ` (and ${over.length - 1} more above ${sb.amps}A)` : ""}. Check this is intended — or set Amps to {needed}A, or lower/replace the feeder
+                      in BOM Builder.
                     </span>
                     <button
                       onClick={() => updateSwitchboardField(sb.id, { amps: needed })}
@@ -1115,7 +1101,7 @@ export function ProjectDetailTab({
                             if (next === (sb.amps ?? null)) return;
                             updateSwitchboardField(sb.id, { amps: next });
                           }}
-                          className={`w-14 rounded border px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent ${ampsErrorIds.has(sb.id) ? "border-error bg-error/10 text-error ring-2 ring-error/30" : "border-surface-container-high"}`}
+                          className={`w-14 rounded border px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent ${ampsErrorIds.has(sb.id) ? "border-amber-400 bg-amber-50 text-amber-800 ring-2 ring-amber-300/40" : "border-surface-container-high"}`}
                         />
                       </td>
                       <td className="px-space-md py-space-md">

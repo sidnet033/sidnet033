@@ -508,7 +508,9 @@ export function auditBoard(
           ...base,
           id: `${sb.id}|feeder-over-amps|${f.id}`,
           area: "BOM",
-          severity: "alert",
+          // allowed (e.g. a breaker oversized for selectivity or spare
+          // capacity) -- flagged so it's a conscious choice
+          severity: "warning",
           message: `"${f.name}" is rated ${f.rated_current}A, above the switchboard's ${sb.amps}A — raise the switchboard's Amps or change the feeder.`,
           apply: null,
           applyLabel: null,

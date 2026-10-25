@@ -482,8 +482,12 @@ export function pickMccbLink(
     const top = rows[rows.length - 1];
     return { row: top, warnings: [`${amps}A MCCB is above ABB's ${material} MCCB link chart (${top.ratingLabel}) — ${top.frame} size used; check with ABB.`] };
   }
-  const byFrame = covering.find((r) => frameTokens(r.frame).some((t) => wanted.includes(t)));
-  const row = byFrame ?? covering[0];
+  // sized on the feeder's rating: only the rows at the first rating that
+  // covers it are considered -- the breaker's frame just picks among those
+  // (a big frame on a small feeder doesn't make the link bigger)
+  const atRating = covering.filter((r) => r.maxA === covering[0].maxA);
+  const byFrame = atRating.find((r) => frameTokens(r.frame).some((t) => wanted.includes(t)));
+  const row = byFrame ?? atRating[0];
   const known = rows.some((r) => frameTokens(r.frame).some((t) => wanted.includes(t)));
   return {
     row,

@@ -357,7 +357,8 @@ export function BomBuilder({
   // stays blocked until either side is changed.
   const ampsIssues = sb && draft ? ampsViolations(sb.amps, draft.modules.map((m) => m.feeder)) : [];
   const ampsIssueIds = new Set(ampsIssues.map((f) => f.id));
-  const saveBlocked = ampsIssues.length > 0;
+  // a feeder rated above the switchboard is a warning only -- saving is allowed
+  const saveBlocked = false;
 
   // Items rated below the switchboard's fault level -- a warning only;
   // saving is still allowed.
@@ -1082,7 +1083,6 @@ export function BomBuilder({
               <button
                 onClick={handleSave}
                 disabled={!dirty || saving || saveBlocked}
-                title={saveBlocked ? "Fix the switchboard rating error below first" : undefined}
                 className="btn btn-primary"
               >
                 <Icon name="save" size={16} />
@@ -1101,9 +1101,9 @@ export function BomBuilder({
       )}
 
       {ampsIssues.length > 0 && sb && (
-        <div className="rounded-lg border border-error/40 bg-error/5 px-4 py-3 text-sm text-on-surface">
-          <div className="flex items-center gap-2 font-semibold text-error">
-            <Icon name="error" size={18} /> Switchboard rating is below its feeders — can&apos;t save yet
+        <div className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-4 py-3 text-sm text-on-surface">
+          <div className="flex items-center gap-2 font-semibold text-amber-800">
+            <Icon name="warning" size={18} /> Warning: switchboard rating is below its feeders — you can still save
           </div>
           <p className="mt-1">
             {sb.tag} is rated <b>{sb.amps}A</b>, but{" "}
@@ -1116,8 +1116,8 @@ export function BomBuilder({
             .
           </p>
           <p className="mt-1 text-on-surface-variant">
-            To fix: raise the switchboard&apos;s Amps to at least <b>{nextStandardAmps(Math.max(...ampsIssues.map((f) => f.rated_current!)))}A</b> in Project
-            Detail → Switchboards (save there first), or lower the rating of / replace the feeder{ampsIssues.length > 1 ? "s" : ""} highlighted in red below.
+            If that isn&apos;t intended: raise the switchboard&apos;s Amps to at least <b>{nextStandardAmps(Math.max(...ampsIssues.map((f) => f.rated_current!)))}A</b> in Project
+            Detail → Switchboards (save there first), or lower the rating of / replace the feeder{ampsIssues.length > 1 ? "s" : ""} highlighted below.
           </p>
         </div>
       )}
@@ -1470,11 +1470,11 @@ function FeederModuleCard({
 
   return (
     <div
-      className={`overflow-hidden rounded-xl border bg-surface-container-lowest shadow-xs ${ampsError ? "border-error ring-2 ring-error/40" : "border-surface-container-high"}`}
+      className={`overflow-hidden rounded-xl border bg-surface-container-lowest shadow-xs ${ampsError ? "border-amber-400 ring-2 ring-amber-300/40" : "border-surface-container-high"}`}
     >
       {ampsError && (
-        <div className="flex items-center gap-1.5 bg-error/10 px-4 py-1 text-xs font-medium text-error">
-          <Icon name="error" size={14} /> {ampsError} — lower this feeder&apos;s rating or raise the switchboard&apos;s Amps.
+        <div className="flex items-center gap-1.5 bg-amber-50 px-4 py-1 text-xs font-medium text-amber-800">
+          <Icon name="warning" size={14} /> {ampsError} — lower this feeder&apos;s rating or raise the switchboard&apos;s Amps.
         </div>
       )}
       <div className={`flex flex-wrap items-center gap-3 border-b px-4 py-2.5 ${headerClass}`}>
