@@ -405,6 +405,9 @@ export function GaCanvas({
   const [savedBusbarOverrides, setSavedBusbarOverrides] = useState<Record<string, BusbarOverride>>({});
   const [densities, setDensities] = useState<{ Cu: number; Al: number }>({ Cu: 1.6, Al: 1.0 });
   const [showBusbars, setShowBusbars] = useState(true);
+  // pink busbar-support markers on the front view (drawing only -- the BOM
+  // still counts them)
+  const [showSupports, setShowSupports] = useState(true);
   const [selectedSegmentKey, setSelectedSegmentKey] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [resetKey, setResetKey] = useState(0);
@@ -1674,6 +1677,16 @@ export function GaCanvas({
               >
                 <Icon name="electric_bolt" size={14} /> Busbars
               </button>
+              {isArtuk && (
+                <button
+                  onClick={() => setShowSupports((v) => !v)}
+                  disabled={bays.length === 0 || !busbarSupports?.supports.length}
+                  title={showSupports ? "Hide the busbar supports (still counted in the BOM)" : "Show the busbar supports"}
+                  className={`btn btn-sm ${showSupports ? "btn-primary" : "btn-outline"}`}
+                >
+                  <Icon name="push_pin" size={14} /> Supports
+                </button>
+              )}
               {!readOnly && dirty && (
                 <>
                   <button onClick={handleCancel} disabled={saving} className="btn btn-outline btn-sm">
@@ -1920,7 +1933,7 @@ export function GaCanvas({
                         </div>
                       )}
 
-                      {busbarSupports?.supports.map((sup) => (
+                      {showSupports && busbarSupports?.supports.map((sup) => (
                         <div
                           key={sup.id}
                           data-ga-tip={`Busbar support ${sup.code}${sup.neutralCode ? ` + ${sup.neutralCode}` : ""} — ${sup.kind === "hbb" ? "main busbar" : "vertical busbar"}, span ≤${sup.spanMm}mm`}
