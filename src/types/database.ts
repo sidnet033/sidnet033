@@ -151,6 +151,8 @@ export type Project = {
   busbar_rate_al: number;
   enclosure_rate_gi: number;
   enclosure_rate_crca: number;
+  site_altitude_m: number | null;
+  site_ambient_temp_c: number | null;
 };
 
 export type Consultant = { id: string; name: string; created_by: string | null; created_at: string };

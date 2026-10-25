@@ -83,6 +83,8 @@ type ProjectPatch = {
   busbar_rate_al: number;
   enclosure_rate_gi: number;
   enclosure_rate_crca: number;
+  site_altitude_m: number | null;
+  site_ambient_temp_c: number | null;
 };
 
 function densitiesOf(p: ProjectPatch): Densities {
@@ -109,6 +111,8 @@ function snapshotOf(project: Project): ProjectPatch {
     busbar_rate_al: project.busbar_rate_al,
     enclosure_rate_gi: project.enclosure_rate_gi,
     enclosure_rate_crca: project.enclosure_rate_crca,
+    site_altitude_m: project.site_altitude_m,
+    site_ambient_temp_c: project.site_ambient_temp_c,
   };
 }
 
@@ -234,7 +238,9 @@ export function ProjectDetailTab({
   const ampsErrorIds = new Set(ampsErrors.map((e) => e.sb.id));
   // eslint-disable-next-line react-hooks/exhaustive-deps -- recomputed whenever the drafts change
   const liveRemainingAlerts = useMemo(() => (projectData ? remainingAlerts(projectData, draftBoardChanges()) : []), [projectData, form, savedSnapshot, boards, boardsSnapshot]);
-  const saveBlocked = ampsErrors.length > 0 || liveRemainingAlerts.length > 0;
+  // Site conditions drive switchgear derating -- required before any save.
+  const siteMissing = form.site_altitude_m == null || form.site_ambient_temp_c == null;
+  const saveBlocked = ampsErrors.length > 0 || liveRemainingAlerts.length > 0 || siteMissing;
 
   const [review, setReview] = useState<ReviewItem[] | null>(null);
   const [applyingFixes, setApplyingFixes] = useState(false);
@@ -346,6 +352,10 @@ export function ProjectDetailTab({
   async function persist(): Promise<boolean> {
     if (form.currency !== "INR" && !(form.exchange_rate > 0)) {
       alert(`Enter an exchange rate for ${form.currency} (INR per 1 ${form.currency}) before saving.`);
+      return false;
+    }
+    if (form.site_altitude_m == null || form.site_ambient_temp_c == null) {
+      alert("Enter the site altitude (m) and ambient temperature (°C) before saving — they decide switchgear derating.");
       return false;
     }
     setSaving(true);
@@ -550,6 +560,11 @@ export function ProjectDetailTab({
         <div className="flex items-center gap-space-sm">
           {!revisionArchived && justSaved && !dirty && <span className="font-body-sm text-body-sm text-tertiary">Saved</span>}
           {!revisionArchived && dirty && <span className="font-body-sm text-body-sm text-amber-600">Unsaved changes</span>}
+          {!revisionArchived && siteMissing && (
+            <span className="flex items-center gap-1 font-body-sm text-body-sm font-medium text-error">
+              <Icon name="error" size={15} /> Enter site altitude and ambient temperature to save
+            </span>
+          )}
           {!revisionArchived && dirty && liveRemainingAlerts.length > 0 && (
             <span className="flex items-center gap-1 font-body-sm text-body-sm font-medium text-error">
               <Icon name="error" size={15} /> Fix {liveRemainingAlerts.length} alert{liveRemainingAlerts.length === 1 ? "" : "s"} to save
@@ -567,7 +582,9 @@ export function ProjectDetailTab({
               onClick={handleSave}
               disabled={!dirty || saving || saveBlocked}
               title={
-                ampsErrors.length > 0
+                siteMissing
+                  ? "Enter the site altitude and ambient temperature first"
+                  : ampsErrors.length > 0
                   ? "Fix the switchboard Amps error first"
                   : liveRemainingAlerts.length > 0
                     ? "Fix the alerts in this revision first (see Alerts & Warnings)"
@@ -726,6 +743,23 @@ export function ProjectDetailTab({
                       </option>
                     ))}
                   </select>
+                </Field>
+                <Field label="Site Altitude (m) *">
+                  <SiteNumberInput
+                    disabled={revisionArchived}
+                    value={form.site_altitude_m}
+                    placeholder="e.g. 450"
+                    onChange={(v) => patch("site_altitude_m", v == null ? null : Math.round(v))}
+                  />
+                </Field>
+                <Field label="Site Ambient Temp (°C) *">
+                  <SiteNumberInput
+                    disabled={revisionArchived}
+                    value={form.site_ambient_temp_c}
+                    allowNegative
+                    placeholder="max, e.g. 45"
+                    onChange={(v) => patch("site_ambient_temp_c", v)}
+                  />
                 </Field>
 
                 <Field label="Consultant">
@@ -1259,6 +1293,47 @@ export function ProjectDetailTab({
         </div>
       </div>
     </div>
+  );
+}
+
+// Required number field: keeps the typed text locally (so "-" or "4." can be
+// typed) and reports a number, or null while blank / not a number.
+function SiteNumberInput({
+  value,
+  onChange,
+  disabled,
+  allowNegative = false,
+  placeholder,
+}: {
+  value: number | null;
+  onChange: (v: number | null) => void;
+  disabled: boolean;
+  allowNegative?: boolean;
+  placeholder?: string;
+}) {
+  const [text, setText] = useState(value == null ? "" : String(value));
+  const [prevValue, setPrevValue] = useState(value);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    if (value !== (text.trim() === "" || isNaN(Number(text)) ? null : Number(text))) setText(value == null ? "" : String(value));
+  }
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      disabled={disabled}
+      value={text}
+      placeholder={placeholder}
+      onKeyDown={numericKeyGuard(allowNegative)}
+      onChange={(e) => {
+        setText(e.target.value);
+        const n = Number(e.target.value);
+        onChange(e.target.value.trim() === "" || isNaN(n) ? null : n);
+      }}
+      className={`w-full rounded border bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low ${
+        value == null && !disabled ? "border-error" : "border-surface-container-high"
+      }`}
+    />
   );
 }
 
