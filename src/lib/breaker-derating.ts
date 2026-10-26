@@ -98,7 +98,7 @@ const XT_ELECTRONIC: Record<string, { upTo: number; row: XtRow }[]> = {
 type TmRow = { inA: number; f: [number, number, number, number] };
 const XT_THERMAL: Record<string, TmRow[]> = {
   XT1: [{ inA: 160, f: [0.969, 0.938, 0.875, 0.813] }],
-  XT2: [{ inA: 160, f: [0.964, 0.938, 0.875, 0.813] }],
+  XT2: [{ inA: 160, f: [0.964, 0.938, 0.869, 0.844] }], // 154.2 / 150 / 139 / 135A of 160A
   XT3: [{ inA: 250, f: [0.968, 0.932, 0.864, 0.82] }],
   XT4: [
     { inA: 160, f: [0.969, 0.938, 0.856, 0.813] },
