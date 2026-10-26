@@ -234,7 +234,7 @@ export function artukEnclosureBom(input: EnclosureInput): { lines: EnclosureLine
       }
     });
     add("AD1033-1", 5, "screws, per bay");
-    add("APR14/20", 3, "side/rear cover screws, per bay");
+    add("APR14/20", 3, "rear cover screws, per bay");
 
     if (alley) {
       add(`PO${H}${METAL_DOOR_W[inner] ?? "33"}-1`, 1, `${name}: metal door`);

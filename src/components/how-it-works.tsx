@@ -943,7 +943,7 @@ function DimensionsReference() {
           <tbody>
               <tr className="border-b border-surface-container-high/60 align-top">
                 <td className="py-1.5 pr-3 font-medium">Structure, per bay</td>
-                <td className="py-1.5 pr-3">Top/base set by width × depth (SK60/SK80/SK10/SK12/VC30 + depth: 10 = 1030, 60 = 630, 80 = 830, 12 = 1230; a 1467mm-deep bay is 1030 + 430 with TV1251-1 ×2 and TV5101-1 ×4), N°4 uprights SK2000-1 / SK1800-1 / SK1600-1, screws AD1033-1 ×5 and APR14/20 ×3.</td>
+                <td className="py-1.5 pr-3">Top/base set by width × depth (SK60/SK80/SK10/SK12/VC30 + depth: 10 = 1030, 60 = 630, 80 = 830, 12 = 1230; a 1467mm-deep bay is 1030 + 430 with TV1251-1 ×2 and TV5101-1 ×4), N°4 uprights SK2000-1 / SK1800-1 / SK1600-1, screws AD1033-1 ×5 and rear cover screws APR14/20 ×3.</td>
               </tr>
               <tr className="border-b border-surface-container-high/60 align-top">
                 <td className="py-1.5 pr-3 font-medium">Switchgear bay</td>
