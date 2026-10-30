@@ -137,7 +137,7 @@ export function HowItWorks() {
 
       <div className="min-w-0 flex-1 space-y-8">
         <div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight text-on-surface">How it works</h1>
+          <h1 className="text-[18px] font-bold text-on-surface">How it works</h1>
           <p className="mt-1 max-w-3xl text-sm text-secondary">
             A guide to estimating an LV switchboard in this app — from the item price list to a costed quote with a GA and busbar plan — plus what
             the colors mean and the sizing data the app uses.
@@ -667,7 +667,7 @@ export function HowItWorks() {
 
         <div id="dimensions" className="scroll-mt-4 space-y-8">
           <div>
-            <h2 className="font-display text-xl font-semibold text-on-surface">Dimensions & sizing data</h2>
+            <h2 className="text-[15px] font-bold text-on-surface">Dimensions & sizing data</h2>
             <p className="mt-1 max-w-3xl text-sm text-secondary">
               Reference data from ArTuK&rsquo;s standard feeder and bay sizing catalog. On any switchboard set to the{" "}
               <span className="font-medium">ArTuK</span> standard, GA Builder&rsquo;s <span className="font-medium">Update GA</span> reads this

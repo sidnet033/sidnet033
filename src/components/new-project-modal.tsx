@@ -108,9 +108,9 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
       <SavingOverlay show={saving} label="Creating project..." />
       <button
         onClick={() => setOpen(true)}
-        className="flex h-9 items-center gap-space-xs rounded-lg bg-primary px-space-md font-body-md text-body-md font-medium text-on-primary shadow-sm transition-colors hover:bg-primary-container"
+        className="btn btn-primary h-9"
       >
-        <Icon name="add_circle" size={18} />
+        <Icon name="add" size={16} />
         <span>+ New Project</span>
       </button>
 

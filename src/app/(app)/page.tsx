@@ -93,6 +93,7 @@ export default async function DashboardPage() {
           id: p.id,
           code: p.code,
           title: p.title,
+          stage: p.stage,
           engineer: p.created_by ? profileNames.get(p.created_by) ?? null : null,
           createdAtLabel: formatDate(p.created_at),
           revisions: revs,

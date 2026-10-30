@@ -108,31 +108,34 @@
   --font-label-md: var(--font-geist-sans);
   --font-label-sm: var(--font-geist-sans);
 
-  --text-display: 32px;
-  --text-display--line-height: 40px;
+  /* One type scale for the whole app: page title 18 / section 14 /
+     body 13 / small 12 / labels 11 px -- the larger sizes below were cut
+     down to it so no page shouts. */
+  --text-display: 22px;
+  --text-display--line-height: 28px;
   --text-display--letter-spacing: -0.02em;
   --text-display--font-weight: 700;
 
-  --text-headline-lg: 24px;
-  --text-headline-lg--line-height: 32px;
-  --text-headline-lg--letter-spacing: -0.01em;
-  --text-headline-lg--font-weight: 600;
+  --text-headline-lg: 18px;
+  --text-headline-lg--line-height: 24px;
+  --text-headline-lg--letter-spacing: 0;
+  --text-headline-lg--font-weight: 700;
 
-  --text-headline-lg-mobile: 20px;
-  --text-headline-lg-mobile--line-height: 28px;
-  --text-headline-lg-mobile--letter-spacing: -0.01em;
-  --text-headline-lg-mobile--font-weight: 600;
+  --text-headline-lg-mobile: 17px;
+  --text-headline-lg-mobile--line-height: 22px;
+  --text-headline-lg-mobile--letter-spacing: 0;
+  --text-headline-lg-mobile--font-weight: 700;
 
-  --text-headline-md: 18px;
-  --text-headline-md--line-height: 24px;
-  --text-headline-md--font-weight: 600;
+  --text-headline-md: 15px;
+  --text-headline-md--line-height: 20px;
+  --text-headline-md--font-weight: 700;
 
-  --text-headline-sm: 15px;
+  --text-headline-sm: 14px;
   --text-headline-sm--line-height: 20px;
-  --text-headline-sm--font-weight: 600;
+  --text-headline-sm--font-weight: 700;
 
-  --text-body-lg: 15px;
-  --text-body-lg--line-height: 22px;
+  --text-body-lg: 14px;
+  --text-body-lg--line-height: 20px;
 
   --text-body-md: 13px;
   --text-body-md--line-height: 18px;
@@ -150,8 +153,8 @@
   --text-label-sm--letter-spacing: 0.06em;
   --text-label-sm--font-weight: 600;
 
-  --text-telemetry-lg: 18px;
-  --text-telemetry-lg--line-height: 22px;
+  --text-telemetry-lg: 15px;
+  --text-telemetry-lg--line-height: 20px;
   --text-telemetry-lg--letter-spacing: 0.02em;
   --text-telemetry-lg--font-weight: 700;
 
@@ -176,6 +179,8 @@
 body {
   background: var(--background);
   color: var(--foreground);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .material-symbols-outlined {
@@ -210,6 +215,14 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #cbd5e1;
+}
+
+/* Set by <BusyCursor /> while the app waits on the server: the "working
+   in the background" cursor everywhere, so a slow click visibly does
+   something. */
+html.app-busy,
+html.app-busy * {
+  cursor: progress !important;
 }
 
 /* No up/down spinner arrows on number inputs, anywhere in the app. */

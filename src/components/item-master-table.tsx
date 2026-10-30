@@ -926,7 +926,7 @@ export function ItemMasterTable({
       <SavingOverlay show={saving} />
       <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
         <div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight text-on-surface">Item Master</h1>
+          <h1 className="text-[18px] font-bold text-on-surface">Item Master</h1>
           <p className="text-sm text-secondary">
             Every component and its cost. Feeders in the Feeder Master are built from these items.
             {isAdmin ? "" : " Only admins can edit — ask an admin to make changes."}

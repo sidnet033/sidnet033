@@ -190,15 +190,15 @@ export function XlsUpload({ onDone, currentUserName }: { onDone: () => void; cur
               <div className="space-y-3">
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div className="rounded-[4px] bg-tertiary-fixed/50 p-2">
-                    <p className="font-display text-lg font-bold text-on-tertiary-fixed">{summary.created}</p>
+                    <p className="text-[15px] font-bold text-on-tertiary-fixed">{summary.created}</p>
                     <p className="text-[10px] uppercase tracking-wide text-on-tertiary-fixed/80">New</p>
                   </div>
                   <div className="rounded-[4px] bg-secondary-container/60 p-2">
-                    <p className="font-display text-lg font-bold text-on-secondary-container">{summary.updated}</p>
+                    <p className="text-[15px] font-bold text-on-secondary-container">{summary.updated}</p>
                     <p className="text-[10px] uppercase tracking-wide text-on-secondary-container/80">Updated</p>
                   </div>
                   <div className="rounded-[4px] bg-error-container p-2">
-                    <p className="font-display text-lg font-bold text-on-error-container">{summary.skipped.length}</p>
+                    <p className="text-[15px] font-bold text-on-error-container">{summary.skipped.length}</p>
                     <p className="text-[10px] uppercase tracking-wide text-on-error-container/80">Failed</p>
                   </div>
                 </div>

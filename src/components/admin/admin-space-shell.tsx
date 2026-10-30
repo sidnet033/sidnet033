@@ -40,7 +40,7 @@ export function AdminSpaceShell({
           <div className="pointer-events-none absolute top-1/2 -left-20 h-80 w-80 rounded-full bg-tertiary/5 blur-2xl" />
           <div className="relative flex flex-col gap-space-lg lg:flex-row lg:items-center lg:justify-between">
             <div className="max-w-3xl space-y-space-xs">
-              <h1 className="font-display text-display tracking-tight text-on-surface">
+              <h1 className="font-headline-lg text-headline-lg text-on-surface">
                 Admin Zone – {tab === "users" ? "Users" : "Roles"}
               </h1>
             </div>

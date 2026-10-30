@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Lato } from "next/font/google";
 import "./globals.css";
+import { BusyCursor } from "@/components/busy-cursor";
 
 // One typeface for body and headings (compact business-app look); the
 // CSS variables keep their old names so every utility class still resolves.
@@ -27,7 +28,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${lato.variable} ${latoDisplay.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-background text-on-surface">{children}</body>
+      <body className="min-h-full flex flex-col bg-background text-on-surface">
+        <BusyCursor />
+        {children}
+      </body>
     </html>
   );
 }

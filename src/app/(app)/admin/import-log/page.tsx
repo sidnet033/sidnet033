@@ -24,7 +24,7 @@ export default async function ImportLogPage() {
         <Link href="/admin" className="text-xs text-secondary hover:text-primary">
           &larr; Admin Space
         </Link>
-        <h1 className="font-display text-2xl font-semibold tracking-tight text-on-surface">Import Audit Log</h1>
+        <h1 className="text-[18px] font-bold text-on-surface">Import Audit Log</h1>
         <p className="text-sm text-secondary">
           Every CSV/Excel upload and Google Sheet sync into the Item Master, with what changed and what failed.
         </p>

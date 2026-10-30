@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 import { formatMoney, formatMoneyDual } from "@/lib/money";
 import { NewProjectModal } from "@/components/new-project-modal";
-import type { Customer } from "@/types/database";
+import type { Customer, ProjectStage } from "@/types/database";
 
 export type SwitchboardNode = {
   id: string;
@@ -31,6 +31,7 @@ export type ProjectNode = {
   id: string;
   code: string;
   title: string;
+  stage: ProjectStage;
   engineer: string | null;
   createdAtLabel: string;
   revisions: RevisionNode[];
@@ -51,76 +52,63 @@ function moneyDual(n: number, currency: string, exchangeRate: number) {
   return formatMoneyDual(n, currency, exchangeRate);
 }
 
-const AVATAR_STYLES = [
-  "bg-primary-container text-on-primary-container",
-  "bg-secondary-container text-on-secondary-container",
-  "bg-surface-container-high text-on-surface-variant",
-  "bg-surface-container-high text-secondary",
+const STAGES: { id: ProjectStage; label: string; pill: string }[] = [
+  { id: "new", label: "New", pill: "bg-primary-fixed text-primary" },
+  { id: "wip", label: "WIP", pill: "bg-primary-fixed text-primary" },
+  { id: "quoted", label: "Quoted", pill: "bg-violet-100 text-violet-800" },
+  { id: "finalization", label: "Finalization", pill: "bg-amber-100 text-amber-900" },
+  { id: "won", label: "Won", pill: "bg-emerald-100 text-emerald-800" },
+  { id: "lost", label: "Lost", pill: "bg-red-100 text-red-800" },
+  { id: "hold", label: "Hold", pill: "bg-surface-container-high text-on-surface-variant" },
+  { id: "budgetary", label: "Budgetary", pill: "bg-surface-container-high text-on-surface-variant" },
 ];
-const DOT_COLORS = ["bg-primary", "bg-tertiary", "bg-secondary"];
+const stageOf = (id: ProjectStage) => STAGES.find((s) => s.id === id) ?? STAGES[0];
 
-type Filter = "all" | "active" | "archived";
+type Status = "all" | "active" | "archived";
+type Row = { project: ProjectNode; customer: CustomerNode; latest: RevisionNode | null };
 
+// Projects list: a filter panel on the left (status, stage, customer) and
+// one row per project; a row expands to its revisions and their
+// switchboards, where the open / clone / delete actions live.
 export function ProjectsTree({ customers, customerOptions }: { customers: CustomerNode[]; customerOptions: Customer[] }) {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
-  const [filter, setFilter] = useState<Filter>("all");
+  const [status, setStatus] = useState<Status>("active");
+  const [stages, setStages] = useState<Set<ProjectStage>>(new Set());
+  const [customerIds, setCustomerIds] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(customers.map((c) => c.id)));
+  const [open, setOpen] = useState<Set<string>>(new Set());
 
-  function toggle(id: string) {
-    const next = new Set(expanded);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setExpanded(next);
-  }
-
-  const allNodeIds = useMemo(() => {
-    const ids: string[] = [];
-    for (const c of customers) {
-      ids.push(c.id);
-      for (const p of c.projects) {
-        ids.push(p.id);
-        for (const r of p.revisions) ids.push(r.id);
-      }
-    }
-    return ids;
-  }, [customers]);
+  const rows: Row[] = useMemo(
+    () =>
+      customers.flatMap((c) =>
+        c.projects.map((p) => ({ project: p, customer: c, latest: p.revisions.find((r) => r.isLatest) ?? p.revisions[0] ?? null }))
+      ),
+    [customers]
+  );
 
   const q = search.trim().toLowerCase();
+  const visible = rows.filter(({ project: p, customer: c, latest }) => {
+    if (status === "active" && latest?.archived) return false;
+    if (status === "archived" && !latest?.archived) return false;
+    if (stages.size && !stages.has(p.stage)) return false;
+    if (customerIds.size && !customerIds.has(c.id)) return false;
+    if (!q) return true;
+    const hay = [c.name, p.code, p.title, ...p.revisions.flatMap((r) => [`rev ${r.revisionNumber}`, ...r.switchboards.map((s) => `${s.tag} ${s.title ?? ""}`)])]
+      .join(" ")
+      .toLowerCase();
+    return hay.includes(q);
+  });
 
-  const filtered = useMemo(() => {
-    return customers
-      .map((c) => {
-        const projects = c.projects
-          .map((p) => {
-            const revisions = p.revisions.filter((r) => {
-              if (filter === "active" && r.archived) return false;
-              if (filter === "archived" && !r.archived) return false;
-              if (!q) return true;
-              const haystack = [
-                c.name,
-                p.code,
-                p.title,
-                `rev ${r.revisionNumber}`,
-                ...r.switchboards.map((s) => `${s.tag} ${s.title ?? ""}`),
-              ]
-                .join(" ")
-                .toLowerCase();
-              return haystack.includes(q);
-            });
-            return { ...p, revisions };
-          })
-          .filter((p) => p.revisions.length > 0);
-        return { ...c, projects };
-      })
-      .filter((c) => c.projects.length > 0);
-  }, [customers, filter, q]);
-
-  const activeCount = customers.reduce((s, c) => s + c.projects.reduce((s2, p) => s2 + p.revisions.filter((r) => !r.archived).length, 0), 0);
-  const archivedCount = customers.reduce((s, c) => s + c.projects.reduce((s2, p) => s2 + p.revisions.filter((r) => r.archived).length, 0), 0);
-  const allCount = activeCount + archivedCount;
+  const count = (fn: (r: Row) => boolean) => rows.filter(fn).length;
+  const toggleIn = <T,>(set: Set<T>, v: T, apply: (s: Set<T>) => void) => {
+    const next = new Set(set);
+    if (next.has(v)) next.delete(v);
+    else next.add(v);
+    apply(next);
+  };
+  const filtersOn = stages.size > 0 || customerIds.size > 0 || status !== "active" || !!q;
 
   async function cloneRevision(revisionId: string) {
     const { error } = await supabase.rpc("create_revision", { p_revision_id: revisionId });
@@ -151,404 +139,270 @@ export function ProjectsTree({ customers, customerOptions }: { customers: Custom
   }
 
   return (
-    <div className="flex flex-col gap-space-lg">
-      {/* Header Action Bar */}
-      <div className="flex flex-col justify-between gap-space-md rounded-xl bg-surface-container-lowest p-space-lg shadow-sm xl:flex-row xl:items-center">
-        <h1 className="font-headline-lg text-headline-lg tracking-tight text-on-surface">Dashboard</h1>
-        <div className="flex flex-wrap items-center gap-space-sm">
-          <div className="flex items-center rounded-lg bg-surface-container-low p-space-2xs">
-            <FilterPill label={`All Statuses (${allCount})`} active={filter === "all"} onClick={() => setFilter("all")} />
-            <FilterPill label={`Active (${activeCount})`} active={filter === "active"} onClick={() => setFilter("active")} />
-            <FilterPill label={`Archived (${archivedCount})`} active={filter === "archived"} onClick={() => setFilter("archived")} />
-          </div>
-          <div className="hidden h-6 w-px bg-surface-container-high sm:block" />
-          <div className="flex items-center gap-space-2xs">
+    <div className="flex flex-wrap items-start gap-space-lg">
+      <aside aria-label="Filters" className="w-full rounded-xl border border-surface-container-high bg-surface-container-lowest p-space-lg shadow-xs lg:w-60 lg:shrink-0">
+        <div className="mb-space-md flex items-center justify-between">
+          <h2 className="text-[13px] font-bold text-on-surface">Filter projects by</h2>
+          {filtersOn && (
             <button
-              disabled
-              title="Import bulk CSV specs — coming soon"
-              className="flex items-center rounded-lg bg-surface-container-low p-space-xs text-secondary transition-colors hover:bg-surface-container hover:text-on-surface disabled:cursor-not-allowed"
+              onClick={() => {
+                setStatus("active");
+                setStages(new Set());
+                setCustomerIds(new Set());
+                setSearch("");
+              }}
+              className="text-[12px] text-primary hover:underline"
             >
-              <Icon name="upload_file" size={18} />
+              Clear
             </button>
-            <button
-              disabled
-              title="Export hierarchy metadata — coming soon"
-              className="flex items-center rounded-lg bg-surface-container-low p-space-xs text-secondary transition-colors hover:bg-surface-container hover:text-on-surface disabled:cursor-not-allowed"
-            >
-              <Icon name="file_download" size={18} />
-            </button>
-          </div>
-          <NewProjectModal customers={customerOptions} />
+          )}
         </div>
-      </div>
+        <FilterGroup title="Status">
+          {(
+            [
+              ["active", "Active", count((r) => !r.latest?.archived)],
+              ["archived", "Archived", count((r) => !!r.latest?.archived)],
+              ["all", "All", rows.length],
+            ] as [Status, string, number][]
+          ).map(([id, label, n]) => (
+            <label key={id} className="flex cursor-pointer items-center gap-2 py-1 text-[13px] text-on-surface">
+              <input type="radio" name="status" checked={status === id} onChange={() => setStatus(id)} className="accent-primary" />
+              <span className="flex-1">{label}</span>
+              <span className="text-[12px] text-secondary">{n}</span>
+            </label>
+          ))}
+        </FilterGroup>
+        <FilterGroup title="Stage">
+          {STAGES.map((s) => (
+            <label key={s.id} className="flex cursor-pointer items-center gap-2 py-1 text-[13px] text-on-surface">
+              <input type="checkbox" checked={stages.has(s.id)} onChange={() => toggleIn(stages, s.id, setStages)} className="accent-primary" />
+              <span className="flex-1">{s.label}</span>
+              <span className="text-[12px] text-secondary">{count((r) => r.project.stage === s.id)}</span>
+            </label>
+          ))}
+        </FilterGroup>
+        <FilterGroup title="Customer" last>
+          {customers.map((c) => (
+            <label key={c.id} className="flex cursor-pointer items-center gap-2 py-1 text-[13px] text-on-surface">
+              <input type="checkbox" checked={customerIds.has(c.id)} onChange={() => toggleIn(customerIds, c.id, setCustomerIds)} className="accent-primary" />
+              <span className="flex-1 truncate" title={c.name}>
+                {c.name}
+              </span>
+              <span className="text-[12px] text-secondary">{c.projects.length}</span>
+            </label>
+          ))}
+        </FilterGroup>
+      </aside>
 
-      {/* Hierarchy Main Workspace */}
-      <div className="flex flex-col overflow-hidden rounded-xl bg-surface-container-lowest shadow-sm">
-        <div className="flex flex-col items-stretch justify-between gap-space-sm bg-surface-container-low p-space-md md:flex-row md:items-center">
-          <div className="flex items-center gap-space-md">
-            <div className="relative min-w-[280px] sm:min-w-[360px]">
-              <Icon name="search" size={16} className="absolute left-space-sm top-1/2 -translate-y-1/2 text-secondary" />
+      <section className="min-w-0 flex-[999_1_640px]">
+        <div className="mb-space-md flex flex-wrap items-center justify-between gap-space-md">
+          <div className="flex items-baseline gap-space-sm">
+            <h1 className="text-[18px] font-bold text-on-surface">Projects</h1>
+            <span className="text-[13px] text-secondary">
+              {visible.length} of {rows.length}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-space-sm">
+            <div className="relative">
+              <Icon name="search" size={16} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-secondary" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search customers, projects (PRJ-...), revisions, or switchboard tags..."
-                className="h-8 w-full rounded bg-surface-container-lowest pl-8 pr-space-md font-body-sm text-body-sm text-on-surface placeholder:text-secondary shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                placeholder="Search projects, customers, switchboards…"
+                aria-label="Search projects"
+                className="h-9 w-72 rounded-lg border border-outline-variant bg-surface-container-lowest pl-8 pr-3 text-[13px] text-on-surface shadow-xs placeholder:text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
-            <div className="hidden items-center gap-space-xs font-label-sm text-label-sm text-secondary lg:flex">
-              <Icon name="device_hub" size={14} />
-              <span>Customer → Project → Revision → Switchboard</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-space-xs self-end md:self-auto">
-            <button
-              onClick={() => setExpanded(new Set(allNodeIds))}
-              className="flex items-center gap-space-2xs rounded bg-surface-container px-space-sm py-space-2xs font-label-md text-label-md text-secondary transition-colors hover:text-on-surface"
-            >
-              <Icon name="unfold_more" size={14} />
-              Expand All
-            </button>
-            <button
-              onClick={() => setExpanded(new Set())}
-              className="flex items-center gap-space-2xs rounded bg-surface-container px-space-sm py-space-2xs font-label-md text-label-md text-secondary transition-colors hover:text-on-surface"
-            >
-              <Icon name="unfold_less" size={14} />
-              Collapse All
-            </button>
+            <NewProjectModal customers={customerOptions} />
           </div>
         </div>
 
-        <div className="grid grid-cols-12 bg-surface-container-high px-space-md py-space-xs font-label-sm text-label-sm uppercase tracking-wider text-secondary">
-          <div className="col-span-6 md:col-span-5">Project</div>
-          <div className="col-span-3 text-right md:col-span-3">Total Cost</div>
-          <div className="col-span-3 hidden md:col-span-2 md:block" />
-          <div className="col-span-3 text-right md:col-span-2">Actions</div>
+        <div className="overflow-x-auto rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-xs">
+          <table className="w-full min-w-[960px] border-collapse text-[13px]">
+            <thead>
+              <tr className="bg-surface-container-low text-left text-[12px] font-bold text-on-surface-variant">
+                <th className="w-8 px-3 py-2.5" />
+                <th className="px-3 py-2.5">Project</th>
+                <th className="px-3 py-2.5">Customer</th>
+                <th className="px-3 py-2.5">Stage</th>
+                <th className="px-3 py-2.5">Revision</th>
+                <th className="px-3 py-2.5 text-right">Switchboards</th>
+                <th className="px-3 py-2.5">Engineer</th>
+                <th className="px-3 py-2.5">Created</th>
+                <th className="px-3 py-2.5 text-right">Latest cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map(({ project: p, customer: c, latest }) => {
+                const isOpen = open.has(p.id);
+                const st = stageOf(p.stage);
+                return (
+                  <Fragment key={p.id}>
+                    <tr className="border-t border-surface-container-high transition-colors hover:bg-surface-container-low/60">
+                      <td className="px-3 py-2.5">
+                        <button
+                          onClick={() => toggleIn(open, p.id, setOpen)}
+                          aria-label={isOpen ? `Collapse ${p.title}` : `Expand ${p.title}`}
+                          className="flex h-6 w-6 items-center justify-center rounded-md text-secondary hover:bg-surface-container"
+                        >
+                          <Icon name={isOpen ? "keyboard_arrow_down" : "chevron_right"} size={18} />
+                        </button>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {latest ? (
+                          <Link href={`/revisions/${latest.id}`} className="font-bold text-primary hover:underline">
+                            {p.title}
+                          </Link>
+                        ) : (
+                          <span className="font-bold">{p.title}</span>
+                        )}
+                        <span className="ml-2 text-[12px] text-secondary">{p.code}</span>
+                      </td>
+                      <td className="px-3 py-2.5">{c.name}</td>
+                      <td className="px-3 py-2.5">
+                        <span className={`rounded-full px-2 py-0.5 text-[12px] font-bold ${st.pill}`}>{st.label}</span>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {latest ? `Rev ${latest.revisionNumber}` : "—"}
+                        {latest?.archived && <span className="ml-1.5 rounded-full bg-surface-container-high px-2 py-0.5 text-[11px] text-on-surface-variant">Archived</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-right">{latest?.switchboards.length ?? 0}</td>
+                      <td className="px-3 py-2.5 text-on-surface-variant">{p.engineer ?? "—"}</td>
+                      <td className="px-3 py-2.5 text-on-surface-variant">{p.createdAtLabel}</td>
+                      <td className="px-3 py-2.5 text-right font-bold tabular-nums">{latest ? moneyDual(latest.cost, p.currency, p.exchangeRate) : "—"}</td>
+                    </tr>
+                    {isOpen && (
+                      <tr>
+                        <td />
+                        <td colSpan={8} className="px-3 pb-3 pt-0">
+                          <div className="flex flex-col gap-space-sm border-l-2 border-surface-container-high pl-space-md">
+                            {p.revisions.map((r) => (
+                              <RevisionBlock
+                                key={r.id}
+                                revision={r}
+                                project={p}
+                                onCloneRevision={cloneRevision}
+                                onCloneSwitchboard={cloneSwitchboard}
+                                onDeleteSwitchboard={deleteSwitchboard}
+                              />
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+              {visible.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="px-3 py-10 text-center text-secondary">
+                    {rows.length === 0 ? "No projects yet — create one with New Project." : "No projects match these filters."}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
-
-        <div className="flex flex-col">
-          {filtered.map((c, ci) => (
-            <CustomerRow key={c.id} customer={c} index={ci} expanded={expanded} toggle={toggle} onCloneRevision={cloneRevision} onCloneSwitchboard={cloneSwitchboard} onDeleteSwitchboard={deleteSwitchboard} />
-          ))}
-          {filtered.length === 0 && <p className="px-space-md py-space-2xl text-center text-secondary">No projects yet. Create one above.</p>}
-        </div>
-      </div>
+      </section>
     </div>
   );
 }
 
-function CustomerRow({
-  customer: c,
-  index,
-  expanded,
-  toggle,
-  onCloneRevision,
-  onCloneSwitchboard,
-  onDeleteSwitchboard,
-}: {
-  customer: CustomerNode;
-  index: number;
-  expanded: Set<string>;
-  toggle: (id: string) => void;
-  onCloneRevision: (revisionId: string) => void;
-  onCloneSwitchboard: (switchboardId: string) => void;
-  onDeleteSwitchboard: (switchboardId: string, label: string) => void;
-}) {
-  const isOpen = expanded.has(c.id);
-  const avatarStyle = AVATAR_STYLES[index % AVATAR_STYLES.length];
-
+function FilterGroup({ title, last, children }: { title: string; last?: boolean; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col bg-surface-container-lowest">
-      <div
-        onClick={() => toggle(c.id)}
-        className="group grid cursor-pointer grid-cols-12 items-center px-space-md py-space-sm transition-colors hover:bg-surface-container-low"
-      >
-        <div className="col-span-6 flex min-w-0 items-center gap-space-sm md:col-span-5">
-          <button className="flex h-6 w-6 items-center justify-center rounded text-secondary hover:bg-surface-container">
-            <Icon name={isOpen ? "keyboard_arrow_down" : "chevron_right"} size={18} />
-          </button>
-          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded font-telemetry-md text-telemetry-md ${avatarStyle}`}>
-            {c.name.slice(0, 2).toUpperCase()}
-          </div>
-          <div className="flex min-w-0 flex-col">
-            <span className="truncate font-headline-sm text-headline-sm text-on-surface">{c.name}</span>
-            <span className="font-body-sm text-body-sm text-secondary">
-              {c.projects.length} Project{c.projects.length === 1 ? "" : "s"}
-            </span>
-          </div>
-        </div>
-        <div className="col-span-3 text-right md:col-span-3">
-          <span className="font-telemetry-lg text-telemetry-lg font-bold text-on-surface">{money(c.cost)}</span>
-        </div>
-      </div>
-      {isOpen && (
-        <div className="flex flex-col bg-surface-container-lowest pl-space-md sm:pl-space-xl">
-          {c.projects.map((p) => (
-            <ProjectRow key={p.id} project={p} expanded={expanded} toggle={toggle} onCloneRevision={onCloneRevision} onCloneSwitchboard={onCloneSwitchboard} onDeleteSwitchboard={onDeleteSwitchboard} />
-          ))}
-        </div>
-      )}
+    <div className={last ? "" : "mb-space-md border-b border-surface-container-high pb-space-md"}>
+      <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-secondary">{title}</p>
+      {children}
     </div>
   );
 }
 
-function ProjectRow({
-  project: p,
-  expanded,
-  toggle,
-  onCloneRevision,
-  onCloneSwitchboard,
-  onDeleteSwitchboard,
-}: {
-  project: ProjectNode;
-  expanded: Set<string>;
-  toggle: (id: string) => void;
-  onCloneRevision: (revisionId: string) => void;
-  onCloneSwitchboard: (switchboardId: string) => void;
-  onDeleteSwitchboard: (switchboardId: string, label: string) => void;
-}) {
-  const isOpen = expanded.has(p.id);
-
-  if (!isOpen) {
-    return (
-      <div
-        onClick={() => toggle(p.id)}
-        className="m-space-xs grid cursor-pointer grid-cols-12 items-center rounded-lg bg-surface-container-low/20 p-space-sm transition-colors hover:bg-surface-container-low"
-      >
-        <div className="col-span-6 flex min-w-0 items-center gap-space-sm md:col-span-5">
-          <button className="flex h-5 w-5 items-center justify-center rounded text-secondary">
-            <Icon name="chevron_right" size={18} />
-          </button>
-          <div className="flex min-w-0 flex-col">
-            <div className="flex items-center gap-space-xs">
-              <span className="rounded bg-primary-fixed/30 px-space-xs py-0.5 font-telemetry-md text-telemetry-md text-primary">{p.code}</span>
-              <span className="truncate font-headline-sm text-headline-sm text-on-surface">{p.title}</span>
-            </div>
-            <span className="font-label-md text-label-md text-secondary">
-              {p.engineer ? `Engr: ${p.engineer} · ` : ""}
-              {p.revisions.length} revision{p.revisions.length === 1 ? "" : "s"}
-            </span>
-          </div>
-        </div>
-        <div className="col-span-3 text-right md:col-span-3">
-          <span className="font-telemetry-lg text-telemetry-lg font-bold text-on-surface">{moneyDual(p.cost, p.currency, p.exchangeRate)}</span>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="m-space-xs flex flex-col rounded-lg bg-surface-container-low/40 p-space-xs shadow-sm">
-      <div
-        onClick={() => toggle(p.id)}
-        className="grid cursor-pointer grid-cols-12 items-center rounded-lg p-space-sm transition-colors hover:bg-surface-container-low"
-      >
-        <div className="col-span-6 flex min-w-0 items-center gap-space-sm md:col-span-5">
-          <button className="flex h-5 w-5 items-center justify-center rounded text-secondary hover:bg-surface-container">
-            <Icon name="keyboard_arrow_down" size={18} />
-          </button>
-          <div className="flex min-w-0 flex-col">
-            <div className="flex flex-wrap items-center gap-space-xs">
-              <span className="rounded bg-primary-fixed/30 px-space-xs py-0.5 font-telemetry-md text-telemetry-md text-primary">{p.code}</span>
-              <span className="truncate font-headline-sm text-headline-sm text-on-surface">{p.title}</span>
-            </div>
-            <div className="mt-0.5 flex items-center gap-space-sm font-label-md text-label-md text-secondary">
-              {p.engineer && <span>Engr: {p.engineer}</span>}
-              {p.engineer && <span>•</span>}
-              <span>Date: {p.createdAtLabel}</span>
-            </div>
-          </div>
-        </div>
-        <div className="col-span-3 text-right md:col-span-3">
-          <span className="font-telemetry-lg text-telemetry-lg font-bold text-primary">{moneyDual(p.cost, p.currency, p.exchangeRate)}</span>
-          <span className="block font-label-sm text-label-sm text-secondary">
-            {p.revisions.length} Revision{p.revisions.length === 1 ? "" : "s"} Registered
-          </span>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-space-xs py-space-xs pl-space-md pr-space-xs sm:pl-space-xl">
-        {p.revisions.map((r) => (
-          <RevisionRow key={r.id} revision={r} project={p} expanded={expanded} toggle={toggle} onCloneRevision={onCloneRevision} onCloneSwitchboard={onCloneSwitchboard} onDeleteSwitchboard={onDeleteSwitchboard} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function RevisionRow({
+function RevisionBlock({
   revision: r,
   project: p,
-  expanded,
-  toggle,
   onCloneRevision,
   onCloneSwitchboard,
   onDeleteSwitchboard,
 }: {
   revision: RevisionNode;
   project: ProjectNode;
-  expanded: Set<string>;
-  toggle: (id: string) => void;
   onCloneRevision: (revisionId: string) => void;
   onCloneSwitchboard: (switchboardId: string) => void;
   onDeleteSwitchboard: (switchboardId: string, label: string) => void;
 }) {
-  const isOpen = expanded.has(r.id);
-
-  if (!r.isLatest) {
-    return (
-      <div className="grid grid-cols-12 items-center rounded-lg p-space-xs text-secondary transition-colors hover:bg-surface-container-low">
-        <div className="col-span-6 flex min-w-0 items-center gap-space-xs pl-space-xs md:col-span-5">
-          <Icon name="history" size={16} />
-          <span className="font-telemetry-md text-telemetry-md font-semibold text-on-surface-variant">Rev {r.revisionNumber}</span>
-          <span className="hidden font-body-sm text-body-sm text-secondary sm:inline">· {r.createdAtLabel}</span>
-        </div>
-        <div className="col-span-3 text-right md:col-span-3">
-          <span className="font-telemetry-md text-telemetry-md text-secondary line-through">{moneyDual(r.cost, p.currency, p.exchangeRate)}</span>
-        </div>
-        <div className="col-span-3 hidden items-center justify-center md:col-span-2 md:flex">
-          <span className="font-label-sm text-label-sm text-secondary">{r.archived ? "ARCHIVED REV" : "SUPERSEDED"}</span>
-        </div>
-        <div className="col-span-3 flex items-center justify-end gap-space-xs md:col-span-2">
-          <button
-            disabled
-            title="Compare diff coming soon"
-            className="rounded bg-surface-container-low px-space-xs py-0.5 font-label-sm text-label-sm text-secondary disabled:cursor-not-allowed"
-          >
-            Compare Diff
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col rounded-lg bg-surface-container-lowest p-space-xs shadow-sm">
-      <div
-        onClick={() => toggle(r.id)}
-        className="grid cursor-pointer grid-cols-12 items-center rounded p-space-xs transition-colors hover:bg-surface-container-low"
-      >
-        <div className="col-span-6 flex min-w-0 items-center gap-space-xs md:col-span-5">
-          <button className="flex h-5 w-5 items-center justify-center rounded text-secondary hover:bg-surface-container">
-            <Icon name={isOpen ? "keyboard_arrow_down" : "chevron_right"} size={18} />
-          </button>
-          <Icon name="verified" size={18} className="text-tertiary" />
-          <div className="flex items-center gap-space-xs">
-            <span className="font-telemetry-md text-telemetry-md font-bold text-on-surface">Rev {r.revisionNumber}</span>
-            {!r.archived && (
-              <span className="rounded bg-primary-fixed px-space-xs py-0.5 font-label-sm text-label-sm font-bold text-on-primary-fixed">ACTIVE</span>
-            )}
-          </div>
+    <div className={r.isLatest ? "" : "opacity-70"}>
+      <div className="flex flex-wrap items-center justify-between gap-space-sm py-1.5">
+        <div className="flex items-center gap-space-sm">
+          <Link href={`/revisions/${r.id}`} className="font-bold text-on-surface hover:text-primary hover:underline">
+            Rev {r.revisionNumber}
+          </Link>
+          <span className="text-[12px] text-secondary">{r.archived ? "Archived" : r.isLatest ? "Latest" : "Superseded"}</span>
+          <span className="text-[12px] text-secondary">·</span>
+          <span className="text-[12px] text-secondary">{r.createdAtLabel}</span>
         </div>
-        <div className="col-span-3 text-right md:col-span-3">
-          <span className="font-telemetry-md text-telemetry-md font-bold text-on-surface">{moneyDual(r.cost, p.currency, p.exchangeRate)}</span>
-          <span className="block font-label-sm text-label-sm text-secondary">
-            {r.switchboards.length} Switchboard{r.switchboards.length === 1 ? "" : "s"}
-          </span>
-        </div>
-        <div className="col-span-3 hidden md:col-span-2 md:block" />
-        <div onClick={(e) => e.stopPropagation()} className="col-span-3 flex items-center justify-end gap-space-xs md:col-span-2">
-          {!r.archived && (
-            <button
-              onClick={() => onCloneRevision(r.id)}
-              className="rounded bg-surface-container-low px-space-xs py-0.5 font-label-sm text-label-sm text-secondary transition-colors hover:bg-surface-container hover:text-on-surface"
-            >
-              Clone Rev {r.revisionNumber + 1}
+        <div className="flex items-center gap-space-sm">
+          <span className="font-bold tabular-nums">{moneyDual(r.cost, p.currency, p.exchangeRate)}</span>
+          {r.isLatest && !r.archived && (
+            <button onClick={() => onCloneRevision(r.id)} className="btn btn-outline btn-sm">
+              New revision (Rev {r.revisionNumber + 1})
             </button>
           )}
         </div>
       </div>
-
-      {isOpen && (
-        <div className="flex flex-col gap-space-xs py-space-xs pl-space-lg pr-space-xs sm:pl-space-xl">
-          {r.switchboards.map((sb, si) => (
-            <SwitchboardRow key={sb.id} switchboard={sb} revisionId={r.id} index={si} onClone={onCloneSwitchboard} onDelete={onDeleteSwitchboard} />
-          ))}
-          {r.switchboards.length === 0 && <p className="px-space-sm py-space-sm font-body-sm text-body-sm text-secondary">No switchboards yet.</p>}
-        </div>
+      {r.switchboards.length === 0 ? (
+        <p className="pb-1 text-[12px] text-secondary">No switchboards yet.</p>
+      ) : (
+        <table className="w-full border-collapse text-[13px]">
+          <thead>
+            <tr className="text-left text-[11px] font-bold uppercase tracking-wider text-secondary">
+              <th className="py-1 pr-3 font-bold">Switchboard</th>
+              <th className="px-3 py-1 font-bold">Spec</th>
+              <th className="px-3 py-1 font-bold">Bays</th>
+              <th className="px-3 py-1 text-right font-bold">Cost</th>
+              <th className="py-1 pl-3" />
+            </tr>
+          </thead>
+          <tbody>
+            {r.switchboards.map((sb) => {
+              const label = `${sb.tag}${sb.title ? `: ${sb.title}` : ""}`;
+              return (
+                <tr key={sb.id} className="border-t border-surface-container-high">
+                  <td className="py-1.5 pr-3">
+                    <span className="font-bold">{label}</span>
+                    {sb.lockedByName && (
+                      <span className="ml-2 inline-flex items-center gap-0.5 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
+                        <Icon name="lock" size={11} /> {sb.lockedByName}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-1.5 text-on-surface-variant">{sb.specSummary || "—"}</td>
+                  <td className="px-3 py-1.5 text-on-surface-variant">{sb.bayCount}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">{money(sb.cost)}</td>
+                  <td className="py-1.5 pl-3">
+                    <div className="flex items-center justify-end gap-space-xs">
+                      <Link href={`/revisions/${r.id}?sb=${sb.id}&tab=bom`} className="btn btn-primary btn-sm">
+                        Open
+                      </Link>
+                      <button onClick={() => onCloneSwitchboard(sb.id)} title="Clone switchboard" className="btn btn-outline btn-sm">
+                        Clone
+                      </button>
+                      <button
+                        onClick={() => onDeleteSwitchboard(sb.id, label)}
+                        title="Delete switchboard"
+                        aria-label={`Delete ${label}`}
+                        className="flex h-7 w-7 items-center justify-center rounded-md text-secondary transition-colors hover:bg-error-container hover:text-error"
+                      >
+                        <Icon name="delete" size={16} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       )}
     </div>
-  );
-}
-
-function SwitchboardRow({
-  switchboard: sb,
-  revisionId,
-  index,
-  onClone,
-  onDelete,
-}: {
-  switchboard: SwitchboardNode;
-  revisionId: string;
-  index: number;
-  onClone: (switchboardId: string) => void;
-  onDelete: (switchboardId: string, label: string) => void;
-}) {
-  const dot = DOT_COLORS[index % DOT_COLORS.length];
-  const label = `${sb.tag}${sb.title ? `: ${sb.title}` : ""}`;
-
-  return (
-    <div className="group grid grid-cols-12 items-center rounded bg-surface-container-low p-space-xs transition-colors hover:bg-surface-container">
-      <div className="col-span-6 flex min-w-0 items-center gap-space-xs md:col-span-5">
-        <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
-        <div className="flex min-w-0 flex-col">
-          <div className="flex flex-wrap items-center gap-space-xs">
-            <span className="font-telemetry-md text-telemetry-md font-semibold text-on-surface">{label}</span>
-            {sb.bayCount > 0 && (
-              <span className="rounded bg-surface-container-highest px-space-xs py-0.5 font-label-sm text-label-sm text-primary">
-                {sb.bayCount} Bay{sb.bayCount === 1 ? "" : "s"}
-              </span>
-            )}
-            {sb.lockedByName && (
-              <span className="flex items-center gap-0.5 rounded border border-amber-200/60 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                <Icon name="lock" size={11} /> {sb.lockedByName}
-              </span>
-            )}
-          </div>
-          {sb.specSummary && <span className="truncate font-label-sm text-label-sm text-secondary">{sb.specSummary}</span>}
-        </div>
-      </div>
-      <div className="col-span-3 text-right md:col-span-3">
-        <span className="font-telemetry-md text-telemetry-md font-bold text-on-surface">{money(sb.cost)}</span>
-      </div>
-      <div className="col-span-3 hidden items-center justify-center md:col-span-1 md:flex" />
-      <div className="col-span-3 flex items-center justify-end gap-space-xs md:col-span-3">
-        <Link
-          href={`/revisions/${revisionId}?sb=${sb.id}&tab=bom`}
-          title="Open switchboard BOM/GA"
-          className="flex items-center gap-space-2xs rounded bg-primary px-space-sm py-1 font-label-sm text-label-sm font-semibold text-on-primary shadow-sm transition-colors hover:bg-primary-container"
-        >
-          <Icon name="launch" size={14} />
-          Open
-        </Link>
-        <button
-          onClick={() => onClone(sb.id)}
-          title="Clone switchboard"
-          className="flex items-center gap-space-2xs rounded bg-surface-container-lowest px-space-xs py-1 font-label-sm text-label-sm font-medium text-secondary shadow-sm transition-colors hover:bg-surface-container hover:text-on-surface"
-        >
-          <Icon name="content_copy" size={14} />
-          <span className="hidden sm:inline">Clone</span>
-        </button>
-        <button
-          onClick={() => onDelete(sb.id, label)}
-          title="Delete switchboard"
-          className="flex items-center justify-center rounded p-1 text-secondary transition-colors hover:bg-error-container hover:text-error"
-        >
-          <Icon name="delete" size={16} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function FilterPill({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-lg px-space-sm py-space-2xs font-label-md text-label-md uppercase tracking-wider transition-colors ${
-        active ? "bg-surface-container-lowest font-semibold text-primary shadow-sm" : "text-secondary hover:text-on-surface"
-      }`}
-    >
-      {label}
-    </button>
   );
 }

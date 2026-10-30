@@ -315,22 +315,22 @@ export function FeederImportDialog({
                 <div className="space-y-3">
                   <div className="grid grid-cols-4 gap-2 text-center">
                     <div className="rounded-[4px] bg-tertiary-fixed/50 p-2">
-                      <p className="font-display text-lg font-bold text-on-tertiary-fixed">{summary.feedersCreated}</p>
+                      <p className="text-[15px] font-bold text-on-tertiary-fixed">{summary.feedersCreated}</p>
                       <p className="text-[10px] uppercase tracking-wide text-on-tertiary-fixed/80">New feeders</p>
                     </div>
                     <div className="rounded-[4px] bg-secondary-container/60 p-2">
-                      <p className="font-display text-lg font-bold text-on-secondary-container">{itemsCreatedCount}</p>
+                      <p className="text-[15px] font-bold text-on-secondary-container">{itemsCreatedCount}</p>
                       <p className="text-[10px] uppercase tracking-wide text-on-secondary-container/80">Items created</p>
                     </div>
                     <div className="rounded-[4px] bg-secondary-container/60 p-2">
-                      <p className="font-display text-lg font-bold text-on-secondary-container">
+                      <p className="text-[15px] font-bold text-on-secondary-container">
                         {summary.linesAdded}
                         <span className="text-xs font-normal"> / {summary.feedersExtended}f</span>
                       </p>
                       <p className="text-[10px] uppercase tracking-wide text-on-secondary-container/80">Lines added</p>
                     </div>
                     <div className="rounded-[4px] bg-error-container p-2">
-                      <p className="font-display text-lg font-bold text-on-error-container">{summary.feedersSkipped.length + rowErrors.length}</p>
+                      <p className="text-[15px] font-bold text-on-error-container">{summary.feedersSkipped.length + rowErrors.length}</p>
                       <p className="text-[10px] uppercase tracking-wide text-on-error-container/80">Skipped</p>
                     </div>
                   </div>
