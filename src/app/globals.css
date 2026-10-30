@@ -12,8 +12,8 @@
 }
 
 :root {
-  --background: #f8f9ff;
-  --foreground: #0b1c30;
+  --background: #f3f5f8;
+  --foreground: #1f2733;
 }
 
 @theme inline {
@@ -33,15 +33,18 @@
      component classes (bg-surface-container-lowest, text-on-surface, ...)
      reproduce the mockups exactly rather than approximating with the
      generic Tailwind slate/blue palette. */
-  --color-primary: #006194;
+  /* Business-app palette: blue accent on a light grey page with white
+     cards, thin cool-grey borders. Token names are unchanged so every
+     component picks it up. */
+  --color-primary: #0b62c4;
   --color-on-primary: #ffffff;
-  --color-primary-container: #007bb9;
-  --color-on-primary-container: #fdfcff;
+  --color-primary-container: #0a54a8;
+  --color-on-primary-container: #ffffff;
   --color-primary-fixed: #cce5ff;
   --color-primary-fixed-dim: #93ccff;
   --color-inverse-primary: #93ccff;
 
-  --color-secondary: #545f73;
+  --color-secondary: #5d6778;
   --color-on-secondary: #ffffff;
   --color-secondary-container: #d5e0f8;
   --color-on-secondary-container: #586377;
@@ -62,22 +65,31 @@
   --color-error-container: #ffdad6;
   --color-on-error-container: #93000a;
 
-  --color-surface: #f8f9ff;
-  --color-surface-dim: #cbdbf5;
-  --color-surface-bright: #f8f9ff;
+  --color-surface: #f3f5f8;
+  --color-surface-dim: #dfe3ea;
+  --color-surface-bright: #f8f9fb;
   --color-surface-container-lowest: #ffffff;
-  --color-surface-container-low: #eff4ff;
-  --color-surface-container: #e5eeff;
-  --color-surface-container-high: #dce9ff;
-  --color-surface-container-highest: #d3e4fe;
-  --color-surface-variant: #d3e4fe;
-  --color-on-surface: #0b1c30;
-  --color-on-surface-variant: #3f4850;
-  --color-inverse-surface: #213145;
-  --color-inverse-on-surface: #eaf1ff;
+  --color-surface-container-low: #f6f8fb;
+  --color-surface-container: #eef1f6;
+  --color-surface-container-high: #e1e6ed;
+  --color-surface-container-highest: #d5dce6;
+  --color-surface-variant: #e1e6ed;
+  --color-on-surface: #1f2733;
+  --color-on-surface-variant: #4a5566;
+  --color-inverse-surface: #1f2733;
+  --color-inverse-on-surface: #eef1f6;
 
-  --color-outline: #707881;
-  --color-outline-variant: #bfc7d2;
+  --color-outline: #6a7486;
+  --color-outline-variant: #cfd6e0;
+
+  /* Soft card shadows and slightly rounder corners everywhere */
+  --shadow-xs: 0 1px 2px rgb(16 24 40 / 0.05), 0 1px 3px rgb(16 24 40 / 0.06);
+  --shadow-sm: 0 1px 3px rgb(16 24 40 / 0.08), 0 2px 6px rgb(16 24 40 / 0.06);
+  --shadow-md: 0 4px 10px rgb(16 24 40 / 0.08), 0 2px 4px rgb(16 24 40 / 0.05);
+  --shadow-lg: 0 10px 24px rgb(16 24 40 / 0.12), 0 4px 8px rgb(16 24 40 / 0.06);
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
 
   /* Typography + spacing scale for the Admin Space, taken verbatim from
      the Stitch mockup so its exact utility class names (font-headline-sm
@@ -218,10 +230,10 @@ input[type="number"]::-webkit-inner-spin-button {
    button in the app reads as the same system. */
 @layer components {
   .btn {
-    @apply inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-4 py-2 font-body-md text-body-md font-medium shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none;
+    @apply inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-4 py-2 font-body-md text-body-md font-bold shadow-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none;
   }
   .btn-sm {
-    @apply gap-1 rounded px-2.5 py-1 text-xs;
+    @apply gap-1 rounded-md px-2.5 py-1 text-xs;
   }
   .btn-primary {
     @apply bg-primary text-on-primary hover:bg-primary-container;
@@ -230,7 +242,7 @@ input[type="number"]::-webkit-inner-spin-button {
     @apply bg-secondary text-on-secondary hover:opacity-90;
   }
   .btn-outline {
-    @apply border border-outline-variant bg-surface-container-lowest text-on-surface hover:bg-surface-container-low;
+    @apply border border-outline-variant bg-surface-container-lowest text-on-surface font-medium hover:bg-surface-container-low;
   }
   .btn-danger {
     @apply bg-error text-on-error hover:opacity-90;

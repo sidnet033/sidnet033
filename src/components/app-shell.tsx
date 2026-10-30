@@ -32,10 +32,6 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [collapsed, setCollapsed] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem("sidebar-collapsed") === "1";
-  });
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
 
@@ -50,14 +46,6 @@ export function AppShell({
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, [profileMenuOpen]);
 
-  function toggleCollapsed() {
-    setCollapsed((prev) => {
-      const next = !prev;
-      window.localStorage.setItem("sidebar-collapsed", next ? "1" : "0");
-      return next;
-    });
-  }
-
   const displayName = fullName || email || "User";
   const links = isAdmin
     ? [...NAV_LINKS, { href: "/admin", label: "Admin Space", icon: "verified_user", activeMatch: (p: string) => p.startsWith("/admin") }]
@@ -70,84 +58,65 @@ export function AppShell({
     router.refresh();
   }
 
-  const sidebarWidth = collapsed ? "w-16" : "w-72";
-  const contentOffset = collapsed ? "pl-16" : "pl-72";
-
+  // Top bar with the modules as tabs (active one underlined), profile menu
+  // on the right; pages render below it at full width.
   return (
     <div className="min-h-screen bg-surface">
-      <aside className={`fixed left-0 top-0 z-50 flex h-full ${sidebarWidth} select-none flex-col justify-between bg-surface-container-lowest shadow-[0_1px_8px_rgba(0,0,0,0.04)] transition-all`}>
-        <div className="flex flex-col">
-          <div className="flex h-16 items-center gap-space-sm bg-surface-container-lowest px-space-md">
-            {!collapsed && (
-              <div className="flex flex-col">
-                <span className="font-headline-sm text-headline-sm tracking-tight text-primary">AmpQuote</span>
-                <span className="font-label-sm text-label-sm uppercase tracking-wider text-secondary">LV Estimator CAD</span>
-              </div>
-            )}
-            {collapsed && <span className="font-headline-sm text-headline-sm text-primary">AQ</span>}
-          </div>
-          <div className="flex flex-col gap-space-xs p-space-md">
-            {!collapsed && <span className="px-space-xs font-label-sm text-label-sm uppercase tracking-wider text-secondary">Navigation</span>}
-            <nav className="flex flex-col gap-space-2xs">
-              {links.map((link) => {
-                const active = link.activeMatch(pathname);
-                return (
-                  <Link
-                    key={link.label}
-                    href={link.href}
-                    title={collapsed ? link.label : undefined}
-                    className={`flex items-center gap-space-sm rounded-lg px-space-sm py-space-xs transition-colors ${
-                      collapsed ? "justify-center" : ""
-                    } ${active ? "bg-primary-container font-medium text-on-primary-container" : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"}`}
-                  >
-                    <Icon name={link.icon} size={18} />
-                    {!collapsed && <span className="font-body-md text-body-md">{link.label}</span>}
-                  </Link>
-                );
-              })}
-            </nav>
-          </div>
-        </div>
-        <div className="flex flex-col gap-space-xs bg-surface-container-lowest p-space-md">
-          <div ref={profileMenuRef} className="relative">
-            {profileMenuOpen && (
-              <div className="absolute bottom-full left-0 z-10 mb-2 w-56 rounded-lg border border-surface-container-high bg-surface-container-lowest p-2 shadow-lg">
-                <p className="truncate px-space-xs pt-space-2xs font-body-md text-body-md font-medium text-on-surface">{displayName}</p>
-                {email && <p className="truncate px-space-xs pb-space-xs font-body-sm text-[11px] text-on-surface-variant">{email}</p>}
-                <button
-                  onClick={signOut}
-                  className="flex w-full items-center gap-space-xs rounded-md px-space-xs py-space-xs text-left font-body-md text-body-md text-on-surface hover:bg-surface-container-high"
-                >
-                  <Icon name="logout" size={16} />
-                  Sign out
-                </button>
-              </div>
-            )}
-            <button
-              onClick={() => setProfileMenuOpen((v) => !v)}
-              title={displayName}
-              className={`flex w-full items-center gap-space-sm rounded-lg px-space-sm py-space-xs text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface ${
-                collapsed ? "justify-center" : ""
-              }`}
-            >
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary font-telemetry-md text-[12px] font-bold text-on-primary">
-                {initials(displayName)}
-              </div>
-              {!collapsed && <span className="truncate font-body-md text-body-md text-on-surface">{displayName}</span>}
-            </button>
-          </div>
+      <header className="sticky top-0 z-50 flex h-[52px] select-none items-stretch gap-space-xl border-b border-surface-container-high bg-surface-container-lowest px-margin-lg shadow-xs">
+        <Link href="/" className="flex items-center gap-space-sm">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-[13px] font-black text-on-primary shadow-sm">AQ</span>
+          <span className="flex flex-col leading-none">
+            <span className="text-[16px] font-black tracking-tight text-on-surface">AmpQuote</span>
+            <span className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-secondary">LV Estimator</span>
+          </span>
+        </Link>
+        <nav aria-label="Modules" className="flex min-w-0 flex-1 items-stretch gap-space-2xs overflow-x-auto">
+          {links.map((link) => {
+            const active = link.activeMatch(pathname);
+            return (
+              <Link
+                key={link.label}
+                href={link.href}
+                className={`flex shrink-0 items-center gap-1.5 border-b-[3px] px-space-md pt-[3px] text-[13px] transition-colors ${
+                  active ? "border-primary font-bold text-primary" : "border-transparent text-on-surface-variant hover:text-on-surface"
+                }`}
+              >
+                <Icon name={link.icon} size={16} />
+                {link.label}
+              </Link>
+            );
+          })}
+        </nav>
+        <div ref={profileMenuRef} className="relative flex items-center">
           <button
-            onClick={toggleCollapsed}
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className={`flex items-center gap-space-sm rounded-lg px-space-sm py-space-xs text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface ${collapsed ? "justify-center" : ""}`}
+            onClick={() => setProfileMenuOpen((v) => !v)}
+            title={displayName}
+            aria-label="Profile menu"
+            className="flex items-center gap-space-sm rounded-lg px-space-xs py-space-2xs text-on-surface-variant transition-colors hover:bg-surface-container-low"
           >
-            <Icon name={collapsed ? "chevron_right" : "chevron_left"} size={18} />
-            {!collapsed && <span className="font-body-md text-body-md">Collapse</span>}
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-fixed text-[12px] font-bold text-primary">
+              {initials(displayName)}
+            </span>
+            <span className="hidden max-w-40 truncate text-[13px] text-on-surface md:inline">{displayName}</span>
+            <Icon name="expand_more" size={16} />
           </button>
+          {profileMenuOpen && (
+            <div className="absolute right-0 top-full z-10 mt-1 w-60 rounded-xl border border-surface-container-high bg-surface-container-lowest p-2 shadow-lg">
+              <p className="truncate px-space-xs pt-space-2xs text-[13px] font-bold text-on-surface">{displayName}</p>
+              {email && <p className="truncate px-space-xs pb-space-xs text-[11px] text-on-surface-variant">{email}</p>}
+              <button
+                onClick={signOut}
+                className="flex w-full items-center gap-space-xs rounded-lg px-space-xs py-space-xs text-left text-[13px] text-on-surface hover:bg-surface-container-low"
+              >
+                <Icon name="logout" size={16} />
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
-      </aside>
+      </header>
 
-      <main className={`min-h-screen ${contentOffset} transition-all`}>{children}</main>
+      <main className="min-h-[calc(100vh-52px)]">{children}</main>
     </div>
   );
 }

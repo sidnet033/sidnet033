@@ -62,7 +62,7 @@ export function RevisionWorkspace({
   const activeTabLabel = TABS.find((t) => t.id === activeTab)?.label ?? "";
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden">
+    <div className="flex h-[calc(100vh-52px)] flex-col overflow-hidden">
       <div className="space-y-space-md border-b border-surface-container-high bg-surface-container-lowest px-space-lg py-space-md">
         <div className="flex flex-wrap items-center justify-between gap-space-md">
           <div className="flex flex-wrap items-center gap-space-xs font-body-sm text-body-sm text-secondary">
@@ -121,15 +121,12 @@ export function RevisionWorkspace({
                     disabled
                       ? "cursor-not-allowed text-on-surface-variant/50"
                       : active
-                        ? "border-b-2 border-primary text-primary"
+                        ? "border-b-[3px] border-primary font-bold text-primary"
                         : "text-secondary hover:text-on-surface"
                   }`}
                 >
                   <Icon name={t.icon} size={17} />
                   {t.label}
-                  {active && (
-                    <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">Active</span>
-                  )}
                   {t.needsSwitchboard && selectedSwitchboard && (
                     <span className="font-mono text-[10px] text-on-surface-variant">{selectedSwitchboard.switchboard.tag}</span>
                   )}

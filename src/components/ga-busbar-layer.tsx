@@ -850,7 +850,7 @@ export function BusbarSchedule({
   }
 
   return (
-    <div className="mt-6 rounded-xl border border-surface-container-high bg-surface-container-lowest p-3">
+    <div className="mt-6 rounded-xl border border-surface-container-high bg-surface-container-lowest p-3 shadow-xs">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-secondary">Busbar Schedule</p>
