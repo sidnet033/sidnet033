@@ -75,6 +75,7 @@ export function ReportsHome() {
 
 type Result = {
   measure: Measure;
+  includeRevisions: boolean;
   from: string;
   to: string;
   counts: { id: ProjectStage; label: string; count: number }[];
@@ -92,6 +93,7 @@ function EnquiriesByStatus() {
   const [result, setResult] = useState<Result | null>(null);
   const [showTable, setShowTable] = useState(false);
   const [measure, setMeasure] = useState<Measure>("count");
+  const [includeRevisions, setIncludeRevisions] = useState(false);
 
   async function run() {
     if (from && to && from > to) {
@@ -102,68 +104,105 @@ function EnquiriesByStatus() {
     setError(null);
     try {
       const supabase = createClient();
-      const { data, error } = await supabase
-        .from("projects")
-        .select("id, stage, crm_enquiry_date, created_at");
+      const [{ data: projects, error }, { data: revs, error: revErr }] =
+        await Promise.all([
+          supabase
+            .from("projects")
+            .select("id, stage, crm_enquiry_date, created_at"),
+          supabase
+            .from("revisions")
+            .select("id, project_id, revision_number, created_at"),
+        ]);
       if (error) throw error;
-      // an enquiry's date is its CRM enquiry date, or the day it was created
-      const inRange = (data ?? []).filter((p) => {
-        const day =
+      if (revErr) throw revErr;
+      const revsByProject = new Map<
+        string,
+        { id: string; n: number; created_at: string }[]
+      >();
+      for (const r of revs ?? []) {
+        const list = revsByProject.get(r.project_id as string) ?? [];
+        list.push({
+          id: r.id as string,
+          n: r.revision_number as number,
+          created_at: r.created_at as string,
+        });
+        revsByProject.set(r.project_id as string, list);
+      }
+
+      // What gets counted. Without revisions: one per project, dated by its
+      // CRM enquiry date (or creation date), valued at its latest revision.
+      // With revisions: every revision -- the first dated like the project,
+      // later ones by the day they were made -- each valued on its own.
+      type Unit = {
+        stage: ProjectStage;
+        day: string;
+        revisionId: string | null;
+      };
+      const units: Unit[] = [];
+      for (const p of projects ?? []) {
+        const projectDay =
           (p.crm_enquiry_date as string | null) ??
           isoDay(new Date(p.created_at as string));
-        return !((from && day < from) || (to && day > to));
-      });
-
-      // enquiry value = quoted price of the project's latest revision
-      // (switchboard cost + margin, times qty), in INR
-      const valueByProject = new Map<string, number>();
-      if (measure === "value" && inRange.length) {
-        const ids = inRange.map((p) => p.id as string);
-        const { data: revs, error: revErr } = await supabase
-          .from("revisions")
-          .select("id, project_id, revision_number")
-          .in("project_id", ids);
-        if (revErr) throw revErr;
-        const latest = new Map<string, { id: string; n: number }>();
-        for (const r of revs ?? []) {
-          const cur = latest.get(r.project_id as string);
-          if (!cur || (r.revision_number as number) > cur.n)
-            latest.set(r.project_id as string, {
-              id: r.id as string,
-              n: r.revision_number as number,
-            });
-        }
-        const revToProject = new Map(
-          [...latest].map(([pid, r]) => [r.id, pid]),
+        const list = (revsByProject.get(p.id as string) ?? []).sort(
+          (x, y) => x.n - y.n,
         );
-        const { data: sbs, error: sbErr } = revToProject.size
-          ? await supabase
-              .from("switchboards")
-              .select("*")
-              .in("revision_id", [...revToProject.keys()])
-          : { data: [], error: null };
+        if (includeRevisions && list.length) {
+          list.forEach((r, i) =>
+            units.push({
+              stage: p.stage as ProjectStage,
+              day: i === 0 ? projectDay : isoDay(new Date(r.created_at)),
+              revisionId: r.id,
+            }),
+          );
+        } else {
+          units.push({
+            stage: p.stage as ProjectStage,
+            day: projectDay,
+            revisionId: list.length ? list[list.length - 1].id : null,
+          });
+        }
+      }
+      const inRange = units.filter(
+        (u) => !((from && u.day < from) || (to && u.day > to)),
+      );
+
+      // value = quoted price of the revision (switchboard cost + margin, times qty), INR
+      const valueByRevision = new Map<string, number>();
+      const revisionIds = [
+        ...new Set(
+          inRange.map((u) => u.revisionId).filter((v): v is string => !!v),
+        ),
+      ];
+      if (measure === "value" && revisionIds.length) {
+        const { data: sbs, error: sbErr } = await supabase
+          .from("switchboards")
+          .select("*")
+          .in("revision_id", revisionIds);
         if (sbErr) throw sbErr;
         const boards = (sbs ?? []) as Switchboard[];
         const breakdowns = await Promise.all(
           boards.map((sb) => getSwitchboardCostBreakdown(supabase, sb)),
         );
         boards.forEach((sb, i) => {
-          const pid = revToProject.get(sb.revision_id)!;
           const unit = breakdowns[i].mfgTotal;
           const price =
             (unit + unit * (Number(sb.profit_pct) / 100)) * Number(sb.qty);
-          valueByProject.set(pid, (valueByProject.get(pid) ?? 0) + price);
+          valueByRevision.set(
+            sb.revision_id,
+            (valueByRevision.get(sb.revision_id) ?? 0) + price,
+          );
         });
       }
 
       const tally = new Map<ProjectStage, number>();
-      for (const p of inRange) {
+      for (const u of inRange) {
         const add =
-          measure === "count" ? 1 : (valueByProject.get(p.id as string) ?? 0);
-        tally.set(
-          p.stage as ProjectStage,
-          (tally.get(p.stage as ProjectStage) ?? 0) + add,
-        );
+          measure === "count"
+            ? 1
+            : u.revisionId
+              ? (valueByRevision.get(u.revisionId) ?? 0)
+              : 0;
+        tally.set(u.stage, (tally.get(u.stage) ?? 0) + add);
       }
       const counts = STAGE_ORDER.map((s) => ({
         ...s,
@@ -171,6 +210,7 @@ function EnquiriesByStatus() {
       }));
       setResult({
         measure,
+        includeRevisions,
         from,
         to,
         counts,
@@ -191,9 +231,11 @@ function EnquiriesByStatus() {
         </h1>
         <p className="text-[12px] text-secondary">
           Enquiries (projects) in each status, by count or by value. Value is
-          the quoted price of each project&apos;s latest revision (cost + margin
-          × qty, INR). Dated by CRM enquiry date, or the date the project was
-          created if that&apos;s blank.
+          the quoted price (cost + margin × qty, INR) of each project&apos;s
+          latest revision, dated by CRM enquiry date (or the date the project
+          was created). Tick &quot;Include revisions&quot; to count every
+          revision as an enquiry: each adds its own value, and later revisions
+          are dated by the day they were made.
         </p>
       </div>
 
@@ -227,6 +269,15 @@ function EnquiriesByStatus() {
             <option value="value">Enquiry value</option>
           </select>
         </label>
+        <label className="flex h-8 items-center gap-1.5 text-[13px] text-on-surface">
+          <input
+            type="checkbox"
+            checked={includeRevisions}
+            onChange={(e) => setIncludeRevisions(e.target.checked)}
+            className="h-4 w-4 accent-primary"
+          />
+          Include revisions
+        </label>
         <button
           onClick={run}
           disabled={loading}
@@ -248,8 +299,9 @@ function EnquiriesByStatus() {
               </span>{" "}
               {result.measure === "count"
                 ? `enquir${result.total === 1 ? "y" : "ies"}`
-                : "total enquiry value"}{" "}
-              · {fmt(result.from)} – {fmt(result.to)}
+                : "total enquiry value"}
+              {result.includeRevisions ? " (each revision counted)" : ""} ·{" "}
+              {fmt(result.from)} – {fmt(result.to)}
             </p>
             <button
               onClick={() => setShowTable((v) => !v)}
