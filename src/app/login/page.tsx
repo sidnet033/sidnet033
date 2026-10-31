@@ -3,7 +3,6 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Icon } from "@/components/icon";
 
 export default function LoginPage() {
   return (
@@ -44,8 +43,9 @@ function LoginForm() {
     <div className="flex min-h-screen items-center justify-center bg-slate-50/70">
       <div className="w-full max-w-sm rounded-xl border border-slate-200/90 bg-white p-8 shadow-xs">
         <div className="mb-1 flex items-center gap-2 text-slate-900">
-          <Icon name="bolt" size={22} className="text-slate-700" />
-          <h1 className="font-display text-xl font-semibold">AmpQuote LV</h1>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/truequote-logo.png" alt="" width={32} height={32} className="h-8 w-8 rounded-lg" />
+          <h1 className="font-display text-xl font-semibold">TrueQuote LV</h1>
         </div>
         <p className="mb-6 text-sm text-slate-500">Sign in with the account your admin created for you.</p>
 

@@ -169,12 +169,11 @@ export function AppShell({
     <div className="min-h-screen bg-surface">
       <header className="sticky top-0 z-50 flex h-[52px] select-none items-stretch gap-space-xl border-b border-surface-container-high bg-surface-container-lowest px-margin-lg shadow-xs">
         <Link href="/" className="flex items-center gap-space-sm">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-[13px] font-black text-on-primary shadow-sm">
-            AQ
-          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/truequote-logo.png" alt="" width={32} height={32} className="h-8 w-8 rounded-lg shadow-sm" />
           <span className="flex flex-col leading-none">
             <span className="text-[16px] font-black tracking-tight text-on-surface">
-              AmpQuote
+              TrueQuote
             </span>
             <span className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-secondary">
               LV Estimator

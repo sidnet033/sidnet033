@@ -18,7 +18,7 @@ const latoDisplay = Lato({
 });
 
 export const metadata: Metadata = {
-  title: "AmpQuote LV",
+  title: "TrueQuote LV",
   description: "BOM, GA and costing tool for LV switchboard quoting",
 };
 
