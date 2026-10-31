@@ -1329,19 +1329,22 @@ export function ProjectDetailTab({
                         </div>
                       </>,
                       /* Type */ <>
-                        <LookupSelect
-                          table="switchboard_types"
-                          value={sb.switchboard_type_id}
-                          disabled={rowDisabled}
-                          options={typeOptions}
-                          onOptionsChange={setTypeOptions}
-                          onChange={(id) =>
-                            updateSwitchboardField(sb.id, {
-                              switchboard_type_id: id,
-                            })
-                          }
-                          placeholder="Type..."
-                        />
+                        <div className="mx-auto w-36">
+                          <LookupSelect
+                            center
+                            table="switchboard_types"
+                            value={sb.switchboard_type_id}
+                            disabled={rowDisabled}
+                            options={typeOptions}
+                            onOptionsChange={setTypeOptions}
+                            onChange={(id) =>
+                              updateSwitchboardField(sb.id, {
+                                switchboard_type_id: id,
+                              })
+                            }
+                            placeholder="Type..."
+                          />
+                        </div>
                       </>,
                       /* Std */ <>
                         <select
@@ -1353,7 +1356,7 @@ export function ProjectDetailTab({
                                 null) as Switchboard["std"],
                             })
                           }
-                          className="w-full min-w-[104px] rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 disabled:border-transparent disabled:bg-transparent"
+                          className="w-36 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 text-center [text-align-last:center] disabled:border-transparent disabled:bg-transparent"
                         >
                           <option value="">—</option>
                           {STD_OPTIONS.map((s) => (
@@ -1372,7 +1375,7 @@ export function ProjectDetailTab({
                               form_of_separation: e.target.value || null,
                             })
                           }
-                          className="w-full min-w-[104px] rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 disabled:border-transparent disabled:bg-transparent"
+                          className="w-36 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 text-center [text-align-last:center] disabled:border-transparent disabled:bg-transparent"
                         >
                           <option value="">—</option>
                           {FORM_OPTIONS.map((f) => (
@@ -1404,7 +1407,7 @@ export function ProjectDetailTab({
                             if (next === (sb.amps ?? null)) return;
                             updateSwitchboardField(sb.id, { amps: next });
                           }}
-                          className={`w-14 rounded border px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent ${ampsErrorIds.has(sb.id) ? "border-amber-400 bg-amber-50 text-amber-800 ring-2 ring-amber-300/40" : "border-surface-container-high"}`}
+                          className={`w-36 rounded border px-1.5 py-1 text-center disabled:border-transparent disabled:bg-transparent ${ampsErrorIds.has(sb.id) ? "border-amber-400 bg-amber-50 text-amber-800 ring-2 ring-amber-300/40" : "border-surface-container-high"}`}
                         />
                       </>,
                       /* IP */ <>
@@ -1416,7 +1419,7 @@ export function ProjectDetailTab({
                               ip_rating: e.target.value || null,
                             })
                           }
-                          className="w-16 rounded border border-surface-container-high bg-surface-container-lowest px-1 py-0.5 disabled:border-transparent disabled:bg-transparent"
+                          className="w-36 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 text-center [text-align-last:center] disabled:border-transparent disabled:bg-transparent"
                         >
                           <option value="">—</option>
                           {IP_OPTIONS.map((ip) => (
@@ -1442,7 +1445,7 @@ export function ProjectDetailTab({
                             if (next === (sb.ka ?? null)) return;
                             updateSwitchboardField(sb.id, { ka: next });
                           }}
-                          className="w-12 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
+                          className="w-36 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 text-center [text-align-last:center] disabled:border-transparent disabled:bg-transparent"
                         />
                       </>,
                       /* Cable Entry */ <>
@@ -1455,7 +1458,7 @@ export function ProjectDetailTab({
                                 null) as Switchboard["cable_entry"],
                             })
                           }
-                          className="w-20 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 disabled:border-transparent disabled:bg-transparent"
+                          className="w-36 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 text-center [text-align-last:center] disabled:border-transparent disabled:bg-transparent"
                         >
                           <option value="">—</option>
                           {CABLE_OPTIONS.map((c) => (
@@ -1475,7 +1478,7 @@ export function ProjectDetailTab({
                                 null) as Switchboard["cable_exit"],
                             })
                           }
-                          className="w-20 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 disabled:border-transparent disabled:bg-transparent"
+                          className="w-36 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 text-center [text-align-last:center] disabled:border-transparent disabled:bg-transparent"
                         >
                           <option value="">—</option>
                           {CABLE_OPTIONS.map((c) => (
@@ -1495,7 +1498,7 @@ export function ProjectDetailTab({
                                 null) as Switchboard["busbar"],
                             })
                           }
-                          className="w-16 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 disabled:border-transparent disabled:bg-transparent"
+                          className="w-36 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 text-center [text-align-last:center] disabled:border-transparent disabled:bg-transparent"
                         >
                           <option value="">—</option>
                           {BUSBAR_OPTIONS.map((b) => (
@@ -1514,7 +1517,7 @@ export function ProjectDetailTab({
                               neutral_size_pct: Number(e.target.value),
                             })
                           }
-                          className="w-20 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 disabled:border-transparent disabled:bg-transparent"
+                          className="w-36 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 text-center [text-align-last:center] disabled:border-transparent disabled:bg-transparent"
                         >
                           <option value={100}>100%</option>
                           <option value={50}>50%</option>
@@ -1532,7 +1535,7 @@ export function ProjectDetailTab({
                             if (next === sb.qty) return;
                             updateSwitchboardField(sb.id, { qty: next });
                           }}
-                          className="w-14 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
+                          className="w-36 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 text-center [text-align-last:center] disabled:border-transparent disabled:bg-transparent"
                         />
                       </>,
                       /* Unit Cost */ <>{money(unitCost)}</>,
@@ -1702,12 +1705,12 @@ export function ProjectDetailTab({
                           {columns.map((c) => (
                             <td
                               key={c.id}
-                              className="whitespace-nowrap border-l border-surface-container px-space-md py-space-sm tabular-nums"
+                              className="whitespace-nowrap border-l border-surface-container px-space-md py-space-sm text-center tabular-nums"
                             >
                               {c.cells[r.idx]}
                             </td>
                           ))}
-                          <td className="whitespace-nowrap border-l border-surface-container-high bg-surface-container-low px-space-md py-space-sm font-semibold tabular-nums">
+                          <td className="whitespace-nowrap border-l border-surface-container-high bg-surface-container-low px-space-md py-space-sm text-center font-semibold tabular-nums">
                             {r.total ?? null}
                           </td>
                         </tr>

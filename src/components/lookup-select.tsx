@@ -17,6 +17,7 @@ export function LookupSelect({
   placeholder = "Select or add...",
   options: sharedOptions,
   onOptionsChange,
+  center = false,
 }: {
   table: "consultants" | "sales_execs" | "switchboard_types";
   value: string | null;
@@ -28,6 +29,8 @@ export function LookupSelect({
   // when a new option is added so the caller can keep its shared list in sync.
   options?: Option[];
   onOptionsChange?: (options: Option[]) => void;
+  /** centre the selected name in the button */
+  center?: boolean;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [ownOptions, setOwnOptions] = useState<Option[]>([]);
@@ -42,7 +45,10 @@ export function LookupSelect({
     if (sharedOptions) return;
     let cancelled = false;
     (async () => {
-      const { data } = await supabase.from(table).select("id, name").order("name");
+      const { data } = await supabase
+        .from(table)
+        .select("id, name")
+        .order("name");
       if (!cancelled) setOwnOptions((data ?? []) as Option[]);
     })();
     return () => {
@@ -55,26 +61,40 @@ export function LookupSelect({
   const matches = search
     ? options.filter((o) => o.name.toLowerCase().includes(search.toLowerCase()))
     : options;
-  const exactMatch = options.some((o) => o.name.toLowerCase() === search.trim().toLowerCase());
+  const exactMatch = options.some(
+    (o) => o.name.toLowerCase() === search.trim().toLowerCase(),
+  );
 
   async function addNew() {
     const name = search.trim();
     if (!name) return;
     setAdding(true);
-    const { data, error } = await supabase.from(table).insert({ name }).select("id, name").single();
+    const { data, error } = await supabase
+      .from(table)
+      .insert({ name })
+      .select("id, name")
+      .single();
     setAdding(false);
     if (error) {
       alert(error.message);
       return;
     }
-    setOptions([...options, data as Option].sort((a, b) => a.name.localeCompare(b.name)));
+    setOptions(
+      [...options, data as Option].sort((a, b) => a.name.localeCompare(b.name)),
+    );
     onChange(data.id, data.name);
     setOpen(false);
     setSearch("");
   }
 
   if (disabled) {
-    return <span className="text-sm text-slate-700">{selected?.name ?? "—"}</span>;
+    return (
+      <span
+        className={`block text-sm text-slate-700 ${center ? "text-center" : ""}`}
+      >
+        {selected?.name ?? "—"}
+      </span>
+    );
   }
 
   return (
@@ -84,8 +104,16 @@ export function LookupSelect({
         onClick={() => setOpen(!open)}
         className="flex w-full items-center justify-between gap-2 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50"
       >
-        <span className={selected ? "" : "text-slate-400"}>{selected?.name ?? placeholder}</span>
-        <Icon name={open ? "expand_less" : "expand_more"} size={15} className="text-slate-400" />
+        <span
+          className={`${center ? "flex-1 text-center" : ""} ${selected ? "" : "text-slate-400"}`}
+        >
+          {selected?.name ?? placeholder}
+        </span>
+        <Icon
+          name={open ? "expand_less" : "expand_more"}
+          size={15}
+          className="text-slate-400"
+        />
       </button>
       {open && (
         <div className="absolute z-20 mt-1 w-64 rounded-md border border-slate-200 bg-white shadow-md">
@@ -123,7 +151,9 @@ export function LookupSelect({
                 {o.name}
               </button>
             ))}
-            {matches.length === 0 && <p className="px-2.5 py-2 text-xs text-slate-400">No matches.</p>}
+            {matches.length === 0 && (
+              <p className="px-2.5 py-2 text-xs text-slate-400">No matches.</p>
+            )}
           </div>
           {search.trim() && !exactMatch && (
             <button

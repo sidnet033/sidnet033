@@ -1,44 +1,97 @@
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth";
 import { getSwitchboardCostBreakdown } from "@/lib/switchboard-cost";
-import { ProjectsTree, type CustomerNode, type ProjectNode, type RevisionNode, type SwitchboardNode } from "@/components/projects-tree";
+import {
+  ProjectsTree,
+  type CustomerNode,
+  type ProjectNode,
+  type RevisionNode,
+  type SwitchboardNode,
+} from "@/components/projects-tree";
 import { Icon } from "@/components/icon";
-import type { Customer, Project, Revision, Switchboard } from "@/types/database";
+import type {
+  Customer,
+  Project,
+  Revision,
+  Switchboard,
+} from "@/types/database";
 
 export const dynamic = "force-dynamic";
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+  });
 }
 
 export default async function DashboardPage() {
   const supabase = await createClient();
+  const current = await getCurrentUser();
 
-  const [{ data: customers }, { data: projects }, { data: revisions }, { data: switchboards }, { data: verticals }, { count: itemCount }] =
-    await Promise.all([
-      supabase.from("customers").select("*").order("name"),
-      supabase.from("projects").select("*").order("created_at", { ascending: false }),
-      supabase.from("revisions").select("*").order("revision_number"),
-      supabase.from("switchboards").select("*").order("sort_order"),
-      supabase.from("verticals").select("id, switchboard_id"),
-      supabase.from("item_master").select("*", { count: "exact", head: true }),
-    ]);
+  const [
+    { data: customers },
+    { data: projects },
+    { data: revisions },
+    { data: switchboards },
+    { data: verticals },
+    { count: itemCount },
+  ] = await Promise.all([
+    supabase.from("customers").select("*").order("name"),
+    supabase
+      .from("projects")
+      .select("*")
+      .order("created_at", { ascending: false }),
+    supabase.from("revisions").select("*").order("revision_number"),
+    supabase.from("switchboards").select("*").order("sort_order"),
+    supabase.from("verticals").select("id, switchboard_id"),
+    supabase.from("item_master").select("*", { count: "exact", head: true }),
+  ]);
 
   const switchboardRows = (switchboards ?? []) as Switchboard[];
-  const breakdowns = await Promise.all(switchboardRows.map((sb) => getSwitchboardCostBreakdown(supabase, sb)));
-  const costBySwitchboard = new Map(switchboardRows.map((sb, i) => [sb.id, breakdowns[i].mfgTotal]));
+  const breakdowns = await Promise.all(
+    switchboardRows.map((sb) => getSwitchboardCostBreakdown(supabase, sb)),
+  );
+  const costBySwitchboard = new Map(
+    switchboardRows.map((sb, i) => [sb.id, breakdowns[i].mfgTotal]),
+  );
 
   const bayCountBySwitchboard = new Map<string, number>();
-  for (const v of (verticals ?? []) as { id: string; switchboard_id: string }[]) {
-    bayCountBySwitchboard.set(v.switchboard_id, (bayCountBySwitchboard.get(v.switchboard_id) ?? 0) + 1);
+  for (const v of (verticals ?? []) as {
+    id: string;
+    switchboard_id: string;
+  }[]) {
+    bayCountBySwitchboard.set(
+      v.switchboard_id,
+      (bayCountBySwitchboard.get(v.switchboard_id) ?? 0) + 1,
+    );
   }
 
-  const lockedByIds = Array.from(new Set(switchboardRows.map((sb) => sb.locked_by).filter((v): v is string => !!v)));
-  const createdByIds = Array.from(new Set(((projects ?? []) as Project[]).map((p) => p.created_by).filter((v): v is string => !!v)));
+  const lockedByIds = Array.from(
+    new Set(
+      switchboardRows.map((sb) => sb.locked_by).filter((v): v is string => !!v),
+    ),
+  );
+  const createdByIds = Array.from(
+    new Set(
+      ((projects ?? []) as Project[])
+        .map((p) => p.created_by)
+        .filter((v): v is string => !!v),
+    ),
+  );
   const profileIds = Array.from(new Set([...lockedByIds, ...createdByIds]));
   const { data: profileRows } = profileIds.length
-    ? await supabase.from("profiles").select("id, full_name").in("id", profileIds)
+    ? await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", profileIds)
     : { data: [] };
-  const profileNames = new Map(((profileRows ?? []) as { id: string; full_name: string | null }[]).map((p) => [p.id, p.full_name]));
+  const profileNames = new Map(
+    ((profileRows ?? []) as { id: string; full_name: string | null }[]).map(
+      (p) => [p.id, p.full_name],
+    ),
+  );
 
   const revisionGroups = new Map<string, Revision[]>();
   for (const r of (revisions ?? []) as Revision[]) {
@@ -48,7 +101,9 @@ export default async function DashboardPage() {
   }
   const latestRevisionId = new Map<string, string>();
   for (const [groupId, list] of revisionGroups) {
-    const latest = list.reduce((a, b) => (b.revision_number > a.revision_number ? b : a));
+    const latest = list.reduce((a, b) =>
+      b.revision_number > a.revision_number ? b : a,
+    );
     latestRevisionId.set(groupId, latest.id);
   }
 
@@ -59,12 +114,19 @@ export default async function DashboardPage() {
         id: sb.id,
         tag: sb.tag,
         title: sb.title,
-        specSummary: [sb.form_of_separation, sb.amps ? `${sb.amps}A` : null, sb.ka ? `${sb.ka}kA` : null]
+        specSummary: [
+          sb.form_of_separation,
+          sb.amps ? `${sb.amps}A` : null,
+          sb.ka ? `${sb.ka}kA` : null,
+        ]
           .filter(Boolean)
           .join(" · "),
         bayCount: bayCountBySwitchboard.get(sb.id) ?? 0,
         cost: costBySwitchboard.get(sb.id) ?? 0,
-        lockedByName: sb.locked_by ? profileNames.get(sb.locked_by) ?? "locked" : null,
+        lockedByName: sb.locked_by
+          ? (profileNames.get(sb.locked_by) ?? "locked")
+          : null,
+        lockedById: sb.locked_by,
       }));
 
   const revisionNodes = (projectId: string): RevisionNode[] =>
@@ -94,7 +156,9 @@ export default async function DashboardPage() {
           code: p.code,
           title: p.title,
           stage: p.stage,
-          engineer: p.created_by ? profileNames.get(p.created_by) ?? null : null,
+          engineer: p.created_by
+            ? (profileNames.get(p.created_by) ?? null)
+            : null,
           createdAtLabel: formatDate(p.created_at),
           revisions: revs,
           cost: revs.reduce((s, r) => s + r.cost, 0),
@@ -103,10 +167,17 @@ export default async function DashboardPage() {
         };
       });
 
-  const customerNodes: CustomerNode[] = ((customers ?? []) as Customer[]).map((c) => {
-    const projs = projectNodes(c.id);
-    return { id: c.id, name: c.name, projects: projs, cost: projs.reduce((s, p) => s + p.cost, 0) };
-  });
+  const customerNodes: CustomerNode[] = ((customers ?? []) as Customer[]).map(
+    (c) => {
+      const projs = projectNodes(c.id);
+      return {
+        id: c.id,
+        name: c.name,
+        projects: projs,
+        cost: projs.reduce((s, p) => s + p.cost, 0),
+      };
+    },
+  );
 
   // projects with no customer_id (shouldn't normally happen, but keep visible)
   const unassignedProjects = projectNodes(null);
@@ -125,19 +196,36 @@ export default async function DashboardPage() {
         {(itemCount ?? 0) === 0 && (
           <div className="flex items-start justify-between gap-3 rounded-lg border border-amber-200/80 bg-amber-50/60 p-3.5 text-xs">
             <div className="flex items-start gap-2.5">
-              <Icon name="warning" size={18} className="mt-0.5 text-amber-600" />
+              <Icon
+                name="warning"
+                size={18}
+                className="mt-0.5 text-amber-600"
+              />
               <div>
-                <span className="font-medium text-amber-950">Item master is empty</span>
-                <p className="mt-0.5 text-amber-800/90">Add components before building feeders or quoting a switchboard.</p>
+                <span className="font-medium text-amber-950">
+                  Item master is empty
+                </span>
+                <p className="mt-0.5 text-amber-800/90">
+                  Add components before building feeders or quoting a
+                  switchboard.
+                </p>
               </div>
             </div>
-            <a href="/item-master" className="shrink-0 rounded p-1 text-amber-700 hover:bg-amber-100/50 hover:text-amber-900">
+            <a
+              href="/item-master"
+              className="shrink-0 rounded p-1 text-amber-700 hover:bg-amber-100/50 hover:text-amber-900"
+            >
               <Icon name="arrow_forward" size={17} />
             </a>
           </div>
         )}
 
-        <ProjectsTree customers={customerNodes} customerOptions={(customers ?? []) as Customer[]} />
+        <ProjectsTree
+          customers={customerNodes}
+          customerOptions={(customers ?? []) as Customer[]}
+          currentUserId={current?.userId ?? null}
+          isAdmin={current?.profile?.role === "admin"}
+        />
       </div>
     </div>
   );

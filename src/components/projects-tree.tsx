@@ -18,6 +18,7 @@ export type SwitchboardNode = {
   bayCount: number;
   cost: number;
   lockedByName: string | null;
+  lockedById: string | null;
 };
 export type RevisionNode = {
   id: string;
@@ -108,9 +109,13 @@ type Row = {
 export function ProjectsTree({
   customers,
   customerOptions,
+  currentUserId,
+  isAdmin,
 }: {
   customers: CustomerNode[];
   customerOptions: Customer[];
+  currentUserId: string | null;
+  isAdmin: boolean;
 }) {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -178,6 +183,29 @@ export function ProjectsTree({
 
   async function cloneSwitchboard(switchboardId: string) {
     const { error } = await supabase.rpc("clone_switchboard", {
+      p_switchboard_id: switchboardId,
+    });
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    router.refresh();
+  }
+
+  async function releaseSwitchboard(
+    switchboardId: string,
+    label: string,
+    lockedByName: string | null,
+    mine: boolean,
+  ) {
+    if (
+      !mine &&
+      !confirm(
+        `Release ${label}? It's locked by ${lockedByName ?? "another user"} — any unsaved work of theirs may be lost.`,
+      )
+    )
+      return;
+    const { error } = await supabase.rpc("unlock_switchboard", {
       p_switchboard_id: switchboardId,
     });
     if (error) {
@@ -424,6 +452,9 @@ export function ProjectsTree({
                                 revision={r}
                                 project={p}
                                 online={online}
+                                currentUserId={currentUserId}
+                                isAdmin={isAdmin}
+                                onReleaseSwitchboard={releaseSwitchboard}
                                 onCloneRevision={cloneRevision}
                                 onCloneSwitchboard={cloneSwitchboard}
                                 onDeleteSwitchboard={deleteSwitchboard}
@@ -485,6 +516,9 @@ function RevisionBlock({
   revision: r,
   project: p,
   online,
+  currentUserId,
+  isAdmin,
+  onReleaseSwitchboard,
   onCloneRevision,
   onCloneSwitchboard,
   onDeleteSwitchboard,
@@ -492,6 +526,14 @@ function RevisionBlock({
   revision: RevisionNode;
   project: ProjectNode;
   online: Map<string, string[]>;
+  currentUserId: string | null;
+  isAdmin: boolean;
+  onReleaseSwitchboard: (
+    switchboardId: string,
+    label: string,
+    lockedByName: string | null,
+    mine: boolean,
+  ) => void;
   onCloneRevision: (revisionId: string) => void;
   onCloneSwitchboard: (switchboardId: string) => void;
   onDeleteSwitchboard: (switchboardId: string, label: string) => void;
@@ -573,6 +615,27 @@ function RevisionBlock({
                       >
                         Open
                       </Link>
+                      {sb.lockedById &&
+                        (sb.lockedById === currentUserId || isAdmin) && (
+                          <button
+                            onClick={() =>
+                              onReleaseSwitchboard(
+                                sb.id,
+                                label,
+                                sb.lockedByName,
+                                sb.lockedById === currentUserId,
+                              )
+                            }
+                            title={
+                              sb.lockedById === currentUserId
+                                ? "Release your lock"
+                                : `Force-release ${sb.lockedByName ?? "the"} lock`
+                            }
+                            className="btn btn-outline btn-sm"
+                          >
+                            Release
+                          </button>
+                        )}
                       <button
                         onClick={() => onCloneSwitchboard(sb.id)}
                         title="Clone switchboard"
