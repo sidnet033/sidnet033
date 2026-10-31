@@ -9,6 +9,7 @@ import type { ProjectStage, Switchboard } from "@/types/database";
 // report runs only when the user clicks "Show Report".
 const REPORTS = [
   { id: "enquiries-by-status", label: "Enquiries by status" },
+  { id: "value-by-sales-exec", label: "Enquiry value by sales exec" },
 ] as const;
 type ReportId = (typeof REPORTS)[number]["id"];
 
@@ -67,7 +68,16 @@ export function ReportsHome() {
         </nav>
       </aside>
       <main className="min-w-0 flex-1 p-space-lg">
-        {active === "enquiries-by-status" && <EnquiriesByStatus />}
+        {active === "enquiries-by-status" && (
+          <EnquiryReport key="status" groupBy="stage" defaultMeasure="count" />
+        )}
+        {active === "value-by-sales-exec" && (
+          <EnquiryReport
+            key="exec"
+            groupBy="salesExec"
+            defaultMeasure="value"
+          />
+        )}
       </main>
     </div>
   );
@@ -78,11 +88,22 @@ type Result = {
   includeRevisions: boolean;
   from: string;
   to: string;
-  counts: { id: ProjectStage; label: string; count: number }[];
+  groupBy: GroupBy;
+  counts: { id: string; label: string; count: number }[];
   total: number;
 };
 
-function EnquiriesByStatus() {
+type GroupBy = "stage" | "salesExec";
+const UNASSIGNED = "__none__";
+
+// One report engine, grouped either by status or by sales exec.
+function EnquiryReport({
+  groupBy,
+  defaultMeasure,
+}: {
+  groupBy: GroupBy;
+  defaultMeasure: Measure;
+}) {
   const today = new Date();
   const [from, setFrom] = useState(
     isoDay(new Date(today.getFullYear(), today.getMonth() - 2, 1)),
@@ -92,7 +113,7 @@ function EnquiriesByStatus() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
   const [showTable, setShowTable] = useState(false);
-  const [measure, setMeasure] = useState<Measure>("count");
+  const [measure, setMeasure] = useState<Measure>(defaultMeasure);
   const [includeRevisions, setIncludeRevisions] = useState(false);
 
   async function run() {
@@ -108,7 +129,7 @@ function EnquiriesByStatus() {
         await Promise.all([
           supabase
             .from("projects")
-            .select("id, stage, crm_enquiry_date, created_at"),
+            .select("id, stage, sales_exec_id, crm_enquiry_date, created_at"),
           supabase
             .from("revisions")
             .select("id, project_id, revision_number, created_at"),
@@ -134,7 +155,7 @@ function EnquiriesByStatus() {
       // With revisions: every revision -- the first dated like the project,
       // later ones by the day they were made -- each valued on its own.
       type Unit = {
-        stage: ProjectStage;
+        group: string;
         day: string;
         revisionId: string | null;
       };
@@ -143,20 +164,24 @@ function EnquiriesByStatus() {
         const projectDay =
           (p.crm_enquiry_date as string | null) ??
           isoDay(new Date(p.created_at as string));
+        const group =
+          groupBy === "stage"
+            ? (p.stage as string)
+            : ((p.sales_exec_id as string | null) ?? UNASSIGNED);
         const list = (revsByProject.get(p.id as string) ?? []).sort(
           (x, y) => x.n - y.n,
         );
         if (includeRevisions && list.length) {
           list.forEach((r, i) =>
             units.push({
-              stage: p.stage as ProjectStage,
+              group,
               day: i === 0 ? projectDay : isoDay(new Date(r.created_at)),
               revisionId: r.id,
             }),
           );
         } else {
           units.push({
-            stage: p.stage as ProjectStage,
+            group,
             day: projectDay,
             revisionId: list.length ? list[list.length - 1].id : null,
           });
@@ -194,7 +219,7 @@ function EnquiriesByStatus() {
         });
       }
 
-      const tally = new Map<ProjectStage, number>();
+      const tally = new Map<string, number>();
       for (const u of inRange) {
         const add =
           measure === "count"
@@ -202,15 +227,38 @@ function EnquiriesByStatus() {
             : u.revisionId
               ? (valueByRevision.get(u.revisionId) ?? 0)
               : 0;
-        tally.set(u.stage, (tally.get(u.stage) ?? 0) + add);
+        tally.set(u.group, (tally.get(u.group) ?? 0) + add);
       }
-      const counts = STAGE_ORDER.map((s) => ({
-        ...s,
-        count: tally.get(s.id) ?? 0,
-      }));
+      let counts: Result["counts"];
+      if (groupBy === "stage") {
+        counts = STAGE_ORDER.map((s) => ({
+          ...s,
+          count: tally.get(s.id) ?? 0,
+        }));
+      } else {
+        // every sales exec, biggest first; enquiries with none go last
+        const { data: execs, error: execErr } = await supabase
+          .from("sales_execs")
+          .select("id, name");
+        if (execErr) throw execErr;
+        counts = (execs ?? [])
+          .map((x) => ({
+            id: x.id as string,
+            label: x.name as string,
+            count: tally.get(x.id as string) ?? 0,
+          }))
+          .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+        if (tally.get(UNASSIGNED))
+          counts.push({
+            id: UNASSIGNED,
+            label: "No sales exec",
+            count: tally.get(UNASSIGNED)!,
+          });
+      }
       setResult({
         measure,
         includeRevisions,
+        groupBy,
         from,
         to,
         counts,
@@ -227,15 +275,19 @@ function EnquiriesByStatus() {
     <div className="max-w-5xl space-y-space-md">
       <div>
         <h1 className="font-headline-lg text-headline-lg text-on-surface">
-          Enquiries by status
+          {groupBy === "stage"
+            ? "Enquiries by status"
+            : "Enquiry value by sales exec"}
         </h1>
         <p className="text-[12px] text-secondary">
-          Enquiries (projects) in each status, by count or by value. Value is
-          the quoted price (cost + margin × qty, INR) of each project&apos;s
-          latest revision, dated by CRM enquiry date (or the date the project
-          was created). Tick &quot;Include revisions&quot; to count every
-          revision as an enquiry: each adds its own value, and later revisions
-          are dated by the day they were made.
+          {groupBy === "stage"
+            ? "Enquiries (projects) in each status"
+            : "Enquiries (projects) handled by each sales exec"}
+          , by count or by value. Value is the quoted price (cost + margin ×
+          qty, INR) of each project&apos;s latest revision, dated by CRM enquiry
+          date (or the date the project was created). Tick &quot;Include
+          revisions&quot; to count every revision as an enquiry: each adds its
+          own value, and later revisions are dated by the day they were made.
         </p>
       </div>
 
@@ -312,8 +364,10 @@ function EnquiriesByStatus() {
           </div>
           {showTable ? (
             <CountsTable result={result} />
-          ) : (
+          ) : result.groupBy === "stage" ? (
             <BarChart result={result} />
+          ) : (
+            <HBarChart result={result} />
           )}
         </div>
       ) : (
@@ -443,7 +497,9 @@ function CountsTable({ result }: { result: Result }) {
     <table className="w-full max-w-md border-collapse text-[13px]">
       <thead>
         <tr className="border-b border-surface-container-high text-left text-[11px] font-bold uppercase tracking-wider text-secondary">
-          <th className="py-1.5">Status</th>
+          <th className="py-1.5">
+            {result.groupBy === "stage" ? "Status" : "Sales exec"}
+          </th>
           <th className="py-1.5 text-right">
             {result.measure === "count" ? "Enquiries" : "Value (INR)"}
           </th>
@@ -471,5 +527,62 @@ function CountsTable({ result }: { result: Result }) {
         </tr>
       </tbody>
     </table>
+  );
+}
+
+// Horizontal bars for a list of names: one hue, biggest first, value at the
+// end of each bar, share on hover.
+function HBarChart({ result }: { result: Result }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const isValue = result.measure === "value";
+  const max = Math.max(1, ...result.counts.map((c) => c.count));
+  if (result.counts.length === 0)
+    return (
+      <p className="text-[13px] text-secondary">No sales execs set up yet.</p>
+    );
+  return (
+    <div className="space-y-1.5">
+      {result.counts.map((c, i) => {
+        const share = result.total
+          ? Math.round((c.count / result.total) * 100)
+          : 0;
+        return (
+          <div
+            key={c.id}
+            className="relative grid grid-cols-[minmax(8rem,14rem)_1fr] items-center gap-3"
+            onMouseEnter={() => setHover(i)}
+            onMouseLeave={() => setHover(null)}
+          >
+            <span
+              className={`truncate text-right text-[13px] ${c.id === UNASSIGNED ? "italic text-secondary" : "text-on-surface"}`}
+              title={c.label}
+            >
+              {c.label}
+            </span>
+            <div className="flex h-6 items-center gap-2">
+              <div
+                className={`h-full rounded-r-[4px] ${hover === i ? "bg-primary-container" : "bg-primary"}`}
+                style={{
+                  width: `${(c.count / max) * 85}%`,
+                  minWidth: c.count > 0 ? 2 : 0,
+                }}
+              />
+              <span className="whitespace-nowrap text-[12px] font-bold tabular-nums text-on-surface">
+                {isValue ? inrShort(c.count) : c.count}
+              </span>
+            </div>
+            {hover === i && (
+              <div className="pointer-events-none absolute left-[calc(min(14rem,40%)+1rem)] top-full z-10 mt-0.5 whitespace-nowrap rounded-md bg-inverse-surface px-2 py-1 text-[12px] text-inverse-on-surface shadow-md">
+                <b>{c.label}</b>:{" "}
+                {isValue
+                  ? inrFull(c.count)
+                  : `${c.count} enquir${c.count === 1 ? "y" : "ies"}`}{" "}
+                ({share}%)
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
