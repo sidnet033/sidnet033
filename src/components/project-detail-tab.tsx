@@ -7,7 +7,10 @@ import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { LookupSelect } from "@/components/lookup-select";
 import { StageStepper } from "@/components/stage-stepper";
-import { AlertsPanel, ImpactReviewDialog } from "@/components/project-impact-ui";
+import {
+  AlertsPanel,
+  ImpactReviewDialog,
+} from "@/components/project-impact-ui";
 import {
   IMPACT_FIELDS,
   actionsFor,
@@ -27,12 +30,27 @@ import { ampsViolations, nextStandardAmps } from "@/lib/amps-check";
 import { numericKeyGuard } from "@/lib/numeric-input";
 import { siteDeratingReasons } from "@/lib/breaker-derating";
 import type { SwitchboardListItem } from "@/lib/revision-context";
-import type { Customer, Feeder, Project, ProjectStage, Revision, Switchboard } from "@/types/database";
+import type {
+  Customer,
+  Feeder,
+  Project,
+  ProjectStage,
+  Revision,
+  Switchboard,
+} from "@/types/database";
 import type { Tab } from "@/components/revision-workspace";
 
 const STD_OPTIONS = ["ArTuK", "61439", "60439"] as const;
 const IP_OPTIONS = ["42", "52", "54", "55", "63"];
-const FORM_OPTIONS = ["Form 1", "Form 2a", "Form 2b", "Form 3a", "Form 3b", "Form 4a", "Form 4b (Type 7)"];
+const FORM_OPTIONS = [
+  "Form 1",
+  "Form 2a",
+  "Form 2b",
+  "Form 3a",
+  "Form 3b",
+  "Form 4a",
+  "Form 4b (Type 7)",
+];
 const CABLE_OPTIONS = ["Top", "Bottom"] as const;
 const BUSBAR_OPTIONS = ["Cu", "Al"] as const;
 
@@ -57,12 +75,22 @@ const EDITABLE_SWITCHBOARD_FIELDS = [
 
 function formatDate(iso: string | null) {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" });
+  return new Date(iso).toLocaleDateString("en-IN", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function formatDateTime(iso: string | null) {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString("en-IN", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleString("en-IN", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 type ProjectPatch = {
@@ -70,6 +98,8 @@ type ProjectPatch = {
   notes: string | null;
   crm_enquiry_number: string | null;
   crm_enquiry_date: string | null;
+  quote_required_by: string | null;
+  nature: "bidding" | "purchase" | null;
   site_country: string | null;
   consultant_id: string | null;
   sales_exec_id: string | null;
@@ -98,6 +128,8 @@ function snapshotOf(project: Project): ProjectPatch {
     notes: project.notes,
     crm_enquiry_number: project.crm_enquiry_number,
     crm_enquiry_date: project.crm_enquiry_date,
+    quote_required_by: project.quote_required_by,
+    nature: project.nature,
     site_country: project.site_country,
     consultant_id: project.consultant_id,
     sales_exec_id: project.sales_exec_id,
@@ -153,7 +185,9 @@ export function ProjectDetailTab({
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
-  const [savedSnapshot, setSavedSnapshot] = useState<ProjectPatch>(() => snapshotOf(project));
+  const [savedSnapshot, setSavedSnapshot] = useState<ProjectPatch>(() =>
+    snapshotOf(project),
+  );
   const [form, setForm] = useState<ProjectPatch>(savedSnapshot);
   const [consultantLabel, setConsultantLabel] = useState(consultantName);
   const [salesExecLabel, setSalesExecLabel] = useState(salesExecName);
@@ -164,13 +198,17 @@ export function ProjectDetailTab({
   const [justSaved, setJustSaved] = useState(false);
   const [infoCollapsed, setInfoCollapsed] = useState(false);
 
-  const money = (n: number) => formatMoneyDual(n, form.currency, form.exchange_rate);
+  const money = (n: number) =>
+    formatMoneyDual(n, form.currency, form.exchange_rate);
 
   useEffect(() => {
     if (!isAdmin) return;
     let cancelled = false;
     (async () => {
-      const { data } = await supabase.from("customers").select("*").order("name");
+      const { data } = await supabase
+        .from("customers")
+        .select("*")
+        .order("name");
       if (!cancelled) setCustomerOptions((data ?? []) as Customer[]);
     })();
     return () => {
@@ -178,7 +216,10 @@ export function ProjectDetailTab({
     };
   }, [supabase, isAdmin]);
 
-  function patch<K extends keyof ProjectPatch>(field: K, value: ProjectPatch[K]) {
+  function patch<K extends keyof ProjectPatch>(
+    field: K,
+    value: ProjectPatch[K],
+  ) {
     setForm((f) => ({ ...f, [field]: value }));
     setJustSaved(false);
   }
@@ -196,7 +237,8 @@ export function ProjectDetailTab({
   }
 
   const boardsDirty = JSON.stringify(boards) !== JSON.stringify(boardsSnapshot);
-  const dirty = JSON.stringify(form) !== JSON.stringify(savedSnapshot) || boardsDirty;
+  const dirty =
+    JSON.stringify(form) !== JSON.stringify(savedSnapshot) || boardsDirty;
 
   // Every switchboard in the project (all live revisions), for the Save-time
   // impact review and the Alerts section. Reloaded after each save/fix and
@@ -219,29 +261,56 @@ export function ProjectDetailTab({
   }, [supabase, project.id, switchboards, dataVersion]);
 
   const alerts = useMemo(
-    () => (projectData ? auditProject(projectData, densitiesOf(savedSnapshot), currentUserId, isAdmin) : []),
-    [projectData, savedSnapshot, currentUserId, isAdmin]
+    () =>
+      projectData
+        ? auditProject(
+            projectData,
+            densitiesOf(savedSnapshot),
+            currentUserId,
+            isAdmin,
+          )
+        : [],
+    [projectData, savedSnapshot, currentUserId, isAdmin],
   );
   // A switchboard's Amps can't be lowered below its highest-rated feeder --
   // only checked for boards whose Amps is being changed on this page (an
   // existing mismatch shows under Alerts instead of blocking other edits).
   const feedersByBoard = useMemo(() => {
     const map = new Map<string, Feeder[]>();
-    for (const b of projectData?.boards ?? []) map.set(b.switchboard.id, b.verticals.flatMap((v) => v.placed.map((p) => p.feeder)));
+    for (const b of projectData?.boards ?? [])
+      map.set(
+        b.switchboard.id,
+        b.verticals.flatMap((v) => v.placed.map((p) => p.feeder)),
+      );
     return map;
   }, [projectData]);
   const ampsErrors = boards.flatMap((b) => {
-    const prev = boardsSnapshot.find((x) => x.switchboard.id === b.switchboard.id);
+    const prev = boardsSnapshot.find(
+      (x) => x.switchboard.id === b.switchboard.id,
+    );
     if (!prev || prev.switchboard.amps === b.switchboard.amps) return [];
-    const over = ampsViolations(b.switchboard.amps, feedersByBoard.get(b.switchboard.id) ?? []);
-    return over.length > 0 ? [{ sb: b.switchboard, savedAmps: prev.switchboard.amps, over }] : [];
+    const over = ampsViolations(
+      b.switchboard.amps,
+      feedersByBoard.get(b.switchboard.id) ?? [],
+    );
+    return over.length > 0
+      ? [{ sb: b.switchboard, savedAmps: prev.switchboard.amps, over }]
+      : [];
   });
   const ampsErrorIds = new Set(ampsErrors.map((e) => e.sb.id));
   // eslint-disable-next-line react-hooks/exhaustive-deps -- recomputed whenever the drafts change
-  const liveRemainingAlerts = useMemo(() => (projectData ? remainingAlerts(projectData, draftBoardChanges()) : []), [projectData, form, savedSnapshot, boards, boardsSnapshot]);
+  const liveRemainingAlerts = useMemo(
+    () =>
+      projectData ? remainingAlerts(projectData, draftBoardChanges()) : [],
+    [projectData, form, savedSnapshot, boards, boardsSnapshot],
+  );
   // Site conditions drive switchgear derating -- required before any save.
-  const siteMissing = form.site_altitude_m == null || form.site_ambient_temp_c == null;
-  const siteDerating = siteDeratingReasons(form.site_ambient_temp_c, form.site_altitude_m);
+  const siteMissing =
+    form.site_altitude_m == null || form.site_ambient_temp_c == null;
+  const siteDerating = siteDeratingReasons(
+    form.site_ambient_temp_c,
+    form.site_altitude_m,
+  );
   // Amps below a feeder's rating is a warning (allowed), not a blocker.
   const saveBlocked = liveRemainingAlerts.length > 0 || siteMissing;
 
@@ -255,23 +324,40 @@ export function ProjectDetailTab({
   function draftBoardChanges(): Map<string, Partial<Switchboard>> {
     const draftBoards = new Map<string, Partial<Switchboard>>();
     for (const b of boards) {
-      const prev = boardsSnapshot.find((x) => x.switchboard.id === b.switchboard.id);
+      const prev = boardsSnapshot.find(
+        (x) => x.switchboard.id === b.switchboard.id,
+      );
       if (!prev) continue;
       const changed: Partial<Switchboard> = {};
       for (const key of IMPACT_FIELDS) {
-        if (b.switchboard[key] !== prev.switchboard[key]) (changed as Record<string, unknown>)[key] = b.switchboard[key];
+        if (b.switchboard[key] !== prev.switchboard[key])
+          (changed as Record<string, unknown>)[key] = b.switchboard[key];
       }
-      if (Object.keys(changed).length > 0) draftBoards.set(b.switchboard.id, changed);
+      if (Object.keys(changed).length > 0)
+        draftBoards.set(b.switchboard.id, changed);
     }
     return draftBoards;
   }
 
   // Alerts already in this revision that the drafted changes don't clear --
   // while any remain, the page can't be saved (warnings never block).
-  function remainingAlerts(data: ProjectData, draftBoards: Map<string, Partial<Switchboard>>): ReviewItem[] {
+  function remainingAlerts(
+    data: ProjectData,
+    draftBoards: Map<string, Partial<Switchboard>>,
+  ): ReviewItem[] {
     const common = { data, revisionId, currentUserId, isAdmin };
-    const existing = new Set(alertsAfterSave({ ...common, densities: densitiesOf(savedSnapshot), draftBoards: new Map() }).map((i) => i.id));
-    return alertsAfterSave({ ...common, densities: densitiesOf(form), draftBoards }).filter((i) => existing.has(i.id));
+    const existing = new Set(
+      alertsAfterSave({
+        ...common,
+        densities: densitiesOf(savedSnapshot),
+        draftBoards: new Map(),
+      }).map((i) => i.id),
+    );
+    return alertsAfterSave({
+      ...common,
+      densities: densitiesOf(form),
+      draftBoards,
+    }).filter((i) => existing.has(i.id));
   }
 
   // Save first checks what the change does to every switchboard's GA and
@@ -291,16 +377,29 @@ export function ProjectDetailTab({
         setSaving(false);
         alert(
           `Can't save — this revision has ${remaining.length} alert${remaining.length === 1 ? "" : "s"} to fix first (see Alerts & Warnings):\n\n` +
-            remaining.map((i) => `• ${i.boardLabel}: ${i.message}`).join("\n")
+            remaining.map((i) => `• ${i.boardLabel}: ${i.message}`).join("\n"),
         );
         return;
       }
-      if (before.Cu !== after.Cu || before.Al !== after.Al || draftBoards.size > 0) {
-        items = computeImpact({ data, before, after, draftBoards, currentUserId, isAdmin });
+      if (
+        before.Cu !== after.Cu ||
+        before.Al !== after.Al ||
+        draftBoards.size > 0
+      ) {
+        items = computeImpact({
+          data,
+          before,
+          after,
+          draftBoards,
+          currentUserId,
+          isAdmin,
+        });
       }
     } catch (e) {
       setSaving(false);
-      alert(`Could not check the project before saving: ${(e as Error).message}`);
+      alert(
+        `Could not check the project before saving: ${(e as Error).message}`,
+      );
       return;
     }
     setSaving(false);
@@ -319,7 +418,9 @@ export function ProjectDetailTab({
     try {
       await applyActions(supabase, actionsFor(items, ticked));
     } catch (e) {
-      alert(`Saved, but some changes could not be applied: ${(e as Error).message}`);
+      alert(
+        `Saved, but some changes could not be applied: ${(e as Error).message}`,
+      );
     }
     setSaving(false);
     setDataVersion((v) => v + 1);
@@ -330,7 +431,9 @@ export function ProjectDetailTab({
     try {
       await applyActions(
         supabase,
-        alerts.filter((i) => ids.has(i.id) && i.apply && !i.blockedReason).map((i) => i.apply!)
+        alerts
+          .filter((i) => ids.has(i.id) && i.apply && !i.blockedReason)
+          .map((i) => i.apply!),
       );
     } catch (e) {
       alert(`Some fixes could not be applied: ${(e as Error).message}`);
@@ -341,15 +444,22 @@ export function ProjectDetailTab({
 
   async function persist(): Promise<boolean> {
     if (form.currency !== "INR" && !(form.exchange_rate > 0)) {
-      alert(`Enter an exchange rate for ${form.currency} (INR per 1 ${form.currency}) before saving.`);
+      alert(
+        `Enter an exchange rate for ${form.currency} (INR per 1 ${form.currency}) before saving.`,
+      );
       return false;
     }
     if (form.site_altitude_m == null || form.site_ambient_temp_c == null) {
-      alert("Enter the site altitude (m) and ambient temperature (°C) before saving — they decide switchgear derating.");
+      alert(
+        "Enter the site altitude (m) and ambient temperature (°C) before saving — they decide switchgear derating.",
+      );
       return false;
     }
     setSaving(true);
-    const { error: projectError } = await supabase.from("projects").update(form).eq("id", project.id);
+    const { error: projectError } = await supabase
+      .from("projects")
+      .update(form)
+      .eq("id", project.id);
     if (projectError) {
       setSaving(false);
       alert(projectError.message);
@@ -357,7 +467,9 @@ export function ProjectDetailTab({
     }
 
     for (const b of boards) {
-      const prev = boardsSnapshot.find((x) => x.switchboard.id === b.switchboard.id);
+      const prev = boardsSnapshot.find(
+        (x) => x.switchboard.id === b.switchboard.id,
+      );
       if (!prev) continue;
       const fieldPatch: Partial<Switchboard> = {};
       for (const key of EDITABLE_SWITCHBOARD_FIELDS) {
@@ -366,7 +478,10 @@ export function ProjectDetailTab({
         }
       }
       if (Object.keys(fieldPatch).length === 0) continue;
-      const { error } = await supabase.from("switchboards").update(fieldPatch).eq("id", b.switchboard.id);
+      const { error } = await supabase
+        .from("switchboards")
+        .update(fieldPatch)
+        .eq("id", b.switchboard.id);
       if (error) {
         setSaving(false);
         alert(`Could not save "${b.switchboard.tag}": ${error.message}`);
@@ -389,29 +504,49 @@ export function ProjectDetailTab({
   // table), same as clicking "Save Changes". Tracked via a ref (updated on
   // every render) so the listener stays mounted once while always calling
   // the freshest save function instead of one captured from a stale render.
-  const keyboardSaveRef = useRef({ dirty, saving, review: null as ReviewItem[] | null, ampsBlocked: false, handleSave: () => {} });
+  const keyboardSaveRef = useRef({
+    dirty,
+    saving,
+    review: null as ReviewItem[] | null,
+    ampsBlocked: false,
+    handleSave: () => {},
+  });
   useEffect(() => {
-    keyboardSaveRef.current = { dirty, saving, review, ampsBlocked: saveBlocked, handleSave };
+    keyboardSaveRef.current = {
+      dirty,
+      saving,
+      review,
+      ampsBlocked: saveBlocked,
+      handleSave,
+    };
   });
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        const { dirty, saving, review, ampsBlocked, handleSave } = keyboardSaveRef.current;
-        if (!revisionArchived && dirty && !saving && !review && !ampsBlocked) handleSave();
+        const { dirty, saving, review, ampsBlocked, handleSave } =
+          keyboardSaveRef.current;
+        if (!revisionArchived && dirty && !saving && !review && !ampsBlocked)
+          handleSave();
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [revisionArchived]);
 
-  const [typeOptions, setTypeOptions] = useState<{ id: string; name: string }[]>([]);
+  const [typeOptions, setTypeOptions] = useState<
+    { id: string; name: string }[]
+  >([]);
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data } = await supabase.from("switchboard_types").select("id, name").order("name");
-      if (!cancelled) setTypeOptions((data ?? []) as { id: string; name: string }[]);
+      const { data } = await supabase
+        .from("switchboard_types")
+        .select("id, name")
+        .order("name");
+      if (!cancelled)
+        setTypeOptions((data ?? []) as { id: string; name: string }[]);
     })();
     return () => {
       cancelled = true;
@@ -428,14 +563,21 @@ export function ProjectDetailTab({
   // happens without the user knowing.
   function confirmDiscardUnsaved(): boolean {
     if (!dirty) return true;
-    return confirm("You have unsaved changes on this page. Continue and lose them?");
+    return confirm(
+      "You have unsaved changes on this page. Continue and lose them?",
+    );
   }
 
-  async function handleLockAndOpen(switchboardId: string, alreadyLockedByMe: boolean) {
+  async function handleLockAndOpen(
+    switchboardId: string,
+    alreadyLockedByMe: boolean,
+  ) {
     if (!confirmDiscardUnsaved()) return;
     if (!alreadyLockedByMe) {
       setBusyId(switchboardId);
-      const { error } = await supabase.rpc("lock_switchboard", { p_switchboard_id: switchboardId });
+      const { error } = await supabase.rpc("lock_switchboard", {
+        p_switchboard_id: switchboardId,
+      });
       setBusyId(null);
       if (error) {
         alert(error.message);
@@ -449,7 +591,9 @@ export function ProjectDetailTab({
   async function handleRelease(switchboardId: string) {
     if (!confirmDiscardUnsaved()) return;
     setBusyId(switchboardId);
-    const { error } = await supabase.rpc("unlock_switchboard", { p_switchboard_id: switchboardId });
+    const { error } = await supabase.rpc("unlock_switchboard", {
+      p_switchboard_id: switchboardId,
+    });
     setBusyId(null);
     if (error) {
       alert(error.message);
@@ -461,7 +605,9 @@ export function ProjectDetailTab({
   async function handleClone(switchboardId: string) {
     if (!confirmDiscardUnsaved()) return;
     setBusyId(switchboardId);
-    const { error } = await supabase.rpc("clone_switchboard", { p_switchboard_id: switchboardId });
+    const { error } = await supabase.rpc("clone_switchboard", {
+      p_switchboard_id: switchboardId,
+    });
     setBusyId(null);
     if (error) {
       alert(error.message);
@@ -471,10 +617,18 @@ export function ProjectDetailTab({
   }
 
   async function handleDelete(switchboardId: string, tag: string) {
-    if (!confirm(`Delete switchboard "${tag}"? This removes its whole BOM and GA layout. This can't be undone.`)) return;
+    if (
+      !confirm(
+        `Delete switchboard "${tag}"? This removes its whole BOM and GA layout. This can't be undone.`,
+      )
+    )
+      return;
     if (!confirmDiscardUnsaved()) return;
     setBusyId(switchboardId);
-    const { error } = await supabase.from("switchboards").delete().eq("id", switchboardId);
+    const { error } = await supabase
+      .from("switchboards")
+      .delete()
+      .eq("id", switchboardId);
     setBusyId(null);
     if (error) {
       alert(error.message);
@@ -504,9 +658,16 @@ export function ProjectDetailTab({
   // `boardsSnapshot` and persists whatever actually changed. This is what
   // makes the Save button (and Ctrl+S) light up when a switchboard
   // property is edited, same as every other draft/save screen in the app.
-  function updateSwitchboardField(switchboardId: string, fieldPatch: Partial<Switchboard>) {
+  function updateSwitchboardField(
+    switchboardId: string,
+    fieldPatch: Partial<Switchboard>,
+  ) {
     setBoards((prev) =>
-      prev.map((item) => (item.switchboard.id === switchboardId ? { ...item, switchboard: { ...item.switchboard, ...fieldPatch } } : item))
+      prev.map((item) =>
+        item.switchboard.id === switchboardId
+          ? { ...item, switchboard: { ...item.switchboard, ...fieldPatch } }
+          : item,
+      ),
     );
     setJustSaved(false);
   }
@@ -523,41 +684,73 @@ export function ProjectDetailTab({
     updateSwitchboardField(sb.id, { title: next });
   }
 
-  const currencyLabel = CURRENCIES.find((c) => c.code === form.currency)?.label ?? form.currency;
+  const currencyLabel =
+    CURRENCIES.find((c) => c.code === form.currency)?.label ?? form.currency;
 
   const totalUnits = boards.reduce((s, b) => s + b.switchboard.qty, 0);
-  const totalMfgCost = boards.reduce((s, b) => s + b.breakdown.mfgTotal * b.switchboard.qty, 0);
-  const avgMarginPct = boards.length > 0 ? boards.reduce((s, b) => s + b.switchboard.profit_pct, 0) / boards.length : 0;
+  const totalMfgCost = boards.reduce(
+    (s, b) => s + b.breakdown.mfgTotal * b.switchboard.qty,
+    0,
+  );
+  const avgMarginPct =
+    boards.length > 0
+      ? boards.reduce((s, b) => s + b.switchboard.profit_pct, 0) / boards.length
+      : 0;
   const totalPriceSum = boards.reduce(
-    (s, b) => s + b.breakdown.mfgTotal * (1 + b.switchboard.profit_pct / 100) * b.switchboard.qty,
-    0
+    (s, b) =>
+      s +
+      b.breakdown.mfgTotal *
+        (1 + b.switchboard.profit_pct / 100) *
+        b.switchboard.qty,
+    0,
   );
 
   return (
     <div className="w-full">
       <SavingOverlay show={saving} />
-      {review && <ImpactReviewDialog items={review} onApprove={handleApproveReview} onCancel={() => setReview(null)} />}
+      {review && (
+        <ImpactReviewDialog
+          items={review}
+          onApprove={handleApproveReview}
+          onCancel={() => setReview(null)}
+        />
+      )}
       <div className="flex flex-wrap items-center justify-between gap-space-md border-b border-surface-container-high bg-surface-container-lowest px-margin-lg py-space-lg">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="font-display text-headline-lg text-on-surface">Project Costing</h1>
-            <span className="rounded bg-primary/10 px-2 py-0.5 font-mono text-xs font-bold text-primary">{project.code}</span>
+            <h1 className="font-display text-headline-lg text-on-surface">
+              Project Costing
+            </h1>
+            <span className="rounded bg-primary/10 px-2 py-0.5 font-mono text-xs font-bold text-primary">
+              {project.code}
+            </span>
           </div>
           <p className="mt-1 font-body-sm text-body-sm text-secondary">
-            {boards.length} Switchboard{boards.length === 1 ? "" : "s"} · Currency: {currencyLabel} · Client: {customerLabel || "—"}
+            {boards.length} Switchboard{boards.length === 1 ? "" : "s"} ·
+            Currency: {currencyLabel} · Client: {customerLabel || "—"}
           </p>
         </div>
         <div className="flex items-center gap-space-sm">
-          {!revisionArchived && justSaved && !dirty && <span className="font-body-sm text-body-sm text-tertiary">Saved</span>}
-          {!revisionArchived && dirty && <span className="font-body-sm text-body-sm text-amber-600">Unsaved changes</span>}
+          {!revisionArchived && justSaved && !dirty && (
+            <span className="font-body-sm text-body-sm text-tertiary">
+              Saved
+            </span>
+          )}
+          {!revisionArchived && dirty && (
+            <span className="font-body-sm text-body-sm text-amber-600">
+              Unsaved changes
+            </span>
+          )}
           {!revisionArchived && siteMissing && (
             <span className="flex items-center gap-1 font-body-sm text-body-sm font-medium text-error">
-              <Icon name="error" size={15} /> Enter site altitude and ambient temperature to save
+              <Icon name="error" size={15} /> Enter site altitude and ambient
+              temperature to save
             </span>
           )}
           {!revisionArchived && dirty && liveRemainingAlerts.length > 0 && (
             <span className="flex items-center gap-1 font-body-sm text-body-sm font-medium text-error">
-              <Icon name="error" size={15} /> Fix {liveRemainingAlerts.length} alert{liveRemainingAlerts.length === 1 ? "" : "s"} to save
+              <Icon name="error" size={15} /> Fix {liveRemainingAlerts.length}{" "}
+              alert{liveRemainingAlerts.length === 1 ? "" : "s"} to save
             </span>
           )}
           <button
@@ -596,7 +789,9 @@ export function ProjectDetailTab({
           onApply={handleApplyAlertFixes}
           onOpenBoard={(id) => {
             if (!boards.some((b) => b.switchboard.id === id)) {
-              alert("That switchboard is in another revision — open that revision to edit it.");
+              alert(
+                "That switchboard is in another revision — open that revision to edit it.",
+              );
               return;
             }
             if (confirmDiscardUnsaved()) onOpenSwitchboard(id, "ga");
@@ -606,12 +801,21 @@ export function ProjectDetailTab({
         {/* Stage */}
         <div className="rounded-xl bg-surface-container-lowest p-space-lg shadow-sm">
           <div className="mb-space-md flex items-center justify-between">
-            <h2 className="font-headline-md text-headline-md text-on-surface">Stage</h2>
+            <h2 className="font-headline-md text-headline-md text-on-surface">
+              Stage
+            </h2>
             <span className="font-body-sm text-body-sm text-secondary">
-              Current Stage: <span className="font-semibold text-on-surface">{form.stage.toUpperCase()}</span>
+              Current Stage:{" "}
+              <span className="font-semibold text-on-surface">
+                {form.stage.toUpperCase()}
+              </span>
             </span>
           </div>
-          <StageStepper value={form.stage} onChange={(s) => patch("stage", s)} disabled={revisionArchived} />
+          <StageStepper
+            value={form.stage}
+            onChange={(s) => patch("stage", s)}
+            disabled={revisionArchived}
+          />
         </div>
 
         {/* Project Information */}
@@ -622,11 +826,18 @@ export function ProjectDetailTab({
           >
             <span className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-primary" />
-              <span className="font-headline-md text-headline-md text-on-surface">Project Information</span>
-              <span className="font-body-sm text-body-sm font-normal text-secondary">(Click to toggle)</span>
+              <span className="font-headline-md text-headline-md text-on-surface">
+                Project Information
+              </span>
+              <span className="font-body-sm text-body-sm font-normal text-secondary">
+                (Click to toggle)
+              </span>
             </span>
             <span className="flex items-center gap-1 rounded bg-surface-container-low px-space-sm py-1 font-label-md text-label-md text-on-surface">
-              <Icon name={infoCollapsed ? "expand_more" : "expand_less"} size={16} />
+              <Icon
+                name={infoCollapsed ? "expand_more" : "expand_less"}
+                size={16}
+              />
               {infoCollapsed ? "Expand" : "Collapse"}
             </span>
           </button>
@@ -662,7 +873,9 @@ export function ProjectDetailTab({
                       onChange={(e) => {
                         const id = e.target.value || null;
                         patch("customer_id", id);
-                        setCustomerLabel(customerOptions.find((o) => o.id === id)?.name ?? "");
+                        setCustomerLabel(
+                          customerOptions.find((o) => o.id === id)?.name ?? "",
+                        );
                       }}
                       className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
                     >
@@ -687,7 +900,9 @@ export function ProjectDetailTab({
                       onChange={(e) => {
                         const id = e.target.value || null;
                         patch("owner_id", id);
-                        setOwnerLabel(allUsers.find((u) => u.id === id)?.full_name ?? null);
+                        setOwnerLabel(
+                          allUsers.find((u) => u.id === id)?.full_name ?? null,
+                        );
                       }}
                       className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
                     >
@@ -704,7 +919,9 @@ export function ProjectDetailTab({
                   <input
                     disabled={revisionArchived}
                     value={form.crm_enquiry_number ?? ""}
-                    onChange={(e) => patch("crm_enquiry_number", e.target.value || null)}
+                    onChange={(e) =>
+                      patch("crm_enquiry_number", e.target.value || null)
+                    }
                     className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low"
                   />
                 </Field>
@@ -713,15 +930,47 @@ export function ProjectDetailTab({
                     type="date"
                     disabled={revisionArchived}
                     value={form.crm_enquiry_date ?? ""}
-                    onChange={(e) => patch("crm_enquiry_date", e.target.value || null)}
+                    onChange={(e) =>
+                      patch("crm_enquiry_date", e.target.value || null)
+                    }
                     className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low"
                   />
+                </Field>
+                <Field label="Quote Required By">
+                  <input
+                    type="date"
+                    disabled={revisionArchived}
+                    value={form.quote_required_by ?? ""}
+                    onChange={(e) =>
+                      patch("quote_required_by", e.target.value || null)
+                    }
+                    className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low"
+                  />
+                </Field>
+                <Field label="Nature">
+                  <select
+                    disabled={revisionArchived}
+                    value={form.nature ?? ""}
+                    onChange={(e) =>
+                      patch(
+                        "nature",
+                        (e.target.value || null) as ProjectPatch["nature"],
+                      )
+                    }
+                    className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low"
+                  >
+                    <option value="">Select...</option>
+                    <option value="bidding">Bidding</option>
+                    <option value="purchase">Purchase</option>
+                  </select>
                 </Field>
                 <Field label="Site">
                   <select
                     disabled={revisionArchived}
                     value={form.site_country ?? ""}
-                    onChange={(e) => patch("site_country", e.target.value || null)}
+                    onChange={(e) =>
+                      patch("site_country", e.target.value || null)
+                    }
                     className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low"
                   >
                     <option value="">Select country...</option>
@@ -737,7 +986,9 @@ export function ProjectDetailTab({
                     disabled={revisionArchived}
                     value={form.site_altitude_m}
                     placeholder="e.g. 450"
-                    onChange={(v) => patch("site_altitude_m", v == null ? null : Math.round(v))}
+                    onChange={(v) =>
+                      patch("site_altitude_m", v == null ? null : Math.round(v))
+                    }
                   />
                 </Field>
                 <Field label="Site Ambient Temp (°C) *">
@@ -751,13 +1002,26 @@ export function ProjectDetailTab({
                 </Field>
                 {siteDerating.length > 0 && (
                   <div className="flex items-start gap-2 rounded-lg border border-amber-300/70 bg-amber-50/70 px-3 py-2 text-xs text-on-surface sm:col-span-2 lg:col-span-4">
-                    <Icon name="device_thermostat" size={18} className="mt-0.5 shrink-0 text-amber-700" />
+                    <Icon
+                      name="device_thermostat"
+                      size={18}
+                      className="mt-0.5 shrink-0 text-amber-700"
+                    />
                     <div>
-                      <p className="font-semibold text-amber-800">Switchgear derating applies at this site — {siteDerating.join(" and ")}.</p>
+                      <p className="font-semibold text-amber-800">
+                        Switchgear derating applies at this site —{" "}
+                        {siteDerating.join(" and ")}.
+                      </p>
                       <p className="mt-0.5 text-on-surface-variant">
-                        ACBs and MCCBs carry less than their rating here, so some feeders may need a bigger breaker. BOM Builder flags the ones
-                        that fall short.{" "}
-                        <a href="/how-it-works#derating" target="_blank" rel="noopener noreferrer" className="font-medium text-primary underline">
+                        ACBs and MCCBs carry less than their rating here, so
+                        some feeders may need a bigger breaker. BOM Builder
+                        flags the ones that fall short.{" "}
+                        <a
+                          href="/how-it-works#derating"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-medium text-primary underline"
+                        >
                           How to select breakers for this site
                         </a>
                       </p>
@@ -803,7 +1067,11 @@ export function ProjectDetailTab({
                     onChange={(e) => {
                       const currency = e.target.value;
                       // INR is the base currency: its rate is always 1
-                      setForm((f) => ({ ...f, currency, exchange_rate: currency === "INR" ? 1 : f.exchange_rate }));
+                      setForm((f) => ({
+                        ...f,
+                        currency,
+                        exchange_rate: currency === "INR" ? 1 : f.exchange_rate,
+                      }));
                       setJustSaved(false);
                     }}
                     className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low"
@@ -815,14 +1083,26 @@ export function ProjectDetailTab({
                     ))}
                   </select>
                 </Field>
-                <Field label={form.currency === "INR" ? "Exchange Rate (INR is the base currency)" : `Exchange Rate (INR per 1 ${form.currency})`}>
+                <Field
+                  label={
+                    form.currency === "INR"
+                      ? "Exchange Rate (INR is the base currency)"
+                      : `Exchange Rate (INR per 1 ${form.currency})`
+                  }
+                >
                   <input
                     type="text"
                     inputMode="decimal"
                     disabled={revisionArchived || form.currency === "INR"}
-                    title={form.currency === "INR" ? "INR is the base currency — its rate is always 1" : undefined}
+                    title={
+                      form.currency === "INR"
+                        ? "INR is the base currency — its rate is always 1"
+                        : undefined
+                    }
                     value={form.exchange_rate}
-                    onChange={(e) => patch("exchange_rate", Number(e.target.value) || 0)}
+                    onChange={(e) =>
+                      patch("exchange_rate", Number(e.target.value) || 0)
+                    }
                     onKeyDown={numericKeyGuard()}
                     className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low"
                   />
@@ -903,8 +1183,12 @@ export function ProjectDetailTab({
           <div className="flex items-center justify-between p-space-lg pb-space-md">
             <span className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-primary" />
-              <span className="font-headline-md text-headline-md text-on-surface">Switchboards</span>
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">{boards.length} Switchboards</span>
+              <span className="font-headline-md text-headline-md text-on-surface">
+                Switchboards
+              </span>
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">
+                {boards.length} Switchboards
+              </span>
             </span>
             {!revisionArchived && (
               <button
@@ -919,25 +1203,37 @@ export function ProjectDetailTab({
           {ampsErrors.length > 0 && (
             <div className="mx-space-lg mb-space-md space-y-1 rounded-lg border border-amber-300/70 bg-amber-50/70 px-4 py-3 text-sm">
               <div className="flex items-center gap-2 font-semibold text-amber-800">
-                <Icon name="warning" size={18} /> Warning: Amps set below a feeder&apos;s rating — you can still save
+                <Icon name="warning" size={18} /> Warning: Amps set below a
+                feeder&apos;s rating — you can still save
               </div>
               {ampsErrors.map(({ sb, savedAmps, over }) => {
                 const needed = nextStandardAmps(over[0].rated_current!);
                 return (
-                  <div key={sb.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-on-surface">
+                  <div
+                    key={sb.id}
+                    className="flex flex-wrap items-center gap-x-2 gap-y-1 text-on-surface"
+                  >
                     <span>
-                      <b>{sb.tag}</b> is set to <b>{sb.amps}A</b>, but its BOM has <b>{over[0].name}</b> at {over[0].rated_current}A
-                      {over.length > 1 ? ` (and ${over.length - 1} more above ${sb.amps}A)` : ""}. Check this is intended — or set Amps to {needed}A, or lower/replace the feeder
-                      in BOM Builder.
+                      <b>{sb.tag}</b> is set to <b>{sb.amps}A</b>, but its BOM
+                      has <b>{over[0].name}</b> at {over[0].rated_current}A
+                      {over.length > 1
+                        ? ` (and ${over.length - 1} more above ${sb.amps}A)`
+                        : ""}
+                      . Check this is intended — or set Amps to {needed}A, or
+                      lower/replace the feeder in BOM Builder.
                     </span>
                     <button
-                      onClick={() => updateSwitchboardField(sb.id, { amps: needed })}
+                      onClick={() =>
+                        updateSwitchboardField(sb.id, { amps: needed })
+                      }
                       className="rounded bg-primary px-2 py-0.5 text-xs font-medium text-on-primary hover:bg-primary-container"
                     >
                       Set to {needed}A
                     </button>
                     <button
-                      onClick={() => updateSwitchboardField(sb.id, { amps: savedAmps })}
+                      onClick={() =>
+                        updateSwitchboardField(sb.id, { amps: savedAmps })
+                      }
                       className="rounded bg-surface-container-low px-2 py-0.5 text-xs font-medium text-on-surface"
                     >
                       Undo ({savedAmps ?? "—"}A)
@@ -949,46 +1245,29 @@ export function ProjectDetailTab({
           )}
 
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-xs">
-              <thead className="bg-surface-container-low font-label-md text-label-md uppercase tracking-wider text-on-surface-variant">
-                <tr>
-                  <th className="px-space-md py-space-sm">#</th>
-                  <th className="px-space-md py-space-sm">Switchboard</th>
-                  <th className="px-space-md py-space-sm">Type</th>
-                  <th className="w-36 px-space-md py-space-sm">Std</th>
-                  <th className="w-32 px-space-md py-space-sm">Form of Separation</th>
-                  <th className="px-space-md py-space-sm text-right">Amps</th>
-                  <th className="px-space-md py-space-sm">IP</th>
-                  <th className="px-space-md py-space-sm text-right">kA</th>
-                  <th className="px-space-md py-space-sm">Cable Entry</th>
-                  <th className="px-space-md py-space-sm">Cable Exit</th>
-                  <th className="px-space-md py-space-sm">Busbar</th>
-                  <th className="px-space-md py-space-sm" title="Neutral bar size as a % of the phase bar">Neutral</th>
-                  <th className="px-space-md py-space-sm text-right">Qty</th>
-                  <th className="px-space-md py-space-sm text-right">Unit Cost</th>
-                  <th className="px-space-md py-space-sm text-right">Margin</th>
-                  <th className="px-space-md py-space-sm text-right">Total Price</th>
-                  <th className="px-space-md py-space-sm">Updated</th>
-                  <th className="px-space-md py-space-sm">By</th>
-                  <th className="px-space-md py-space-sm" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-surface-container">
-                {boards.map((item, index) => {
+            {boards.length === 0 ? (
+              <p className="px-space-md py-10 text-center text-xs text-secondary">
+                No switchboards yet. Add one to start building its BOM and GA.
+              </p>
+            ) : (
+              (() => {
+                // Switchboards run across as columns; their properties run down as rows.
+                const columns = boards.map((item, index) => {
                   const sb = item.switchboard;
                   const isLockedByMe = sb.locked_by === currentUserId;
-                  const isLockedByOther = sb.locked_by !== null && !isLockedByMe;
+                  const isLockedByOther =
+                    sb.locked_by !== null && !isLockedByMe;
                   const busy = busyId === sb.id;
                   const unitCost = item.breakdown.mfgTotal;
                   const margin = unitCost * (sb.profit_pct / 100);
                   const totalPrice = (unitCost + margin) * sb.qty;
                   const rowDisabled = revisionArchived || isLockedByOther;
                   const isRenaming = renamingId === sb.id;
-
-                  return (
-                    <tr key={sb.id} className="align-top transition-colors hover:bg-surface-container-low">
-                      <td className="px-space-md py-space-md text-on-surface-variant">{index + 1}</td>
-                      <td className="max-w-64 px-space-md py-space-md">
+                  return {
+                    id: sb.id,
+                    cells: [
+                      /* # */ <>{index + 1}</>,
+                      /* Switchboard */ <>
                         {isRenaming ? (
                           <input
                             autoFocus
@@ -1027,8 +1306,11 @@ export function ProjectDetailTab({
                           defaultValue={sb.description ?? ""}
                           placeholder="Description..."
                           onBlur={(e) => {
-                            if (e.target.value === (sb.description ?? "")) return;
-                            updateSwitchboardField(sb.id, { description: e.target.value || null });
+                            if (e.target.value === (sb.description ?? ""))
+                              return;
+                            updateSwitchboardField(sb.id, {
+                              description: e.target.value || null,
+                            });
                           }}
                           className="mt-0.5 w-full rounded border border-transparent bg-transparent px-0 py-0.5 text-[11px] font-normal text-secondary focus:border-surface-container-high focus:bg-surface-container-lowest disabled:bg-transparent"
                         />
@@ -1040,27 +1322,37 @@ export function ProjectDetailTab({
                           )}
                           {isLockedByOther && (
                             <span className="flex items-center gap-1 rounded bg-secondary-container px-1.5 py-0.5 text-[10px] font-medium text-on-secondary-container">
-                              <Icon name="lock" size={11} /> {item.lockedByName || "Locked"}
+                              <Icon name="lock" size={11} />{" "}
+                              {item.lockedByName || "Locked"}
                             </span>
                           )}
                         </div>
-                      </td>
-                      <td className="w-36 px-space-md py-space-md">
+                      </>,
+                      /* Type */ <>
                         <LookupSelect
                           table="switchboard_types"
                           value={sb.switchboard_type_id}
                           disabled={rowDisabled}
                           options={typeOptions}
                           onOptionsChange={setTypeOptions}
-                          onChange={(id) => updateSwitchboardField(sb.id, { switchboard_type_id: id })}
+                          onChange={(id) =>
+                            updateSwitchboardField(sb.id, {
+                              switchboard_type_id: id,
+                            })
+                          }
                           placeholder="Type..."
                         />
-                      </td>
-                      <td className="w-36 px-space-md py-space-md">
+                      </>,
+                      /* Std */ <>
                         <select
                           disabled={rowDisabled}
                           value={sb.std ?? ""}
-                          onChange={(e) => updateSwitchboardField(sb.id, { std: (e.target.value || null) as Switchboard["std"] })}
+                          onChange={(e) =>
+                            updateSwitchboardField(sb.id, {
+                              std: (e.target.value ||
+                                null) as Switchboard["std"],
+                            })
+                          }
                           className="w-full min-w-[104px] rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 disabled:border-transparent disabled:bg-transparent"
                         >
                           <option value="">—</option>
@@ -1070,12 +1362,16 @@ export function ProjectDetailTab({
                             </option>
                           ))}
                         </select>
-                      </td>
-                      <td className="w-32 px-space-md py-space-md">
+                      </>,
+                      /* Form of Separation */ <>
                         <select
                           disabled={rowDisabled}
                           value={sb.form_of_separation ?? ""}
-                          onChange={(e) => updateSwitchboardField(sb.id, { form_of_separation: e.target.value || null })}
+                          onChange={(e) =>
+                            updateSwitchboardField(sb.id, {
+                              form_of_separation: e.target.value || null,
+                            })
+                          }
                           className="w-full min-w-[104px] rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 disabled:border-transparent disabled:bg-transparent"
                         >
                           <option value="">—</option>
@@ -1085,17 +1381,24 @@ export function ProjectDetailTab({
                             </option>
                           ))}
                         </select>
-                      </td>
-                      <td className="px-space-md py-space-md text-right">
+                      </>,
+                      /* Amps */ <>
                         <input
                           type="text"
                           inputMode="numeric"
                           disabled={rowDisabled}
                           key={`amps-${sb.amps ?? ""}`}
                           defaultValue={sb.amps ?? ""}
-                          title={ampsErrorIds.has(sb.id) ? "Below the rating of a feeder in this switchboard's BOM" : undefined}
+                          title={
+                            ampsErrorIds.has(sb.id)
+                              ? "Below the rating of a feeder in this switchboard's BOM"
+                              : undefined
+                          }
                           onBlur={(e) => {
-                            const digits = e.target.value.replace(/[^0-9]/g, "");
+                            const digits = e.target.value.replace(
+                              /[^0-9]/g,
+                              "",
+                            );
                             e.target.value = digits;
                             const next = digits === "" ? null : Number(digits);
                             if (next === (sb.amps ?? null)) return;
@@ -1103,12 +1406,16 @@ export function ProjectDetailTab({
                           }}
                           className={`w-14 rounded border px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent ${ampsErrorIds.has(sb.id) ? "border-amber-400 bg-amber-50 text-amber-800 ring-2 ring-amber-300/40" : "border-surface-container-high"}`}
                         />
-                      </td>
-                      <td className="px-space-md py-space-md">
+                      </>,
+                      /* IP */ <>
                         <select
                           disabled={rowDisabled}
                           value={sb.ip_rating ?? ""}
-                          onChange={(e) => updateSwitchboardField(sb.id, { ip_rating: e.target.value || null })}
+                          onChange={(e) =>
+                            updateSwitchboardField(sb.id, {
+                              ip_rating: e.target.value || null,
+                            })
+                          }
                           className="w-16 rounded border border-surface-container-high bg-surface-container-lowest px-1 py-0.5 disabled:border-transparent disabled:bg-transparent"
                         >
                           <option value="">—</option>
@@ -1118,15 +1425,18 @@ export function ProjectDetailTab({
                             </option>
                           ))}
                         </select>
-                      </td>
-                      <td className="px-space-md py-space-md text-right">
+                      </>,
+                      /* kA */ <>
                         <input
                           type="text"
                           inputMode="numeric"
                           disabled={rowDisabled}
                           defaultValue={sb.ka ?? ""}
                           onBlur={(e) => {
-                            const digits = e.target.value.replace(/[^0-9]/g, "");
+                            const digits = e.target.value.replace(
+                              /[^0-9]/g,
+                              "",
+                            );
                             e.target.value = digits;
                             const next = digits === "" ? null : Number(digits);
                             if (next === (sb.ka ?? null)) return;
@@ -1134,12 +1444,17 @@ export function ProjectDetailTab({
                           }}
                           className="w-12 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
                         />
-                      </td>
-                      <td className="px-space-md py-space-md">
+                      </>,
+                      /* Cable Entry */ <>
                         <select
                           disabled={rowDisabled}
                           value={sb.cable_entry ?? ""}
-                          onChange={(e) => updateSwitchboardField(sb.id, { cable_entry: (e.target.value || null) as Switchboard["cable_entry"] })}
+                          onChange={(e) =>
+                            updateSwitchboardField(sb.id, {
+                              cable_entry: (e.target.value ||
+                                null) as Switchboard["cable_entry"],
+                            })
+                          }
                           className="w-20 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 disabled:border-transparent disabled:bg-transparent"
                         >
                           <option value="">—</option>
@@ -1149,12 +1464,17 @@ export function ProjectDetailTab({
                             </option>
                           ))}
                         </select>
-                      </td>
-                      <td className="px-space-md py-space-md">
+                      </>,
+                      /* Cable Exit */ <>
                         <select
                           disabled={rowDisabled}
                           value={sb.cable_exit ?? ""}
-                          onChange={(e) => updateSwitchboardField(sb.id, { cable_exit: (e.target.value || null) as Switchboard["cable_exit"] })}
+                          onChange={(e) =>
+                            updateSwitchboardField(sb.id, {
+                              cable_exit: (e.target.value ||
+                                null) as Switchboard["cable_exit"],
+                            })
+                          }
                           className="w-20 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 disabled:border-transparent disabled:bg-transparent"
                         >
                           <option value="">—</option>
@@ -1164,12 +1484,17 @@ export function ProjectDetailTab({
                             </option>
                           ))}
                         </select>
-                      </td>
-                      <td className="px-space-md py-space-md">
+                      </>,
+                      /* Busbar */ <>
                         <select
                           disabled={rowDisabled}
                           value={sb.busbar ?? ""}
-                          onChange={(e) => updateSwitchboardField(sb.id, { busbar: (e.target.value || null) as Switchboard["busbar"] })}
+                          onChange={(e) =>
+                            updateSwitchboardField(sb.id, {
+                              busbar: (e.target.value ||
+                                null) as Switchboard["busbar"],
+                            })
+                          }
                           className="w-16 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 disabled:border-transparent disabled:bg-transparent"
                         >
                           <option value="">—</option>
@@ -1179,19 +1504,23 @@ export function ProjectDetailTab({
                             </option>
                           ))}
                         </select>
-                      </td>
-                      <td className="px-space-md py-space-md">
+                      </>,
+                      /* Neutral */ <>
                         <select
                           disabled={rowDisabled}
                           value={sb.neutral_size_pct}
-                          onChange={(e) => updateSwitchboardField(sb.id, { neutral_size_pct: Number(e.target.value) })}
+                          onChange={(e) =>
+                            updateSwitchboardField(sb.id, {
+                              neutral_size_pct: Number(e.target.value),
+                            })
+                          }
                           className="w-20 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 disabled:border-transparent disabled:bg-transparent"
                         >
                           <option value={100}>100%</option>
                           <option value={50}>50%</option>
                         </select>
-                      </td>
-                      <td className="px-space-md py-space-md text-right">
+                      </>,
+                      /* Qty */ <>
                         <input
                           type="text"
                           inputMode="numeric"
@@ -1205,21 +1534,25 @@ export function ProjectDetailTab({
                           }}
                           className="w-14 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
                         />
-                      </td>
-                      <td className="whitespace-nowrap px-space-md py-space-md text-right tabular-nums text-on-surface-variant">{money(unitCost)}</td>
-                      <td className="whitespace-nowrap px-space-md py-space-md text-right tabular-nums text-tertiary">{money(margin)}</td>
-                      <td className="whitespace-nowrap px-space-md py-space-md text-right tabular-nums font-semibold text-on-surface">
-                        {money(totalPrice)}
-                      </td>
-                      <td className="whitespace-nowrap px-space-md py-space-md text-on-surface-variant">{formatDateTime(sb.updated_at)}</td>
-                      <td className="whitespace-nowrap px-space-md py-space-md text-on-surface-variant">{item.updatedByName || "—"}</td>
-                      <td className="px-space-md py-space-md">
+                      </>,
+                      /* Unit Cost */ <>{money(unitCost)}</>,
+                      /* Margin */ <>{money(margin)}</>,
+                      /* Total Price */ <>{money(totalPrice)}</>,
+                      /* Updated */ <>{formatDateTime(sb.updated_at)}</>,
+                      /* By */ <>{item.updatedByName || "—"}</>,
+                      /* actions */ <>
                         <div className="flex items-center gap-1">
                           {!revisionArchived && !isLockedByOther && (
                             <button
-                              onClick={() => handleLockAndOpen(sb.id, isLockedByMe)}
+                              onClick={() =>
+                                handleLockAndOpen(sb.id, isLockedByMe)
+                              }
                               disabled={busy}
-                              title={isLockedByMe ? "Continue editing" : "Lock & open"}
+                              title={
+                                isLockedByMe
+                                  ? "Continue editing"
+                                  : "Lock & open"
+                              }
                               className="rounded p-1 text-primary hover:bg-primary/10 disabled:opacity-50"
                             >
                               <Icon name="edit" size={15} />
@@ -1266,32 +1599,124 @@ export function ProjectDetailTab({
                             </button>
                           )}
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {boards.length === 0 && (
-                  <tr>
-                    <td colSpan={19} className="px-space-md py-10 text-center text-secondary">
-                      No switchboards yet. Add one to start building its BOM and GA.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-              {boards.length > 0 && (
-                <tfoot>
-                  <tr className="border-t-2 border-surface-container-high bg-surface-container-low font-semibold text-on-surface">
-                    <td colSpan={13} className="px-space-md py-space-sm">
-                      Total - {boards.length} Product{boards.length === 1 ? "" : "s"} / {totalUnits} unit{totalUnits === 1 ? "" : "s"}
-                    </td>
-                    <td className="whitespace-nowrap px-space-md py-space-sm text-right tabular-nums">{money(totalMfgCost)}</td>
-                    <td className="whitespace-nowrap px-space-md py-space-sm text-right tabular-nums text-tertiary">{avgMarginPct.toFixed(2)}% avg</td>
-                    <td className="whitespace-nowrap px-space-md py-space-sm text-right tabular-nums text-primary">{money(totalPriceSum)}</td>
-                    <td colSpan={3} />
-                  </tr>
-                </tfoot>
-              )}
-            </table>
+                      </>,
+                    ],
+                  };
+                });
+                const ROWS: {
+                  label: string;
+                  idx: number;
+                  title?: string;
+                  total?: React.ReactNode;
+                }[] = [
+                  { label: "Type", idx: 2 },
+                  { label: "Std", idx: 3 },
+                  { label: "Form of Separation", idx: 4 },
+                  { label: "Amps", idx: 5 },
+                  { label: "IP", idx: 6 },
+                  { label: "kA", idx: 7 },
+                  { label: "Cable Entry", idx: 8 },
+                  { label: "Cable Exit", idx: 9 },
+                  { label: "Busbar", idx: 10 },
+                  {
+                    label: "Neutral",
+                    idx: 11,
+                    title: "Neutral bar size as a % of the phase bar",
+                  },
+                  { label: "Qty", idx: 12, total: <>{totalUnits}</> },
+                  {
+                    label: "Unit Cost",
+                    idx: 13,
+                    total: <>{money(totalMfgCost)}</>,
+                  },
+                  {
+                    label: "Margin",
+                    idx: 14,
+                    total: (
+                      <>
+                        <span className="text-tertiary">
+                          {avgMarginPct.toFixed(2)}% avg
+                        </span>
+                      </>
+                    ),
+                  },
+                  {
+                    label: "Total Price",
+                    idx: 15,
+                    total: (
+                      <>
+                        <span className="font-semibold text-primary">
+                          {money(totalPriceSum)}
+                        </span>
+                      </>
+                    ),
+                  },
+                  { label: "Updated", idx: 16 },
+                  { label: "By", idx: 17 },
+                ];
+                return (
+                  <table className="border-collapse text-left text-xs">
+                    <thead className="bg-surface-container-low text-on-surface-variant">
+                      <tr className="align-top">
+                        <th className="sticky left-0 z-10 w-40 min-w-40 bg-surface-container-low px-space-md py-space-sm font-label-md text-label-md uppercase tracking-wider">
+                          Switchboard
+                        </th>
+                        {columns.map((c, i) => (
+                          <th
+                            key={c.id}
+                            className="min-w-48 border-l border-surface-container px-space-md py-space-sm font-normal normal-case tracking-normal"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <span className="text-[11px] text-secondary">
+                                  #{i + 1}
+                                </span>
+                                {c.cells[1]}
+                              </div>
+                              {c.cells[18]}
+                            </div>
+                          </th>
+                        ))}
+                        <th className="min-w-36 border-l border-surface-container-high px-space-md py-space-sm font-label-md text-label-md uppercase tracking-wider">
+                          Total
+                          <div className="mt-0.5 text-[11px] font-normal normal-case tracking-normal text-secondary">
+                            {boards.length} product
+                            {boards.length === 1 ? "" : "s"}
+                          </div>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-surface-container">
+                      {ROWS.map((r) => (
+                        <tr
+                          key={r.label}
+                          className="transition-colors hover:bg-surface-container-low"
+                        >
+                          <th
+                            scope="row"
+                            title={r.title}
+                            className="sticky left-0 z-10 whitespace-nowrap bg-surface-container-lowest px-space-md py-space-sm font-label-md text-label-md font-semibold uppercase tracking-wider text-on-surface-variant"
+                          >
+                            {r.label}
+                          </th>
+                          {columns.map((c) => (
+                            <td
+                              key={c.id}
+                              className="whitespace-nowrap border-l border-surface-container px-space-md py-space-sm tabular-nums"
+                            >
+                              {c.cells[r.idx]}
+                            </td>
+                          ))}
+                          <td className="whitespace-nowrap border-l border-surface-container-high bg-surface-container-low px-space-md py-space-sm font-semibold tabular-nums">
+                            {r.total ?? null}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()
+            )}
           </div>
         </div>
       </div>
@@ -1318,7 +1743,11 @@ function SiteNumberInput({
   const [prevValue, setPrevValue] = useState(value);
   if (value !== prevValue) {
     setPrevValue(value);
-    if (value !== (text.trim() === "" || isNaN(Number(text)) ? null : Number(text))) setText(value == null ? "" : String(value));
+    if (
+      value !==
+      (text.trim() === "" || isNaN(Number(text)) ? null : Number(text))
+    )
+      setText(value == null ? "" : String(value));
   }
   return (
     <input
@@ -1334,24 +1763,44 @@ function SiteNumberInput({
         onChange(e.target.value.trim() === "" || isNaN(n) ? null : n);
       }}
       className={`w-full rounded border bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low ${
-        value == null && !disabled ? "border-error" : "border-surface-container-high"
+        value == null && !disabled
+          ? "border-error"
+          : "border-surface-container-high"
       }`}
     />
   );
 }
 
-function Field({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
+function Field({
+  label,
+  children,
+  className = "",
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <div className={className}>
-      <label className="mb-1 block font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">{label}</label>
+      <label className="mb-1 block font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">
+        {label}
+      </label>
       {children}
     </div>
   );
 }
 
-function ReadOnlyValue({ value, mono = false }: { value: string; mono?: boolean }) {
+function ReadOnlyValue({
+  value,
+  mono = false,
+}: {
+  value: string;
+  mono?: boolean;
+}) {
   return (
-    <div className={`rounded border border-transparent bg-surface-container-low px-space-sm py-1.5 text-body-sm text-on-surface-variant ${mono ? "font-mono text-xs" : ""}`}>
+    <div
+      className={`rounded border border-transparent bg-surface-container-low px-space-sm py-1.5 text-body-sm text-on-surface-variant ${mono ? "font-mono text-xs" : ""}`}
+    >
       {value}
     </div>
   );
@@ -1383,7 +1832,8 @@ function DensityInput({
       onKeyDown={numericKeyGuard()}
       onBlur={() => {
         const n = Number(local);
-        if (local.trim() !== "" && (n > 0 || (allowZero && n === 0))) onCommit(n);
+        if (local.trim() !== "" && (n > 0 || (allowZero && n === 0)))
+          onCommit(n);
         else setLocal(String(value));
       }}
       className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low"

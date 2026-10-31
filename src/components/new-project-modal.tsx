@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
+import { LookupSelect } from "@/components/lookup-select";
 import type { Customer } from "@/types/database";
 
 export function NewProjectModal({ customers }: { customers: Customer[] }) {
@@ -15,6 +16,10 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
   const [title, setTitle] = useState("");
   const [revisionName, setRevisionName] = useState("");
   const [notes, setNotes] = useState("");
+  const [salesExecId, setSalesExecId] = useState<string | null>(null);
+  const [quoteRequiredBy, setQuoteRequiredBy] = useState("");
+  const [crmEnquiryNumber, setCrmEnquiryNumber] = useState("");
+  const [nature, setNature] = useState<"" | "bidding" | "purchase">("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,6 +31,10 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
     setTitle("");
     setRevisionName("");
     setNotes("");
+    setSalesExecId(null);
+    setQuoteRequiredBy("");
+    setCrmEnquiryNumber("");
+    setNature("");
     setError(null);
     setOpen(false);
   }
@@ -55,10 +64,18 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
       }
       // reuse a customer that already has this name (e.g. one created by an
       // earlier attempt that failed further on) instead of duplicating it
-      const { data: existing } = await supabase.from("customers").select("id, name").ilike("name", newCustomerName.trim()).limit(1);
+      const { data: existing } = await supabase
+        .from("customers")
+        .select("id, name")
+        .ilike("name", newCustomerName.trim())
+        .limit(1);
       const { data: customer, error: customerError } = existing?.length
         ? { data: existing[0], error: null }
-        : await supabase.from("customers").insert({ name: newCustomerName.trim() }).select("id, name").single();
+        : await supabase
+            .from("customers")
+            .insert({ name: newCustomerName.trim() })
+            .select("id, name")
+            .single();
       if (customerError || !customer) {
         setError(customerError?.message ?? "Could not create customer.");
         setSaving(false);
@@ -70,7 +87,17 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
 
     const { data: project, error: projectError } = await supabase
       .from("projects")
-      .insert({ customer_id: finalCustomerId, title: title.trim(), notes: notes.trim() || null, created_by: user?.id })
+      .insert({
+        customer_id: finalCustomerId,
+        title: title.trim(),
+        notes: notes.trim() || null,
+        created_by: user?.id,
+        stage: "new", // shown as "Yet to quote"
+        sales_exec_id: salesExecId,
+        quote_required_by: quoteRequiredBy || null,
+        crm_enquiry_number: crmEnquiryNumber.trim() || null,
+        nature: nature || null,
+      })
       .select("id")
       .single();
     if (projectError || !project) {
@@ -81,18 +108,30 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
 
     const { data: revision, error: revisionError } = await supabase
       .from("revisions")
-      .insert({ project_id: project.id, name: revisionName.trim() || title.trim(), customer_name: customerName, created_by: user?.id })
+      .insert({
+        project_id: project.id,
+        name: revisionName.trim() || title.trim(),
+        customer_name: customerName,
+        created_by: user?.id,
+      })
       .select("id")
       .single();
     if (revisionError || !revision) {
-      setError(revisionError?.message ?? "Could not create the first revision.");
+      setError(
+        revisionError?.message ?? "Could not create the first revision.",
+      );
       setSaving(false);
       return;
     }
 
     const { error: switchboardError } = await supabase
       .from("switchboards")
-      .insert({ revision_id: revision.id, tag: "SB-01", title: "Board 1", sort_order: 0 });
+      .insert({
+        revision_id: revision.id,
+        tag: "SB-01",
+        title: "Board 1",
+        sort_order: 0,
+      });
     setSaving(false);
 
     if (switchboardError) {
@@ -106,12 +145,8 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
   return (
     <>
       <SavingOverlay show={saving} label="Creating project..." />
-      <button
-        onClick={() => setOpen(true)}
-        className="btn btn-primary h-9"
-      >
-        <Icon name="add" size={16} />
-        <span>+ New Project</span>
+      <button onClick={() => setOpen(true)} className="btn btn-primary h-9">
+        + New Project
       </button>
 
       {open && (
@@ -122,16 +157,26 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
                 <div className="flex items-center justify-center rounded-lg bg-primary p-space-xs text-on-primary">
                   <Icon name="post_add" size={20} />
                 </div>
-                <h3 className="font-headline-md text-headline-md text-on-surface">Create / Revise Project</h3>
+                <h3 className="font-headline-md text-headline-md text-on-surface">
+                  Create / Revise Project
+                </h3>
               </div>
-              <button onClick={reset} className="rounded-lg p-space-xs text-secondary transition-colors hover:bg-surface-container hover:text-on-surface">
+              <button
+                onClick={reset}
+                className="rounded-lg p-space-xs text-secondary transition-colors hover:bg-surface-container hover:text-on-surface"
+              >
                 <Icon name="close" size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleCreate} className="flex flex-col gap-space-md p-space-lg">
+            <form
+              onSubmit={handleCreate}
+              className="flex flex-col gap-space-md p-space-lg"
+            >
               <div className="flex flex-col gap-space-2xs">
-                <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-secondary">Customer</label>
+                <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-secondary">
+                  Customer
+                </label>
                 <select
                   value={customerId}
                   onChange={(e) => setCustomerId(e.target.value)}
@@ -158,7 +203,9 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
 
               <div className="grid grid-cols-1 gap-space-sm sm:grid-cols-3">
                 <div className="flex flex-col gap-space-2xs">
-                  <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-secondary">Project Code</label>
+                  <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-secondary">
+                    Project Code
+                  </label>
                   <input
                     readOnly
                     value="Auto-generated"
@@ -166,7 +213,9 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
                   />
                 </div>
                 <div className="flex flex-col gap-space-2xs sm:col-span-2">
-                  <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-secondary">Project Title</label>
+                  <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-secondary">
+                    Project Title
+                  </label>
                   <input
                     required
                     value={title}
@@ -178,7 +227,9 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
               </div>
 
               <div className="flex flex-col gap-space-2xs">
-                <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-secondary">Revision Name</label>
+                <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-secondary">
+                  Revision Name
+                </label>
                 <input
                   value={revisionName}
                   onChange={(e) => setRevisionName(e.target.value)}
@@ -187,8 +238,62 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
                 />
               </div>
 
+              <div className="grid grid-cols-1 gap-space-sm sm:grid-cols-2">
+                <div className="flex flex-col gap-space-2xs">
+                  <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-secondary">
+                    Sales Exec
+                  </label>
+                  <LookupSelect
+                    table="sales_execs"
+                    value={salesExecId}
+                    onChange={(id) => setSalesExecId(id)}
+                    placeholder="Select or add sales exec..."
+                  />
+                </div>
+                <div className="flex flex-col gap-space-2xs">
+                  <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-secondary">
+                    CRM Enquiry Number
+                  </label>
+                  <input
+                    value={crmEnquiryNumber}
+                    onChange={(e) => setCrmEnquiryNumber(e.target.value)}
+                    placeholder="e.g., ENQ-2026-0142"
+                    className="h-9 w-full rounded bg-surface px-space-sm font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                <div className="flex flex-col gap-space-2xs">
+                  <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-secondary">
+                    Quote Required By
+                  </label>
+                  <input
+                    type="date"
+                    value={quoteRequiredBy}
+                    onChange={(e) => setQuoteRequiredBy(e.target.value)}
+                    className="h-9 w-full rounded bg-surface px-space-sm font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                <div className="flex flex-col gap-space-2xs">
+                  <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-secondary">
+                    Nature
+                  </label>
+                  <select
+                    value={nature}
+                    onChange={(e) =>
+                      setNature(e.target.value as "" | "bidding" | "purchase")
+                    }
+                    className="h-9 w-full rounded bg-surface px-space-sm font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">Select...</option>
+                    <option value="bidding">Bidding</option>
+                    <option value="purchase">Purchase</option>
+                  </select>
+                </div>
+              </div>
+
               <div className="flex flex-col gap-space-xs rounded-lg bg-surface-container-low p-space-sm">
-                <span className="font-label-sm text-label-sm font-bold uppercase tracking-wider text-primary">About the Project</span>
+                <span className="font-label-sm text-label-sm font-bold uppercase tracking-wider text-primary">
+                  About the Project
+                </span>
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
@@ -198,7 +303,9 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
                 />
               </div>
 
-              {error && <p className="font-body-sm text-body-sm text-error">{error}</p>}
+              {error && (
+                <p className="font-body-sm text-body-sm text-error">{error}</p>
+              )}
 
               <div className="mt-space-2xs flex items-center justify-end gap-space-sm pt-space-xs">
                 <button

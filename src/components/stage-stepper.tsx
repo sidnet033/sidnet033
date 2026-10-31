@@ -4,7 +4,7 @@ import { Icon } from "@/components/icon";
 import type { ProjectStage } from "@/types/database";
 
 const MAIN_FLOW: { id: ProjectStage; label: string }[] = [
-  { id: "new", label: "1. New" },
+  { id: "new", label: "1. Yet to quote" },
   { id: "wip", label: "2. WIP" },
   { id: "quoted", label: "3. Quoted" },
   { id: "finalization", label: "4. Finalization" },

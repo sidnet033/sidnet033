@@ -6,13 +6,65 @@ import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 
-const NAV_LINKS = [
-  { href: "/", label: "Dashboard", icon: "dashboard", activeMatch: (p: string) => p === "/" },
-  { href: "/", label: "Costing", icon: "payments", activeMatch: (p: string) => p.startsWith("/revisions") },
-  { href: "/item-master", label: "Item Master", icon: "inventory_2", activeMatch: (p: string) => p.startsWith("/item-master") },
-  { href: "/feeders", label: "Feeder Master", icon: "alt_route", activeMatch: (p: string) => p.startsWith("/feeders") },
-  { href: "/how-it-works", label: "How it works", icon: "menu_book", activeMatch: (p: string) => p.startsWith("/how-it-works") },
+type NavLink = { href: string; label: string; activeMatch: (p: string) => boolean };
+type NavEntry = NavLink | { label: string; children: NavLink[] };
+
+const NAV: NavEntry[] = [
+  { href: "/", label: "Dashboard", activeMatch: (p) => p === "/" },
+  { href: "/", label: "Costing", activeMatch: (p) => p.startsWith("/revisions") },
+  {
+    label: "Masters",
+    children: [
+      { href: "/item-master", label: "Item Master", activeMatch: (p) => p.startsWith("/item-master") },
+      { href: "/feeders", label: "Feeder Master", activeMatch: (p) => p.startsWith("/feeders") },
+    ],
+  },
+  { href: "/how-it-works", label: "How it works", activeMatch: (p) => p.startsWith("/how-it-works") },
 ];
+
+const tabClass = (active: boolean) =>
+  `flex shrink-0 items-center gap-1 border-b-[3px] px-space-md pt-[3px] text-[13px] transition-colors ${
+    active ? "border-primary font-bold text-primary" : "border-transparent text-on-surface-variant hover:text-on-surface"
+  }`;
+
+// A top-bar tab that opens a small menu of links (e.g. Masters).
+function NavMenu({ label, items, pathname }: { label: string; items: NavLink[]; pathname: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  const active = items.some((i) => i.activeMatch(pathname));
+  return (
+    <div ref={ref} className="relative flex">
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className={tabClass(active)}>
+        {label}
+        <Icon name="expand_more" size={16} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-48 rounded-xl border border-surface-container-high bg-surface-container-lowest p-1.5 shadow-lg">
+          {items.map((i) => (
+            <Link
+              key={i.href}
+              href={i.href}
+              onClick={() => setOpen(false)}
+              className={`block rounded-lg px-3 py-2 text-[13px] ${
+                i.activeMatch(pathname) ? "bg-primary-fixed font-bold text-primary" : "text-on-surface hover:bg-surface-container-low"
+              }`}
+            >
+              {i.label}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/);
@@ -47,9 +99,7 @@ export function AppShell({
   }, [profileMenuOpen]);
 
   const displayName = fullName || email || "User";
-  const links = isAdmin
-    ? [...NAV_LINKS, { href: "/admin", label: "Admin Space", icon: "verified_user", activeMatch: (p: string) => p.startsWith("/admin") }]
-    : NAV_LINKS;
+  const links: NavEntry[] = isAdmin ? [...NAV, { href: "/admin", label: "Admin Space", activeMatch: (p: string) => p.startsWith("/admin") }] : NAV;
 
   async function signOut() {
     const supabase = createClient();
@@ -70,22 +120,16 @@ export function AppShell({
             <span className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-secondary">LV Estimator</span>
           </span>
         </Link>
-        <nav aria-label="Modules" className="flex min-w-0 flex-1 items-stretch gap-space-2xs overflow-x-auto">
-          {links.map((link) => {
-            const active = link.activeMatch(pathname);
-            return (
-              <Link
-                key={link.label}
-                href={link.href}
-                className={`flex shrink-0 items-center gap-1.5 border-b-[3px] px-space-md pt-[3px] text-[13px] transition-colors ${
-                  active ? "border-primary font-bold text-primary" : "border-transparent text-on-surface-variant hover:text-on-surface"
-                }`}
-              >
-                <Icon name={link.icon} size={16} />
+        <nav aria-label="Modules" className="flex min-w-0 flex-1 items-stretch gap-space-2xs">
+          {links.map((link) =>
+            "children" in link ? (
+              <NavMenu key={link.label} label={link.label} items={link.children} pathname={pathname} />
+            ) : (
+              <Link key={link.label} href={link.href} className={tabClass(link.activeMatch(pathname))}>
                 {link.label}
               </Link>
-            );
-          })}
+            )
+          )}
         </nav>
         <div ref={profileMenuRef} className="relative flex items-center">
           <button

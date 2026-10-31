@@ -11,13 +11,34 @@ import { GaCanvas } from "@/components/ga-canvas";
 import { CostingMatrix } from "@/components/costing-matrix";
 import type { RevisionContext } from "@/lib/revision-context";
 import type { ItemMaster } from "@/types/database";
+import { useSwitchboardHeartbeat } from "@/lib/switchboard-presence";
 
 export type Tab = "detail" | "bom" | "ga" | "costing";
 
-const TABS: { id: Tab; label: string; icon: string; needsSwitchboard: boolean }[] = [
-  { id: "detail", label: "Project Details", icon: "info", needsSwitchboard: false },
-  { id: "costing", label: "Costing Summary", icon: "table_chart", needsSwitchboard: false },
-  { id: "bom", label: "BOM Builder", icon: "description", needsSwitchboard: true },
+const TABS: {
+  id: Tab;
+  label: string;
+  icon: string;
+  needsSwitchboard: boolean;
+}[] = [
+  {
+    id: "detail",
+    label: "Project Details",
+    icon: "info",
+    needsSwitchboard: false,
+  },
+  {
+    id: "costing",
+    label: "Costing Summary",
+    icon: "table_chart",
+    needsSwitchboard: false,
+  },
+  {
+    id: "bom",
+    label: "BOM Builder",
+    icon: "description",
+    needsSwitchboard: true,
+  },
   { id: "ga", label: "GA Builder", icon: "tune", needsSwitchboard: true },
 ];
 
@@ -39,10 +60,24 @@ export function RevisionWorkspace({
   const initialSwitchboard = searchParams.get("sb");
 
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
-  const [selectedSwitchboardId, setSelectedSwitchboardId] = useState<string | null>(initialSwitchboard);
+  const [selectedSwitchboardId, setSelectedSwitchboardId] = useState<
+    string | null
+  >(initialSwitchboard);
+  useSwitchboardHeartbeat(selectedSwitchboardId);
   const [archived, setArchived] = useState(ctx.revision.archived);
 
-  const { revision, project, customer, createdByName, consultantName, salesExecName, ownerName, siblingRevisions, switchboards, allUsers } = ctx;
+  const {
+    revision,
+    project,
+    customer,
+    createdByName,
+    consultantName,
+    salesExecName,
+    ownerName,
+    siblingRevisions,
+    switchboards,
+    allUsers,
+  } = ctx;
 
   function openSwitchboard(switchboardId: string, tab: Tab = "bom") {
     setSelectedSwitchboardId(switchboardId);
@@ -57,8 +92,11 @@ export function RevisionWorkspace({
     router.refresh();
   }
 
-  const selectedSwitchboard = switchboards.find((s) => s.switchboard.id === selectedSwitchboardId) ?? null;
-  const onSwitchboardTab = TABS.find((t) => t.id === activeTab)?.needsSwitchboard ?? false;
+  const selectedSwitchboard =
+    switchboards.find((s) => s.switchboard.id === selectedSwitchboardId) ??
+    null;
+  const onSwitchboardTab =
+    TABS.find((t) => t.id === activeTab)?.needsSwitchboard ?? false;
   const activeTabLabel = TABS.find((t) => t.id === activeTab)?.label ?? "";
 
   return (
@@ -85,13 +123,19 @@ export function RevisionWorkspace({
                 <Icon name="chevron_right" size={14} />
                 <span>
                   {selectedSwitchboard.switchboard.tag}
-                  {selectedSwitchboard.switchboard.title ? `: ${selectedSwitchboard.switchboard.title}` : ""}
+                  {selectedSwitchboard.switchboard.title
+                    ? `: ${selectedSwitchboard.switchboard.title}`
+                    : ""}
                 </span>
                 <Icon name="chevron_right" size={14} />
-                <span className="font-medium uppercase text-on-surface">{activeTabLabel}</span>
+                <span className="font-medium uppercase text-on-surface">
+                  {activeTabLabel}
+                </span>
               </>
             ) : (
-              <span className="font-medium text-on-surface">{activeTabLabel}</span>
+              <span className="font-medium text-on-surface">
+                {activeTabLabel}
+              </span>
             )}
           </div>
           <RevisionControls
@@ -116,7 +160,11 @@ export function RevisionWorkspace({
                   key={t.id}
                   onClick={() => !disabled && setActiveTab(t.id)}
                   disabled={disabled}
-                  title={disabled ? "Select a switchboard from Project Details first" : undefined}
+                  title={
+                    disabled
+                      ? "Select a switchboard from Project Details first"
+                      : undefined
+                  }
                   className={`flex items-center gap-space-xs py-space-md px-space-lg font-headline-sm text-headline-sm transition-all ${
                     disabled
                       ? "cursor-not-allowed text-on-surface-variant/50"
@@ -128,14 +176,20 @@ export function RevisionWorkspace({
                   <Icon name={t.icon} size={17} />
                   {t.label}
                   {t.needsSwitchboard && selectedSwitchboard && (
-                    <span className="font-mono text-[10px] text-on-surface-variant">{selectedSwitchboard.switchboard.tag}</span>
+                    <span className="font-mono text-[10px] text-on-surface-variant">
+                      {selectedSwitchboard.switchboard.tag}
+                    </span>
                   )}
                 </button>
               );
             })}
           </div>
           <span className="hidden shrink-0 font-body-sm text-body-sm text-secondary sm:block">
-            Last saved: {new Date(revision.updated_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+            Last saved:{" "}
+            {new Date(revision.updated_at).toLocaleTimeString("en-IN", {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
           </span>
         </nav>
       </div>
