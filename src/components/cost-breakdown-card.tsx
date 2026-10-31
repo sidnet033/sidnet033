@@ -16,99 +16,150 @@ export function CostBreakdownCard({
   switchboard,
   readOnly = true,
   onLaborChange,
+  bare = false,
 }: {
   breakdown: CostBreakdown;
-  switchboard: Pick<Switchboard, "labor_wiring_pct" | "labor_assembly_pct" | "labor_testing_pct">;
+  switchboard: Pick<
+    Switchboard,
+    "labor_wiring_pct" | "labor_assembly_pct" | "labor_testing_pct"
+  >;
   readOnly?: boolean;
-  onLaborChange?: (field: "labor_wiring_pct" | "labor_assembly_pct" | "labor_testing_pct", value: number) => void;
+  onLaborChange?: (
+    field: "labor_wiring_pct" | "labor_assembly_pct" | "labor_testing_pct",
+    value: number,
+  ) => void;
+  /** shown inside a dialog: no collapsible header, always open */
+  bare?: boolean;
 }) {
-  const rmShare = breakdown.mfgTotal > 0 ? (breakdown.rmTotal / breakdown.mfgTotal) * 100 : 0;
+  const rmShare =
+    breakdown.mfgTotal > 0 ? (breakdown.rmTotal / breakdown.mfgTotal) * 100 : 0;
   const valueAddShare = 100 - rmShare;
   // Starts collapsed -- the header still shows the grand total.
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(bare);
 
   return (
     <div className="space-y-space-sm">
-      <button onClick={() => setOpen(!open)} className="flex w-full items-center gap-2 text-left">
-        <Icon name={open ? "expand_less" : "expand_more"} size={20} className="text-on-surface-variant" />
-        <h3 className="font-headline-md text-headline-md text-on-surface">Cost Breakdown</h3>
-        {!open && <span className="ml-auto font-display text-sm font-semibold text-primary">Total MFG Cost {money(breakdown.mfgTotal)}</span>}
-      </button>
+      {!bare && (
+        <button
+          onClick={() => setOpen(!open)}
+          className="flex w-full items-center gap-2 text-left"
+        >
+          <Icon
+            name={open ? "expand_less" : "expand_more"}
+            size={20}
+            className="text-on-surface-variant"
+          />
+          <h3 className="font-headline-md text-headline-md text-on-surface">
+            Cost Breakdown
+          </h3>
+        </button>
+      )}
       {open && (
-      <div className="grid grid-cols-1 gap-space-md lg:grid-cols-3">
-        <div className="space-y-1.5 rounded-xl bg-surface-container-lowest p-space-md shadow-sm">
-          <p className="flex items-center gap-1.5 font-label-md text-label-md text-on-surface-variant">
-            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-on-primary">1</span>
-            Raw Materials (RM)
-          </p>
-          <Row label="Electrical" value={money(breakdown.electrical)} />
-          <Row label="Enclosure" value={money(breakdown.enclosure)} />
-          <Row label="Busbars" value={money(breakdown.busbars)} />
-          <Row label="Total RM Cost" value={money(breakdown.rmTotal)} bold />
-        </div>
-        <div className="space-y-1.5 rounded-xl bg-surface-container-lowest p-space-md shadow-sm">
-          <p className="flex items-center gap-1.5 font-label-md text-label-md text-on-surface-variant">
-            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-tertiary text-[10px] font-bold text-on-tertiary">2</span>
-            Labor (% of RM)
-          </p>
-          {onLaborChange ? (
-            <>
-              <PctRow
-                label="Wiring"
-                pct={switchboard.labor_wiring_pct}
-                amount={breakdown.wiringAmt}
-                readOnly={readOnly}
-                onChange={(v) => onLaborChange("labor_wiring_pct", v)}
-              />
-              <PctRow
-                label="Assembly"
-                pct={switchboard.labor_assembly_pct}
-                amount={breakdown.assemblyAmt}
-                readOnly={readOnly}
-                onChange={(v) => onLaborChange("labor_assembly_pct", v)}
-              />
-              <PctRow
-                label="Testing"
-                pct={switchboard.labor_testing_pct}
-                amount={breakdown.testingAmt}
-                readOnly={readOnly}
-                onChange={(v) => onLaborChange("labor_testing_pct", v)}
-              />
-            </>
-          ) : (
-            <>
-              <Row label={`Wiring ${switchboard.labor_wiring_pct}%`} value={money(breakdown.wiringAmt)} />
-              <Row label={`Assembly ${switchboard.labor_assembly_pct}%`} value={money(breakdown.assemblyAmt)} />
-              <Row label={`Testing ${switchboard.labor_testing_pct}%`} value={money(breakdown.testingAmt)} />
-            </>
-          )}
-          <Row label="Total Adders" value={money(breakdown.laborTotal)} bold />
-        </div>
-        <div className="flex flex-col justify-between rounded-xl bg-surface-container-lowest p-space-md shadow-sm">
-          <div className="flex items-center justify-between">
+        <div className="grid grid-cols-1 gap-space-md lg:grid-cols-3">
+          <div className="space-y-1.5 rounded-xl bg-surface-container-lowest p-space-md shadow-sm">
             <p className="flex items-center gap-1.5 font-label-md text-label-md text-on-surface-variant">
-              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-on-primary">3</span>
-              Total MFG Cost
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-on-primary">
+                1
+              </span>
+              Raw Materials (RM)
             </p>
-            <span className="rounded-full bg-tertiary-container/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-tertiary">
-              Grand Total
-            </span>
+            <Row label="Electrical" value={money(breakdown.electrical)} />
+            <Row label="Enclosure" value={money(breakdown.enclosure)} />
+            <Row label="Busbars" value={money(breakdown.busbars)} />
+            <Row label="Total RM Cost" value={money(breakdown.rmTotal)} bold />
           </div>
-          <p className="mt-1 font-display text-headline-lg text-primary">{money(breakdown.mfgTotal)}</p>
-          <div className="mt-3 font-body-sm text-body-sm text-secondary">
-            <p>RM Share: {rmShare.toFixed(1)}%</p>
-            <p>Value Add: {valueAddShare.toFixed(1)}%</p>
+          <div className="space-y-1.5 rounded-xl bg-surface-container-lowest p-space-md shadow-sm">
+            <p className="flex items-center gap-1.5 font-label-md text-label-md text-on-surface-variant">
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-tertiary text-[10px] font-bold text-on-tertiary">
+                2
+              </span>
+              Labor (% of RM)
+            </p>
+            {onLaborChange ? (
+              <>
+                <PctRow
+                  label="Wiring"
+                  pct={switchboard.labor_wiring_pct}
+                  amount={breakdown.wiringAmt}
+                  readOnly={readOnly}
+                  onChange={(v) => onLaborChange("labor_wiring_pct", v)}
+                />
+                <PctRow
+                  label="Assembly"
+                  pct={switchboard.labor_assembly_pct}
+                  amount={breakdown.assemblyAmt}
+                  readOnly={readOnly}
+                  onChange={(v) => onLaborChange("labor_assembly_pct", v)}
+                />
+                <PctRow
+                  label="Testing"
+                  pct={switchboard.labor_testing_pct}
+                  amount={breakdown.testingAmt}
+                  readOnly={readOnly}
+                  onChange={(v) => onLaborChange("labor_testing_pct", v)}
+                />
+              </>
+            ) : (
+              <>
+                <Row
+                  label={`Wiring ${switchboard.labor_wiring_pct}%`}
+                  value={money(breakdown.wiringAmt)}
+                />
+                <Row
+                  label={`Assembly ${switchboard.labor_assembly_pct}%`}
+                  value={money(breakdown.assemblyAmt)}
+                />
+                <Row
+                  label={`Testing ${switchboard.labor_testing_pct}%`}
+                  value={money(breakdown.testingAmt)}
+                />
+              </>
+            )}
+            <Row
+              label="Total Adders"
+              value={money(breakdown.laborTotal)}
+              bold
+            />
+          </div>
+          <div className="flex flex-col justify-between rounded-xl bg-surface-container-lowest p-space-md shadow-sm">
+            <div className="flex items-center justify-between">
+              <p className="flex items-center gap-1.5 font-label-md text-label-md text-on-surface-variant">
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-on-primary">
+                  3
+                </span>
+                Total MFG Cost
+              </p>
+              <span className="rounded-full bg-tertiary-container/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-tertiary">
+                Grand Total
+              </span>
+            </div>
+            <p className="mt-1 font-display text-headline-lg text-primary">
+              {money(breakdown.mfgTotal)}
+            </p>
+            <div className="mt-3 font-body-sm text-body-sm text-secondary">
+              <p>RM Share: {rmShare.toFixed(1)}%</p>
+              <p>Value Add: {valueAddShare.toFixed(1)}%</p>
+            </div>
           </div>
         </div>
-      </div>
       )}
     </div>
   );
 }
 
-function Row({ label, value, bold = false }: { label: string; value: string; bold?: boolean }) {
+function Row({
+  label,
+  value,
+  bold = false,
+}: {
+  label: string;
+  value: string;
+  bold?: boolean;
+}) {
   return (
-    <div className={`flex items-center justify-between text-xs ${bold ? "border-t border-surface-container pt-1.5 font-semibold text-on-surface" : "text-on-surface-variant"}`}>
+    <div
+      className={`flex items-center justify-between text-xs ${bold ? "border-t border-surface-container pt-1.5 font-semibold text-on-surface" : "text-on-surface-variant"}`}
+    >
       <span>{label}</span>
       <span className="tabular-nums">{value}</span>
     </div>

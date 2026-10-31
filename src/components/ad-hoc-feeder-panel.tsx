@@ -6,6 +6,7 @@ import { itemCode, itemRowClass } from "@/lib/item-display";
 import { numericKeyGuard } from "@/lib/numeric-input";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
+import { Modal } from "@/components/modal";
 import { DEVICE_TYPE_LABELS, MOTOR_STARTER_TYPES } from "@/lib/artuk-sizing";
 import { FEEDER_TYPES } from "@/lib/feeder-tag";
 import type { DeviceType, Feeder, ItemMaster } from "@/types/database";
@@ -41,7 +42,7 @@ export function AdHocFeederPanel({
         .filter(
           (i) =>
             itemCode(i).toLowerCase().includes(itemSearch.toLowerCase()) ||
-            i.description.toLowerCase().includes(itemSearch.toLowerCase())
+            i.description.toLowerCase().includes(itemSearch.toLowerCase()),
         )
         .slice(0, 8)
     : [];
@@ -110,7 +111,13 @@ export function AdHocFeederPanel({
 
     const { error: linesError } = await supabase
       .from("feeder_items")
-      .insert(lines.map((l) => ({ feeder_id: feeder.id, item_id: l.item.id, qty: l.qty })));
+      .insert(
+        lines.map((l) => ({
+          feeder_id: feeder.id,
+          item_id: l.item.id,
+          qty: l.qty,
+        })),
+      );
 
     setSaving(false);
 
@@ -126,150 +133,170 @@ export function AdHocFeederPanel({
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} className="btn btn-outline w-72">
-        <Icon name="add_circle" size={16} /> Create New Feeder
+      <button onClick={() => setOpen(true)} className="btn btn-outline btn-sm">
+        <Icon name="add_circle" size={15} /> Create New Feeder
       </button>
     );
   }
 
   return (
-    <div className="mb-3 space-y-2 rounded-lg border border-surface-container-high bg-surface-container-low p-3">
-      <SavingOverlay show={saving} label="Creating feeder..." />
-      <input
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="Feeder name"
-        className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
-      />
-      <div className="grid grid-cols-2 gap-2">
-        <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
-        >
-          <option value="">Function (optional)...</option>
-          {FEEDER_TYPES.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-        <select
-          value={deviceType}
-          onChange={(e) => setDeviceType(e.target.value as DeviceType | "")}
-          className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
-        >
-          <option value="">Device type (optional)...</option>
-          {DEVICE_TYPES.map((t) => (
-            <option key={t} value={t}>
-              {DEVICE_TYPE_LABELS[t]}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {deviceType && (
-        <div className="flex items-center gap-2">
-          {MOTOR_STARTER_TYPES.includes(deviceType as DeviceType) ? (
-            <input
-              type="text"
-              inputMode="decimal"
-              value={ratedKw}
-              onChange={(e) => setRatedKw(e.target.value)}
-              onKeyDown={numericKeyGuard()}
-              placeholder="Rated power (kW)"
-              className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
-            />
-          ) : (
-            <input
-              type="text"
-              inputMode="decimal"
-              value={ratedCurrent}
-              onChange={(e) => setRatedCurrent(e.target.value)}
-              onKeyDown={numericKeyGuard()}
-              placeholder="Rated current (A)"
-              className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
-            />
-          )}
-        </div>
-      )}
-
-      <div className="relative">
+    <Modal title="Create New Feeder" onClose={reset}>
+      <div className="space-y-2">
+        <SavingOverlay show={saving} label="Creating feeder..." />
         <input
-          value={itemSearch}
-          onChange={(e) => {
-            setItemSearch(e.target.value);
-            setSelectedItemId("");
-          }}
-          placeholder="Search item master..."
-          autoComplete="off"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Feeder name"
           className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
         />
-        {matches.length > 0 && !selectedItemId && (
-          <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-surface-container-high bg-surface-container-lowest shadow-sm">
-            {matches.map((m) => (
-              <button
-                type="button"
-                key={m.id}
-                onClick={() => {
-                  setSelectedItemId(m.id);
-                  setItemSearch(`${itemCode(m)} — ${m.description}`);
-                }}
-                className={`flex w-full items-center gap-2 px-2 py-1 text-left text-xs hover:bg-surface-container-low ${itemRowClass(m)}`}
-              >
-                <span className="w-24 shrink-0 truncate font-mono text-secondary">{itemCode(m)}</span>
-                <span className="w-24 shrink-0 truncate font-mono text-secondary">{m.vendor_cat || "—"}</span>
-                <span className="w-28 shrink-0 truncate text-on-surface-variant">{m.make || "—"}</span>
-                <span className="min-w-0 flex-1 truncate">{m.description}</span>
-              </button>
+        <div className="grid grid-cols-2 gap-2">
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
+          >
+            <option value="">Function (optional)...</option>
+            {FEEDER_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
             ))}
+          </select>
+          <select
+            value={deviceType}
+            onChange={(e) => setDeviceType(e.target.value as DeviceType | "")}
+            className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
+          >
+            <option value="">Device type (optional)...</option>
+            {DEVICE_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {DEVICE_TYPE_LABELS[t]}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {deviceType && (
+          <div className="flex items-center gap-2">
+            {MOTOR_STARTER_TYPES.includes(deviceType as DeviceType) ? (
+              <input
+                type="text"
+                inputMode="decimal"
+                value={ratedKw}
+                onChange={(e) => setRatedKw(e.target.value)}
+                onKeyDown={numericKeyGuard()}
+                placeholder="Rated power (kW)"
+                className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
+              />
+            ) : (
+              <input
+                type="text"
+                inputMode="decimal"
+                value={ratedCurrent}
+                onChange={(e) => setRatedCurrent(e.target.value)}
+                onKeyDown={numericKeyGuard()}
+                placeholder="Rated current (A)"
+                className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
+              />
+            )}
           </div>
         )}
-      </div>
-      <div className="flex items-center gap-2">
-        <input
-          type="text"
-          inputMode="decimal"
-          value={qty}
-          onChange={(e) => setQty(e.target.value)}
-          onKeyDown={numericKeyGuard()}
-          className="w-16 rounded border border-surface-container-high px-2 py-1 text-xs"
-        />
-        <button
-          type="button"
-          onClick={addLine}
-          disabled={!selectedItemId}
-          className="rounded bg-secondary px-2 py-1 text-xs font-medium text-white disabled:opacity-40"
-        >
-          Add line
-        </button>
-      </div>
 
-      {lines.length > 0 && (
-        <ul className="space-y-1 text-xs">
-          {lines.map((l) => (
-            <li key={l.item.id} className="flex items-center justify-between rounded bg-surface-container-lowest px-2 py-1">
-              <span className="truncate">
-                {l.qty} × {itemCode(l.item)}
-              </span>
-              <button onClick={() => removeLine(l.item.id)} className="text-error hover:underline">
-                ✕
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+        <div className="relative">
+          <input
+            value={itemSearch}
+            onChange={(e) => {
+              setItemSearch(e.target.value);
+              setSelectedItemId("");
+            }}
+            placeholder="Search item master..."
+            autoComplete="off"
+            className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
+          />
+          {matches.length > 0 && !selectedItemId && (
+            <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-surface-container-high bg-surface-container-lowest shadow-sm">
+              {matches.map((m) => (
+                <button
+                  type="button"
+                  key={m.id}
+                  onClick={() => {
+                    setSelectedItemId(m.id);
+                    setItemSearch(`${itemCode(m)} — ${m.description}`);
+                  }}
+                  className={`flex w-full items-center gap-2 px-2 py-1 text-left text-xs hover:bg-surface-container-low ${itemRowClass(m)}`}
+                >
+                  <span className="w-24 shrink-0 truncate font-mono text-secondary">
+                    {itemCode(m)}
+                  </span>
+                  <span className="w-24 shrink-0 truncate font-mono text-secondary">
+                    {m.vendor_cat || "—"}
+                  </span>
+                  <span className="w-28 shrink-0 truncate text-on-surface-variant">
+                    {m.make || "—"}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {m.description}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            inputMode="decimal"
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+            onKeyDown={numericKeyGuard()}
+            className="w-16 rounded border border-surface-container-high px-2 py-1 text-xs"
+          />
+          <button
+            type="button"
+            onClick={addLine}
+            disabled={!selectedItemId}
+            className="rounded bg-secondary px-2 py-1 text-xs font-medium text-white disabled:opacity-40"
+          >
+            Add line
+          </button>
+        </div>
 
-      {error && <p className="text-xs text-error">{error}</p>}
+        {lines.length > 0 && (
+          <ul className="space-y-1 text-xs">
+            {lines.map((l) => (
+              <li
+                key={l.item.id}
+                className="flex items-center justify-between rounded bg-surface-container-lowest px-2 py-1"
+              >
+                <span className="truncate">
+                  {l.qty} × {itemCode(l.item)}
+                </span>
+                <button
+                  onClick={() => removeLine(l.item.id)}
+                  className="text-error hover:underline"
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
 
-      <div className="flex items-center gap-2">
-        <button onClick={handleCreate} disabled={saving} className="btn btn-primary btn-sm">
-          {saving ? "Creating..." : "Create feeder"}
-        </button>
-        <button onClick={reset} className="btn btn-outline btn-sm">
-          Cancel
-        </button>
+        {error && <p className="text-xs text-error">{error}</p>}
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleCreate}
+            disabled={saving}
+            className="btn btn-primary btn-sm"
+          >
+            {saving ? "Creating..." : "Create feeder"}
+          </button>
+          <button onClick={reset} className="btn btn-outline btn-sm">
+            Cancel
+          </button>
+        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

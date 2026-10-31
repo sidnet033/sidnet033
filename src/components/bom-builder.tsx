@@ -6,9 +6,17 @@ import { createClient } from "@/lib/supabase/client";
 import { CostBreakdownCard } from "@/components/cost-breakdown-card";
 import { AdHocFeederPanel } from "@/components/ad-hoc-feeder-panel";
 import { RefreshItemsButton } from "@/components/refresh-items-button";
-import { deratingMessage, deratingWarnings } from "@/lib/breaker-derating";
+import {
+  deratingMessage,
+  deratingWarnings,
+  siteDeratingReasons,
+} from "@/lib/breaker-derating";
+import { Modal } from "@/components/modal";
 import { isIncomerFeeder } from "@/lib/busbar-plan";
-import { SplitFeederDialog, type SplitPick } from "@/components/split-feeder-dialog";
+import {
+  SplitFeederDialog,
+  type SplitPick,
+} from "@/components/split-feeder-dialog";
 import type { PriceDecision, PricedLine } from "@/lib/price-changes";
 import { CreateItemDialog } from "@/components/create-item-dialog";
 import { BulkAddItemsDialog } from "@/components/bulk-add-items-dialog";
@@ -23,8 +31,17 @@ import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { formatMoney } from "@/lib/money";
 import { loadBusbarTakeoff, type BusbarTakeoff } from "@/lib/busbar-bom";
-import { loadEnclosureTakeoff, type EnclosureTakeoff } from "@/lib/artuk-enclosure";
-import { ampsViolations, incomerShortfall, mainSwitchgear, nextStandardAmps, switchgearBelowFeeder } from "@/lib/amps-check";
+import {
+  loadEnclosureTakeoff,
+  type EnclosureTakeoff,
+} from "@/lib/artuk-enclosure";
+import {
+  ampsViolations,
+  incomerShortfall,
+  mainSwitchgear,
+  nextStandardAmps,
+  switchgearBelowFeeder,
+} from "@/lib/amps-check";
 import type {
   DeviceType,
   Feeder,
@@ -43,7 +60,13 @@ const DEVICE_TYPES = Object.keys(DEVICE_TYPE_LABELS) as DeviceType[];
 // project's currency.
 const money = (n: number) => formatMoney(n);
 
-type LibraryFeederOption = { id: string; name: string; category: string | null; tag: string | null; rating_summary: string | null };
+type LibraryFeederOption = {
+  id: string;
+  name: string;
+  category: string | null;
+  tag: string | null;
+  rating_summary: string | null;
+};
 
 type DraftLine = {
   id: string; // real feeder_items id, or "new-<uuid>" if not yet persisted
@@ -68,8 +91,18 @@ type DraftModule = {
   baselinePlacements: PlacementRef[]; // what's actually in the DB right now, for redistributing a qty change on Save
 };
 
-type DraftBusbar = { id: string; description: string; qty: number; rate: number };
-type DraftEnclosure = { id: string; description: string; qty: number; rate: number };
+type DraftBusbar = {
+  id: string;
+  description: string;
+  qty: number;
+  rate: number;
+};
+type DraftEnclosure = {
+  id: string;
+  description: string;
+  qty: number;
+  rate: number;
+};
 
 type BomDraft = {
   modules: DraftModule[];
@@ -96,74 +129,148 @@ function toDraftLine(l: FeederItemWithDetails): DraftLine {
 }
 
 function lineTotal(lines: DraftLine[]) {
-  return lines.reduce((s, l) => s + l.qty * effectiveNetRate(l.item, l.list_price_override, l.discount_pct_override), 0);
+  return lines.reduce(
+    (s, l) =>
+      s +
+      l.qty *
+        effectiveNetRate(
+          l.item,
+          l.list_price_override,
+          l.discount_pct_override,
+        ),
+    0,
+  );
 }
 
-async function loadBomData(supabase: ReturnType<typeof createClient>, switchboardId: string) {
-  const { data: switchboard } = await supabase.from("switchboards").select("*").eq("id", switchboardId).single();
+async function loadBomData(
+  supabase: ReturnType<typeof createClient>,
+  switchboardId: string,
+) {
+  const { data: switchboard } = await supabase
+    .from("switchboards")
+    .select("*")
+    .eq("id", switchboardId)
+    .single();
   if (!switchboard) return null;
 
-  const { data: verticals } = await supabase.from("verticals").select("id").eq("switchboard_id", switchboardId);
+  const { data: verticals } = await supabase
+    .from("verticals")
+    .select("id")
+    .eq("switchboard_id", switchboardId);
   const verticalIds = ((verticals ?? []) as { id: string }[]).map((v) => v.id);
 
-  const [{ data: placed }, { data: busbarRows }, { data: enclosureRows }, { data: libraryFeeders }, busbarTakeoff, enclosureTakeoff] = await Promise.all([
+  const [
+    { data: placed },
+    { data: busbarRows },
+    { data: enclosureRows },
+    { data: libraryFeeders },
+    busbarTakeoff,
+    enclosureTakeoff,
+  ] = await Promise.all([
     verticalIds.length
       ? supabase
           .from("placed_feeders")
           .select("id, vertical_id, tier_number, qty, feeder:feeders(*)")
           .in("vertical_id", verticalIds)
       : Promise.resolve({ data: [] }),
-    supabase.from("switchboard_busbars").select("*").eq("switchboard_id", switchboardId).order("sort_order"),
-    supabase.from("switchboard_enclosure_lines").select("*").eq("switchboard_id", switchboardId).order("sort_order"),
-    supabase.from("feeders").select("id, name, category, tag, rating_summary").eq("is_library", true).order("name"),
+    supabase
+      .from("switchboard_busbars")
+      .select("*")
+      .eq("switchboard_id", switchboardId)
+      .order("sort_order"),
+    supabase
+      .from("switchboard_enclosure_lines")
+      .select("*")
+      .eq("switchboard_id", switchboardId)
+      .order("sort_order"),
+    supabase
+      .from("feeders")
+      .select("id, name, category, tag, rating_summary")
+      .eq("is_library", true)
+      .order("name"),
     loadBusbarTakeoff(supabase, switchboard as Switchboard),
     loadEnclosureTakeoff(supabase, switchboard as Switchboard),
   ]);
   // site conditions (Project Detail) for the breaker derating check
-  const { data: rev } = await supabase.from("revisions").select("project:projects(site_ambient_temp_c, site_altitude_m)").eq("id", (switchboard as Switchboard).revision_id).single();
-  const proj = (rev as unknown as { project: { site_ambient_temp_c: number | null; site_altitude_m: number | null } | null } | null)?.project ?? null;
+  const { data: rev } = await supabase
+    .from("revisions")
+    .select("project:projects(site_ambient_temp_c, site_altitude_m)")
+    .eq("id", (switchboard as Switchboard).revision_id)
+    .single();
+  const proj =
+    (
+      rev as unknown as {
+        project: {
+          site_ambient_temp_c: number | null;
+          site_altitude_m: number | null;
+        } | null;
+      } | null
+    )?.project ?? null;
   const site = {
-    ambientC: proj?.site_ambient_temp_c != null ? Number(proj.site_ambient_temp_c) : null,
-    altitudeM: proj?.site_altitude_m != null ? Number(proj.site_altitude_m) : null,
+    ambientC:
+      proj?.site_ambient_temp_c != null
+        ? Number(proj.site_ambient_temp_c)
+        : null,
+    altitudeM:
+      proj?.site_altitude_m != null ? Number(proj.site_altitude_m) : null,
   };
 
-  type PlacedRow = { id: string; vertical_id: string; tier_number: number; qty: number; feeder: Feeder };
+  type PlacedRow = {
+    id: string;
+    vertical_id: string;
+    tier_number: number;
+    qty: number;
+    feeder: Feeder;
+  };
   const placedRows = (placed ?? []) as unknown as PlacedRow[];
 
   // One module per feeder used in this switchboard's BOM, aggregating qty
   // across however many placed_feeders rows GA Builder has spread its
   // physical units across (different bays, the unassigned bucket, ...).
   // GA owns *where* units sit; BOM Builder only cares *how many* and *what*.
-  const byFeeder = new Map<string, { feeder: Feeder; placements: PlacementRef[] }>();
+  const byFeeder = new Map<
+    string,
+    { feeder: Feeder; placements: PlacementRef[] }
+  >();
   for (const p of placedRows) {
-    const entry = byFeeder.get(p.feeder.id) ?? { feeder: p.feeder, placements: [] };
+    const entry = byFeeder.get(p.feeder.id) ?? {
+      feeder: p.feeder,
+      placements: [],
+    };
     entry.placements.push({ id: p.id, vertical_id: p.vertical_id, qty: p.qty });
     byFeeder.set(p.feeder.id, entry);
   }
 
   const feederIds = Array.from(byFeeder.keys());
   const { data: feederLines } = feederIds.length
-    ? await supabase.from("feeder_items").select("*, item:item_master(*)").in("feeder_id", feederIds).order("sort_order")
+    ? await supabase
+        .from("feeder_items")
+        .select("*, item:item_master(*)")
+        .in("feeder_id", feederIds)
+        .order("sort_order")
     : { data: [] };
 
   const linesByFeeder = new Map<string, FeederItemWithDetails[]>();
-  for (const line of (feederLines ?? []) as unknown as FeederItemWithDetails[]) {
+  for (const line of (feederLines ??
+    []) as unknown as FeederItemWithDetails[]) {
     const list = linesByFeeder.get(line.feeder_id) ?? [];
     list.push(line);
     linesByFeeder.set(line.feeder_id, list);
   }
 
-  const modules: DraftModule[] = Array.from(byFeeder.values()).map(({ feeder, placements }) => {
-    const lines = (linesByFeeder.get(feeder.id) ?? []).map(toDraftLine);
-    return {
-      feeder,
-      baselineFeeder: feeder,
-      qty: placements.reduce((s, p) => s + p.qty, 0),
-      lines,
-      baselineLines: lines,
-      baselinePlacements: placements,
-    };
-  });
+  const modules: DraftModule[] = Array.from(byFeeder.values()).map(
+    ({ feeder, placements }) => {
+      const lines = (linesByFeeder.get(feeder.id) ?? []).map(toDraftLine);
+      return {
+        feeder,
+        baselineFeeder: feeder,
+        qty: placements.reduce((s, p) => s + p.qty, 0),
+        lines,
+        baselineLines: lines,
+        baselinePlacements: placements,
+      };
+    },
+  );
 
   return {
     switchboard: switchboard as Switchboard,
@@ -182,8 +289,18 @@ type LoadedBomData = NonNullable<Awaited<ReturnType<typeof loadBomData>>>;
 function toDraft(data: LoadedBomData): BomDraft {
   return {
     modules: data.modules,
-    busbars: data.busbars.map((b) => ({ id: b.id, description: b.description, qty: b.qty, rate: b.rate })),
-    enclosureLines: data.enclosureLines.map((e) => ({ id: e.id, description: e.description, qty: e.qty, rate: e.rate })),
+    busbars: data.busbars.map((b) => ({
+      id: b.id,
+      description: b.description,
+      qty: b.qty,
+      rate: b.rate,
+    })),
+    enclosureLines: data.enclosureLines.map((e) => ({
+      id: e.id,
+      description: e.description,
+      qty: e.qty,
+      rate: e.rate,
+    })),
     laborWiring: data.switchboard.labor_wiring_pct,
     laborAssembly: data.switchboard.labor_assembly_pct,
     laborTesting: data.switchboard.labor_testing_pct,
@@ -202,20 +319,37 @@ async function updateChecked(
   table: string,
   id: string,
   patch: Record<string, unknown>,
-  context: string
+  context: string,
 ) {
-  const { data, error } = await supabase.from(table).update(patch).eq("id", id).select("id");
+  const { data, error } = await supabase
+    .from(table)
+    .update(patch)
+    .eq("id", id)
+    .select("id");
   if (error) throw error;
   if (!data || data.length === 0) {
-    throw new Error(`Could not save ${context} (id ${id}) — it may have changed or been removed elsewhere. Refresh and try again.`);
+    throw new Error(
+      `Could not save ${context} (id ${id}) — it may have changed or been removed elsewhere. Refresh and try again.`,
+    );
   }
 }
 
-async function deleteChecked(supabase: ReturnType<typeof createClient>, table: string, id: string, context: string) {
-  const { data, error } = await supabase.from(table).delete().eq("id", id).select("id");
+async function deleteChecked(
+  supabase: ReturnType<typeof createClient>,
+  table: string,
+  id: string,
+  context: string,
+) {
+  const { data, error } = await supabase
+    .from(table)
+    .delete()
+    .eq("id", id)
+    .select("id");
   if (error) throw error;
   if (!data || data.length === 0) {
-    throw new Error(`Could not remove ${context} (id ${id}) — it may have changed or been removed elsewhere. Refresh and try again.`);
+    throw new Error(
+      `Could not remove ${context} (id ${id}) — it may have changed or been removed elsewhere. Refresh and try again.`,
+    );
   }
 }
 
@@ -224,7 +358,7 @@ async function saveLineTable(
   table: "switchboard_busbars" | "switchboard_enclosure_lines",
   switchboardId: string,
   saved: (DraftBusbar | DraftEnclosure)[],
-  draft: (DraftBusbar | DraftEnclosure)[]
+  draft: (DraftBusbar | DraftEnclosure)[],
 ) {
   const draftIds = new Set(draft.map((r) => r.id));
   for (const r of saved) {
@@ -236,12 +370,34 @@ async function saveLineTable(
     if (r.id.startsWith("new-")) {
       const { error } = await supabase
         .from(table)
-        .insert({ switchboard_id: switchboardId, description: r.description, qty: r.qty, rate: r.rate, sort_order: i });
+        .insert({
+          switchboard_id: switchboardId,
+          description: r.description,
+          qty: r.qty,
+          rate: r.rate,
+          sort_order: i,
+        });
       if (error) throw error;
     } else {
       const prior = saved.find((x) => x.id === r.id);
-      if (!prior || prior.description !== r.description || prior.qty !== r.qty || prior.rate !== r.rate) {
-        await updateChecked(supabase, table, r.id, { description: r.description, qty: r.qty, rate: r.rate, sort_order: i }, "line");
+      if (
+        !prior ||
+        prior.description !== r.description ||
+        prior.qty !== r.qty ||
+        prior.rate !== r.rate
+      ) {
+        await updateChecked(
+          supabase,
+          table,
+          r.id,
+          {
+            description: r.description,
+            qty: r.qty,
+            rate: r.rate,
+            sort_order: i,
+          },
+          "line",
+        );
       }
     }
   }
@@ -267,14 +423,17 @@ export function BomBuilder({
   const [sb, setSb] = useState<Switchboard | null>(null);
   const [saved, setSaved] = useState<BomDraft | null>(null);
   const [draft, setDraft] = useState<BomDraft | null>(null);
-  const [libraryFeedersAll, setLibraryFeedersAll] = useState<LibraryFeederOption[]>([]);
+  const [libraryFeedersAll, setLibraryFeedersAll] = useState<
+    LibraryFeederOption[]
+  >([]);
   const [saving, setSaving] = useState(false);
   const [resetKey, setResetKey] = useState(0);
   const [items, setItems] = useState(allItems);
   // Feeder cards start collapsed; one added in this session (library, ad
   // hoc, duplicate, split) opens so it can be filled in.
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
-  const openModule = (id: string) => setOpenIds((prev) => new Set(prev).add(id));
+  const openModule = (id: string) =>
+    setOpenIds((prev) => new Set(prev).add(id));
   function toggleModule(id: string) {
     setOpenIds((prev) => {
       const next = new Set(prev);
@@ -283,11 +442,19 @@ export function BomBuilder({
       return next;
     });
   }
-  const [busbarTakeoff, setBusbarTakeoff] = useState<BusbarTakeoff | null>(null);
-  const [enclosureTakeoff, setEnclosureTakeoff] = useState<EnclosureTakeoff | null>(null);
-  const [site, setSite] = useState<{ ambientC: number | null; altitudeM: number | null }>({ ambientC: null, altitudeM: null });
+  const [busbarTakeoff, setBusbarTakeoff] = useState<BusbarTakeoff | null>(
+    null,
+  );
+  const [enclosureTakeoff, setEnclosureTakeoff] =
+    useState<EnclosureTakeoff | null>(null);
+  const [site, setSite] = useState<{
+    ambientC: number | null;
+    altitudeM: number | null;
+  }>({ ambientC: null, altitudeM: null });
   // the warnings box starts collapsed -- just its one-line summary shows
   const [warningsOpen, setWarningsOpen] = useState(false);
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const [costOpen, setCostOpen] = useState(false);
 
   // Creating a new item from within the BOM Builder (e.g. next to "Add Item
   // to Feeder") should be searchable immediately across every feeder module
@@ -302,16 +469,27 @@ export function BomBuilder({
   // fresh item also goes into the saved snapshot, so only a kept price (an
   // override that needs saving) shows as an unsaved change.
   const pricedLines: PricedLine[] = (draft?.modules ?? []).flatMap((m) =>
-    m.lines.map((l) => ({ lineId: l.id, item: l.item, where: m.feeder.name, list_price_override: l.list_price_override, discount_pct_override: l.discount_pct_override }))
+    m.lines.map((l) => ({
+      lineId: l.id,
+      item: l.item,
+      where: m.feeder.name,
+      list_price_override: l.list_price_override,
+      discount_pct_override: l.discount_pct_override,
+    })),
   );
 
   function applyPriceDecisions(decisions: PriceDecision[]) {
     const byLine = new Map(decisions.map((d) => [d.lineId, d]));
     const freshById = new Map(decisions.map((d) => [d.item.id, d.item]));
-    const withFreshItem = (l: DraftLine): DraftLine => (freshById.has(l.item_id) ? { ...l, item: freshById.get(l.item_id)! } : l);
+    const withFreshItem = (l: DraftLine): DraftLine =>
+      freshById.has(l.item_id) ? { ...l, item: freshById.get(l.item_id)! } : l;
     const swapItems = (d: BomDraft): BomDraft => ({
       ...d,
-      modules: d.modules.map((m) => ({ ...m, lines: m.lines.map(withFreshItem), baselineLines: m.baselineLines.map(withFreshItem) })),
+      modules: d.modules.map((m) => ({
+        ...m,
+        lines: m.lines.map(withFreshItem),
+        baselineLines: m.baselineLines.map(withFreshItem),
+      })),
     });
     setSaved((d) => (d ? swapItems(d) : d));
     setDraft((d) => {
@@ -323,7 +501,13 @@ export function BomBuilder({
           ...m,
           lines: m.lines.map((l) => {
             const pick = byLine.get(l.id);
-            return pick ? { ...l, list_price_override: pick.list_price_override, discount_pct_override: pick.discount_pct_override } : l;
+            return pick
+              ? {
+                  ...l,
+                  list_price_override: pick.list_price_override,
+                  discount_pct_override: pick.discount_pct_override,
+                }
+              : l;
           }),
         })),
       };
@@ -351,24 +535,49 @@ export function BomBuilder({
     };
   }, [supabase, switchboardId]);
 
-  const readOnly = !sb || revisionArchived || (sb.locked_by !== null && sb.locked_by !== currentUserId);
-  const dirty = !!draft && !!saved && JSON.stringify(draft) !== JSON.stringify(saved);
+  const readOnly =
+    !sb ||
+    revisionArchived ||
+    (sb.locked_by !== null && sb.locked_by !== currentUserId);
+  const dirty =
+    !!draft && !!saved && JSON.stringify(draft) !== JSON.stringify(saved);
 
   // No feeder in the BOM may be rated above the switchboard itself -- Save
   // stays blocked until either side is changed.
-  const ampsIssues = sb && draft ? ampsViolations(sb.amps, draft.modules.map((m) => m.feeder)) : [];
+  const ampsIssues =
+    sb && draft
+      ? ampsViolations(
+          sb.amps,
+          draft.modules.map((m) => m.feeder),
+        )
+      : [];
   const ampsIssueIds = new Set(ampsIssues.map((f) => f.id));
   // a feeder rated above the switchboard is a warning only -- saving is allowed
   const saveBlocked = false;
   // switchgear rated below its feeder, and a panel with no incomer at its
   // Amps -- warnings only
   const switchgearLow = (draft?.modules ?? []).flatMap((m) => {
-    const rating = m.feeder.rated_current != null ? Number(m.feeder.rated_current) : null;
+    const rating =
+      m.feeder.rated_current != null ? Number(m.feeder.rated_current) : null;
     const low = switchgearBelowFeeder(
       rating,
-      m.lines.map((l) => ({ category: l.item.category, amps: l.item.amps != null ? Number(l.item.amps) : null, description: l.item.description }))
+      m.lines.map((l) => ({
+        category: l.item.category,
+        amps: l.item.amps != null ? Number(l.item.amps) : null,
+        description: l.item.description,
+      })),
     );
-    return low ? [{ id: m.feeder.id, feeder: m.feeder.name, rating: rating!, item: low.description, amps: low.amps! }] : [];
+    return low
+      ? [
+          {
+            id: m.feeder.id,
+            feeder: m.feeder.name,
+            rating: rating!,
+            item: low.description,
+            amps: low.amps!,
+          },
+        ]
+      : [];
   });
   const incomerWarning =
     sb && draft && draft.modules.length > 0
@@ -381,14 +590,25 @@ export function BomBuilder({
               rating:
                 m.feeder.rated_current != null
                   ? Number(m.feeder.rated_current)
-                  : mainSwitchgear(m.lines.map((l) => ({ category: l.item.category, amps: l.item.amps != null ? Number(l.item.amps) : null, description: l.item.description })))?.amps ?? null,
-            }))
+                  : (mainSwitchgear(
+                      m.lines.map((l) => ({
+                        category: l.item.category,
+                        amps: l.item.amps != null ? Number(l.item.amps) : null,
+                        description: l.item.description,
+                      })),
+                    )?.amps ?? null),
+            })),
         )
       : null;
 
   // Items rated below the switchboard's fault level -- a warning only;
   // saving is still allowed.
-  const kaWarnings: { key: string; feeder: string; item: string; ka: number }[] = [];
+  const kaWarnings: {
+    key: string;
+    feeder: string;
+    item: string;
+    ka: number;
+  }[] = [];
   if (sb?.ka != null && draft) {
     const seenKa = new Set<string>();
     for (const m of draft.modules) {
@@ -397,7 +617,12 @@ export function BomBuilder({
         const key = `${m.feeder.id}|${l.item_id}`;
         if (seenKa.has(key)) continue;
         seenKa.add(key);
-        kaWarnings.push({ key, feeder: m.feeder.name, item: l.item.description, ka: Number(l.item.ka) });
+        kaWarnings.push({
+          key,
+          feeder: m.feeder.name,
+          item: l.item.description,
+          ka: Number(l.item.ka),
+        });
       }
     }
   }
@@ -411,7 +636,11 @@ export function BomBuilder({
         const key = `${m.feeder.id}|${l.item_id}`;
         if (seen.has(key) || !isFormulaSeries(l.item)) continue;
         seen.add(key);
-        formulaWarnings.push({ key, feeder: m.feeder.name, item: l.item.description });
+        formulaWarnings.push({
+          key,
+          feeder: m.feeder.name,
+          item: l.item.description,
+        });
       }
     }
   }
@@ -423,8 +652,17 @@ export function BomBuilder({
         feeders: draft.modules.map((m) => ({
           id: m.feeder.id,
           name: m.feeder.name,
-          rated_current: m.feeder.rated_current != null ? Number(m.feeder.rated_current) : null,
-          items: m.lines.map((l) => ({ id: l.item_id, category: l.item.category, frame: l.item.frame, amps: l.item.amps != null ? Number(l.item.amps) : null, description: l.item.description })),
+          rated_current:
+            m.feeder.rated_current != null
+              ? Number(m.feeder.rated_current)
+              : null,
+          items: m.lines.map((l) => ({
+            id: l.item_id,
+            category: l.item.category,
+            frame: l.item.frame,
+            amps: l.item.amps != null ? Number(l.item.amps) : null,
+            description: l.item.description,
+          })),
         })),
         ambientC: site.ambientC,
         altitudeM: site.altitudeM,
@@ -438,16 +676,29 @@ export function BomBuilder({
   // ref (updated on every render) rather than a useEffect dependency -- that
   // keeps the listener itself mounted once while always calling the freshest
   // save function instead of one captured from a stale render.
-  const keyboardSaveRef = useRef({ readOnly, dirty, saving, saveBlocked, handleSave: () => {} });
+  const keyboardSaveRef = useRef({
+    readOnly,
+    dirty,
+    saving,
+    saveBlocked,
+    handleSave: () => {},
+  });
   useEffect(() => {
-    keyboardSaveRef.current = { readOnly, dirty, saving, saveBlocked, handleSave };
+    keyboardSaveRef.current = {
+      readOnly,
+      dirty,
+      saving,
+      saveBlocked,
+      handleSave,
+    };
   });
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        const { readOnly, dirty, saving, saveBlocked, handleSave } = keyboardSaveRef.current;
+        const { readOnly, dirty, saving, saveBlocked, handleSave } =
+          keyboardSaveRef.current;
         if (!readOnly && dirty && !saving && !saveBlocked) handleSave();
       }
     }
@@ -455,9 +706,15 @@ export function BomBuilder({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const electrical = draft ? draft.modules.reduce((s, m) => s + m.qty * lineTotal(m.lines), 0) : 0;
-  const busbarsTotal = (busbarTakeoff?.total ?? 0) + (draft ? draft.busbars.reduce((s, b) => s + b.qty * b.rate, 0) : 0);
-  const enclosureTotal = (enclosureTakeoff?.total ?? 0) + (draft ? draft.enclosureLines.reduce((s, e) => s + e.qty * e.rate, 0) : 0);
+  const electrical = draft
+    ? draft.modules.reduce((s, m) => s + m.qty * lineTotal(m.lines), 0)
+    : 0;
+  const busbarsTotal =
+    (busbarTakeoff?.total ?? 0) +
+    (draft ? draft.busbars.reduce((s, b) => s + b.qty * b.rate, 0) : 0);
+  const enclosureTotal =
+    (enclosureTakeoff?.total ?? 0) +
+    (draft ? draft.enclosureLines.reduce((s, e) => s + e.qty * e.rate, 0) : 0);
   const rmTotal = electrical + busbarsTotal + enclosureTotal;
   const wiringAmt = draft ? (rmTotal * draft.laborWiring) / 100 : 0;
   const assemblyAmt = draft ? (rmTotal * draft.laborAssembly) / 100 : 0;
@@ -481,13 +738,32 @@ export function BomBuilder({
     // there's only ever one module per feeder, so adding it again just
     // bumps that module's qty instead of creating a second card for it.
     if (draft?.modules.some((m) => m.feeder.id === opt.id)) {
-      setDraft((d) => (d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === opt.id ? { ...m, qty: m.qty + 1 } : m)) } : d));
+      setDraft((d) =>
+        d
+          ? {
+              ...d,
+              modules: d.modules.map((m) =>
+                m.feeder.id === opt.id ? { ...m, qty: m.qty + 1 } : m,
+              ),
+            }
+          : d,
+      );
       return;
     }
-    const { data: feeder } = await supabase.from("feeders").select("*").eq("id", opt.id).single();
-    const { data: lines } = await supabase.from("feeder_items").select("*, item:item_master(*)").eq("feeder_id", opt.id).order("sort_order");
+    const { data: feeder } = await supabase
+      .from("feeders")
+      .select("*")
+      .eq("id", opt.id)
+      .single();
+    const { data: lines } = await supabase
+      .from("feeder_items")
+      .select("*, item:item_master(*)")
+      .eq("feeder_id", opt.id)
+      .order("sort_order");
     if (!feeder) return;
-    const draftLines = ((lines ?? []) as unknown as FeederItemWithDetails[]).map(toDraftLine);
+    const draftLines = (
+      (lines ?? []) as unknown as FeederItemWithDetails[]
+    ).map(toDraftLine);
     openModule(opt.id);
     setDraft((d) =>
       d
@@ -495,24 +771,47 @@ export function BomBuilder({
             ...d,
             modules: [
               ...d.modules,
-              { feeder: feeder as Feeder, baselineFeeder: feeder as Feeder, qty: 1, lines: draftLines, baselineLines: draftLines, baselinePlacements: [] },
+              {
+                feeder: feeder as Feeder,
+                baselineFeeder: feeder as Feeder,
+                qty: 1,
+                lines: draftLines,
+                baselineLines: draftLines,
+                baselinePlacements: [],
+              },
             ],
           }
-        : d
+        : d,
     );
   }
 
   async function handleAdHocCreated(feeder: Feeder & { cost: number }) {
-    const { data: lines } = await supabase.from("feeder_items").select("*, item:item_master(*)").eq("feeder_id", feeder.id).order("sort_order");
-    const draftLines = ((lines ?? []) as unknown as FeederItemWithDetails[]).map(toDraftLine);
+    const { data: lines } = await supabase
+      .from("feeder_items")
+      .select("*, item:item_master(*)")
+      .eq("feeder_id", feeder.id)
+      .order("sort_order");
+    const draftLines = (
+      (lines ?? []) as unknown as FeederItemWithDetails[]
+    ).map(toDraftLine);
     openModule(feeder.id);
     setDraft((d) =>
       d
         ? {
             ...d,
-            modules: [...d.modules, { feeder, baselineFeeder: feeder, qty: 1, lines: draftLines, baselineLines: draftLines, baselinePlacements: [] }],
+            modules: [
+              ...d.modules,
+              {
+                feeder,
+                baselineFeeder: feeder,
+                qty: 1,
+                lines: draftLines,
+                baselineLines: draftLines,
+                baselinePlacements: [],
+              },
+            ],
           }
-        : d
+        : d,
     );
   }
 
@@ -558,7 +857,7 @@ export function BomBuilder({
             sort_order: i,
             list_price_override: l.list_price_override,
             discount_pct_override: l.discount_pct_override,
-          }))
+          })),
         )
         .select("*, item:item_master(*)");
       if (linesError) {
@@ -570,7 +869,13 @@ export function BomBuilder({
     const vId = await ensureUnassignedVertical(supabase, sb.id);
     const { data: placement, error: placeError } = await supabase
       .from("placed_feeders")
-      .insert({ vertical_id: vId, feeder_id: newFeeder.id, qty: 1, tier_number: 1, sort_order: 0 })
+      .insert({
+        vertical_id: vId,
+        feeder_id: newFeeder.id,
+        qty: 1,
+        tier_number: 1,
+        sort_order: 0,
+      })
       .select("*")
       .single();
     if (placeError) {
@@ -606,71 +911,157 @@ export function BomBuilder({
       if (q == null) kept.push(l);
       else {
         moved.push({ ...l, id: newId(), qty: Math.min(q, l.qty) });
-        if (q < l.qty) kept.push({ ...l, qty: Math.round((l.qty - q) * 1000) / 1000 });
+        if (q < l.qty)
+          kept.push({ ...l, qty: Math.round((l.qty - q) * 1000) / 1000 });
       }
     }
     if (!moved.length || !kept.length) return;
-    const feeder: Feeder = { ...mod.feeder, id: newId(), name: newName, tag: null, is_library: false, switchboard_id: sb.id };
-    const newModule: DraftModule = { feeder, baselineFeeder: feeder, qty: mod.qty, lines: moved, baselineLines: [], baselinePlacements: [] };
+    const feeder: Feeder = {
+      ...mod.feeder,
+      id: newId(),
+      name: newName,
+      tag: null,
+      is_library: false,
+      switchboard_id: sb.id,
+    };
+    const newModule: DraftModule = {
+      feeder,
+      baselineFeeder: feeder,
+      qty: mod.qty,
+      lines: moved,
+      baselineLines: [],
+      baselinePlacements: [],
+    };
     openModule(feeder.id);
     setDraft((d) =>
       d
-        ? { ...d, modules: d.modules.flatMap((m) => (m.feeder.id === mod.feeder.id ? [{ ...m, lines: kept }, newModule] : [m])) }
-        : d
+        ? {
+            ...d,
+            modules: d.modules.flatMap((m) =>
+              m.feeder.id === mod.feeder.id
+                ? [{ ...m, lines: kept }, newModule]
+                : [m],
+            ),
+          }
+        : d,
     );
   }
 
   function deleteModule(mod: DraftModule) {
-    setDraft((d) => (d ? { ...d, modules: d.modules.filter((m) => m.feeder.id !== mod.feeder.id) } : d));
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            modules: d.modules.filter((m) => m.feeder.id !== mod.feeder.id),
+          }
+        : d,
+    );
   }
 
   async function promoteToLibrary(mod: DraftModule) {
     const itemIds = mod.lines.map((l) => l.item_id);
-    const duplicate = await findDuplicateLibraryFeeder(supabase, itemIds, mod.feeder.id);
+    const duplicate = await findDuplicateLibraryFeeder(
+      supabase,
+      itemIds,
+      mod.feeder.id,
+    );
     if (duplicate) {
-      alert(`A feeder with the same items already exists in the Feeder Library: "${duplicate.name}". Not creating a duplicate.`);
+      alert(
+        `A feeder with the same items already exists in the Feeder Library: "${duplicate.name}". Not creating a duplicate.`,
+      );
       return;
     }
     const patch: Partial<Feeder> = { is_library: true };
     if (!mod.feeder.tag) {
       patch.tag = computeFeederTag(
         mod.feeder.category ?? "",
-        mod.feeder.rated_current != null ? String(mod.feeder.rated_current) : "",
+        mod.feeder.rated_current != null
+          ? String(mod.feeder.rated_current)
+          : "",
         mod.lines[0]?.item.make ?? null,
         libraryFeedersAll,
-        mod.feeder.id
+        mod.feeder.id,
       );
     }
-    const { data, error } = await supabase.from("feeders").update(patch).eq("id", mod.feeder.id).select("id");
+    const { data, error } = await supabase
+      .from("feeders")
+      .update(patch)
+      .eq("id", mod.feeder.id)
+      .select("id");
     if (error) {
       alert(error.message);
       return;
     }
     if (!data || data.length === 0) {
-      alert("Could not save the feeder — it may have changed or been removed elsewhere. Refresh and try again.");
+      alert(
+        "Could not save the feeder — it may have changed or been removed elsewhere. Refresh and try again.",
+      );
       return;
     }
-    const flip = (m: DraftModule) => (m.feeder.id === mod.feeder.id ? { ...m, feeder: { ...m.feeder, ...patch }, baselineFeeder: { ...m.baselineFeeder, ...patch } } : m);
+    const flip = (m: DraftModule) =>
+      m.feeder.id === mod.feeder.id
+        ? {
+            ...m,
+            feeder: { ...m.feeder, ...patch },
+            baselineFeeder: { ...m.baselineFeeder, ...patch },
+          }
+        : m;
     setSaved((s) => (s ? { ...s, modules: s.modules.map(flip) } : s));
     setDraft((d) => (d ? { ...d, modules: d.modules.map(flip) } : d));
     setLibraryFeedersAll((prev) => [
       ...prev,
-      { id: mod.feeder.id, name: mod.feeder.name, category: mod.feeder.category, tag: patch.tag ?? mod.feeder.tag, rating_summary: mod.feeder.rating_summary },
+      {
+        id: mod.feeder.id,
+        name: mod.feeder.name,
+        category: mod.feeder.category,
+        tag: patch.tag ?? mod.feeder.tag,
+        rating_summary: mod.feeder.rating_summary,
+      },
     ]);
   }
 
   function updateModuleQty(mod: DraftModule, qty: number) {
-    setDraft((d) => (d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, qty } : m)) } : d));
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            modules: d.modules.map((m) =>
+              m.feeder.id === mod.feeder.id ? { ...m, qty } : m,
+            ),
+          }
+        : d,
+    );
   }
 
   function addLine(mod: DraftModule, item: ItemMaster, qty: number) {
-    const line: DraftLine = { id: newId(), item_id: item.id, item, qty, list_price_override: null, discount_pct_override: null };
-    setDraft((d) => (d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, lines: [...m.lines, line] } : m)) } : d));
+    const line: DraftLine = {
+      id: newId(),
+      item_id: item.id,
+      item,
+      qty,
+      list_price_override: null,
+      discount_pct_override: null,
+    };
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            modules: d.modules.map((m) =>
+              m.feeder.id === mod.feeder.id
+                ? { ...m, lines: [...m.lines, line] }
+                : m,
+            ),
+          }
+        : d,
+    );
   }
 
   // Bulk add from the "Paste item codes" dialog: an item already in the
   // feeder gets its qty increased instead of a second line.
-  function addLines(mod: DraftModule, entries: { item: ItemMaster; qty: number }[]) {
+  function addLines(
+    mod: DraftModule,
+    entries: { item: ItemMaster; qty: number }[],
+  ) {
     setDraft((d) => {
       if (!d) return d;
       return {
@@ -680,8 +1071,19 @@ export function BomBuilder({
           let lines = [...m.lines];
           for (const { item, qty } of entries) {
             const existing = lines.find((l) => l.item_id === item.id);
-            if (existing) lines = lines.map((l) => (l === existing ? { ...l, qty: l.qty + qty } : l));
-            else lines.push({ id: newId(), item_id: item.id, item, qty, list_price_override: null, discount_pct_override: null });
+            if (existing)
+              lines = lines.map((l) =>
+                l === existing ? { ...l, qty: l.qty + qty } : l,
+              );
+            else
+              lines.push({
+                id: newId(),
+                item_id: item.id,
+                item,
+                qty,
+                list_price_override: null,
+                discount_pct_override: null,
+              });
           }
           return { ...m, lines };
         }),
@@ -692,45 +1094,112 @@ export function BomBuilder({
   function updateLineQty(mod: DraftModule, lineId: string, qty: number) {
     setDraft((d) =>
       d
-        ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, lines: m.lines.map((l) => (l.id === lineId ? { ...l, qty } : l)) } : m)) }
-        : d
+        ? {
+            ...d,
+            modules: d.modules.map((m) =>
+              m.feeder.id === mod.feeder.id
+                ? {
+                    ...m,
+                    lines: m.lines.map((l) =>
+                      l.id === lineId ? { ...l, qty } : l,
+                    ),
+                  }
+                : m,
+            ),
+          }
+        : d,
     );
   }
 
-  function updateLineOverride(mod: DraftModule, lineId: string, field: "list_price_override" | "discount_pct_override", value: number | null) {
+  function updateLineOverride(
+    mod: DraftModule,
+    lineId: string,
+    field: "list_price_override" | "discount_pct_override",
+    value: number | null,
+  ) {
     setDraft((d) =>
       d
         ? {
             ...d,
             modules: d.modules.map((m) =>
-              m.feeder.id === mod.feeder.id ? { ...m, lines: m.lines.map((l) => (l.id === lineId ? { ...l, [field]: value } : l)) } : m
+              m.feeder.id === mod.feeder.id
+                ? {
+                    ...m,
+                    lines: m.lines.map((l) =>
+                      l.id === lineId ? { ...l, [field]: value } : l,
+                    ),
+                  }
+                : m,
             ),
           }
-        : d
+        : d,
     );
   }
 
   function removeLine(mod: DraftModule, lineId: string) {
     setDraft((d) =>
-      d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, lines: m.lines.filter((l) => l.id !== lineId) } : m)) } : d
+      d
+        ? {
+            ...d,
+            modules: d.modules.map((m) =>
+              m.feeder.id === mod.feeder.id
+                ? { ...m, lines: m.lines.filter((l) => l.id !== lineId) }
+                : m,
+            ),
+          }
+        : d,
     );
   }
 
-  function renameFeeder(mod: DraftModule, field: "name" | "tag" | "device_type" | "category", value: string) {
+  function renameFeeder(
+    mod: DraftModule,
+    field: "name" | "tag" | "device_type" | "category",
+    value: string,
+  ) {
     setDraft((d) =>
-      d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, feeder: { ...m.feeder, [field]: value || null } } : m)) } : d
+      d
+        ? {
+            ...d,
+            modules: d.modules.map((m) =>
+              m.feeder.id === mod.feeder.id
+                ? { ...m, feeder: { ...m.feeder, [field]: value || null } }
+                : m,
+            ),
+          }
+        : d,
     );
   }
 
-  function updateFeederRating(mod: DraftModule, field: "rated_current" | "rated_kw", value: string) {
+  function updateFeederRating(
+    mod: DraftModule,
+    field: "rated_current" | "rated_kw",
+    value: string,
+  ) {
     const num = value.trim() ? Number(value) : null;
     setDraft((d) =>
-      d ? { ...d, modules: d.modules.map((m) => (m.feeder.id === mod.feeder.id ? { ...m, feeder: { ...m.feeder, [field]: num } } : m)) } : d
+      d
+        ? {
+            ...d,
+            modules: d.modules.map((m) =>
+              m.feeder.id === mod.feeder.id
+                ? { ...m, feeder: { ...m.feeder, [field]: num } }
+                : m,
+            ),
+          }
+        : d,
     );
   }
 
-  function updateLaborPct(field: "labor_wiring_pct" | "labor_assembly_pct" | "labor_testing_pct", value: number) {
-    const key = field === "labor_wiring_pct" ? "laborWiring" : field === "labor_assembly_pct" ? "laborAssembly" : "laborTesting";
+  function updateLaborPct(
+    field: "labor_wiring_pct" | "labor_assembly_pct" | "labor_testing_pct",
+    value: number,
+  ) {
+    const key =
+      field === "labor_wiring_pct"
+        ? "laborWiring"
+        : field === "labor_assembly_pct"
+          ? "laborAssembly"
+          : "laborTesting";
     setDraft((d) => (d ? { ...d, [key]: value } : d));
   }
 
@@ -741,31 +1210,84 @@ export function BomBuilder({
             ...d,
             modules: d.modules.map((m) => ({
               ...m,
-              lines: m.lines.map((l) => (l.item.category === category ? { ...l, discount_pct_override: discountPct } : l)),
+              lines: m.lines.map((l) =>
+                l.item.category === category
+                  ? { ...l, discount_pct_override: discountPct }
+                  : l,
+              ),
             })),
           }
-        : d
+        : d,
     );
   }
 
   function addBusbar() {
-    setDraft((d) => (d ? { ...d, busbars: [...d.busbars, { id: newId(), description: "New busbar run", qty: 1, rate: 0 }] } : d));
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            busbars: [
+              ...d.busbars,
+              { id: newId(), description: "New busbar run", qty: 1, rate: 0 },
+            ],
+          }
+        : d,
+    );
   }
   function updateBusbar(id: string, patch: Partial<DraftBusbar>) {
-    setDraft((d) => (d ? { ...d, busbars: d.busbars.map((b) => (b.id === id ? { ...b, ...patch } : b)) } : d));
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            busbars: d.busbars.map((b) =>
+              b.id === id ? { ...b, ...patch } : b,
+            ),
+          }
+        : d,
+    );
   }
   function removeBusbar(id: string) {
-    setDraft((d) => (d ? { ...d, busbars: d.busbars.filter((b) => b.id !== id) } : d));
+    setDraft((d) =>
+      d ? { ...d, busbars: d.busbars.filter((b) => b.id !== id) } : d,
+    );
   }
 
   function addEnclosureLine() {
-    setDraft((d) => (d ? { ...d, enclosureLines: [...d.enclosureLines, { id: newId(), description: "New enclosure line", qty: 1, rate: 0 }] } : d));
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            enclosureLines: [
+              ...d.enclosureLines,
+              {
+                id: newId(),
+                description: "New enclosure line",
+                qty: 1,
+                rate: 0,
+              },
+            ],
+          }
+        : d,
+    );
   }
   function updateEnclosureLine(id: string, patch: Partial<DraftEnclosure>) {
-    setDraft((d) => (d ? { ...d, enclosureLines: d.enclosureLines.map((e) => (e.id === id ? { ...e, ...patch } : e)) } : d));
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            enclosureLines: d.enclosureLines.map((e) =>
+              e.id === id ? { ...e, ...patch } : e,
+            ),
+          }
+        : d,
+    );
   }
   function removeEnclosureLine(id: string) {
-    setDraft((d) => (d ? { ...d, enclosureLines: d.enclosureLines.filter((e) => e.id !== id) } : d));
+    setDraft((d) =>
+      d
+        ? { ...d, enclosureLines: d.enclosureLines.filter((e) => e.id !== id) }
+        : d,
+    );
   }
 
   function handleCancel() {
@@ -778,16 +1300,42 @@ export function BomBuilder({
     if (!sb || !draft || !saved || saveBlocked) return;
     setSaving(true);
     try {
-      const laborPatch: Partial<Pick<Switchboard, "labor_wiring_pct" | "labor_assembly_pct" | "labor_testing_pct">> = {};
-      if (draft.laborWiring !== saved.laborWiring) laborPatch.labor_wiring_pct = draft.laborWiring;
-      if (draft.laborAssembly !== saved.laborAssembly) laborPatch.labor_assembly_pct = draft.laborAssembly;
-      if (draft.laborTesting !== saved.laborTesting) laborPatch.labor_testing_pct = draft.laborTesting;
+      const laborPatch: Partial<
+        Pick<
+          Switchboard,
+          "labor_wiring_pct" | "labor_assembly_pct" | "labor_testing_pct"
+        >
+      > = {};
+      if (draft.laborWiring !== saved.laborWiring)
+        laborPatch.labor_wiring_pct = draft.laborWiring;
+      if (draft.laborAssembly !== saved.laborAssembly)
+        laborPatch.labor_assembly_pct = draft.laborAssembly;
+      if (draft.laborTesting !== saved.laborTesting)
+        laborPatch.labor_testing_pct = draft.laborTesting;
       if (Object.keys(laborPatch).length) {
-        await updateChecked(supabase, "switchboards", sb.id, laborPatch, "switchboard");
+        await updateChecked(
+          supabase,
+          "switchboards",
+          sb.id,
+          laborPatch,
+          "switchboard",
+        );
       }
 
-      await saveLineTable(supabase, "switchboard_busbars", sb.id, saved.busbars, draft.busbars);
-      await saveLineTable(supabase, "switchboard_enclosure_lines", sb.id, saved.enclosureLines, draft.enclosureLines);
+      await saveLineTable(
+        supabase,
+        "switchboard_busbars",
+        sb.id,
+        saved.busbars,
+        draft.busbars,
+      );
+      await saveLineTable(
+        supabase,
+        "switchboard_enclosure_lines",
+        sb.id,
+        saved.enclosureLines,
+        draft.enclosureLines,
+      );
 
       const savedFeederIds = new Set(saved.modules.map((m) => m.feeder.id));
       const draftFeederIds = new Set(draft.modules.map((m) => m.feeder.id));
@@ -795,17 +1343,31 @@ export function BomBuilder({
       for (const m of saved.modules) {
         if (draftFeederIds.has(m.feeder.id)) continue;
         for (const p of m.baselinePlacements) {
-          await deleteChecked(supabase, "placed_feeders", p.id, "feeder placement");
+          await deleteChecked(
+            supabase,
+            "placed_feeders",
+            p.id,
+            "feeder placement",
+          );
         }
         if (m.feeder.switchboard_id === sb.id && !m.feeder.is_library) {
-          await deleteChecked(supabase, "feeders", m.feeder.id, "custom feeder");
+          await deleteChecked(
+            supabase,
+            "feeders",
+            m.feeder.id,
+            "custom feeder",
+          );
         }
       }
 
       let currentUserId: string | undefined;
       let cachedUnassignedId: string | null = null;
       async function unassignedVerticalId() {
-        if (!cachedUnassignedId) cachedUnassignedId = await ensureUnassignedVertical(supabase, switchboardId);
+        if (!cachedUnassignedId)
+          cachedUnassignedId = await ensureUnassignedVertical(
+            supabase,
+            switchboardId,
+          );
         return cachedUnassignedId;
       }
 
@@ -834,7 +1396,12 @@ export function BomBuilder({
           m.lines.some((l) => {
             if (l.id.startsWith("new-")) return true;
             const prior = m.baselineLines.find((x) => x.id === l.id);
-            return !prior || prior.qty !== l.qty || prior.list_price_override !== l.list_price_override || prior.discount_pct_override !== l.discount_pct_override;
+            return (
+              !prior ||
+              prior.qty !== l.qty ||
+              prior.list_price_override !== l.list_price_override ||
+              prior.discount_pct_override !== l.discount_pct_override
+            );
           });
 
         let feederId = m.feeder.id;
@@ -868,7 +1435,10 @@ export function BomBuilder({
             })
             .select("id")
             .single();
-          if (createError || !newFeeder) throw createError ?? new Error("Could not create the split feeder.");
+          if (createError || !newFeeder)
+            throw (
+              createError ?? new Error("Could not create the split feeder.")
+            );
           feederId = (newFeeder as { id: string }).id;
         }
         if (m.feeder.is_library && (feederFieldsChanged || linesChanged)) {
@@ -900,20 +1470,23 @@ export function BomBuilder({
             })
             .select("id")
             .single();
-          if (forkError || !newFeeder) throw forkError ?? new Error("Could not save customized feeder.");
+          if (forkError || !newFeeder)
+            throw forkError ?? new Error("Could not save customized feeder.");
           feederId = (newFeeder as { id: string }).id;
           forked = true;
           if (m.lines.length) {
-            const { error: linesError } = await supabase.from("feeder_items").insert(
-              m.lines.map((l, i) => ({
-                feeder_id: feederId,
-                item_id: l.item_id,
-                qty: l.qty,
-                sort_order: i,
-                list_price_override: l.list_price_override,
-                discount_pct_override: l.discount_pct_override,
-              }))
-            );
+            const { error: linesError } = await supabase
+              .from("feeder_items")
+              .insert(
+                m.lines.map((l, i) => ({
+                  feeder_id: feederId,
+                  item_id: l.item_id,
+                  qty: l.qty,
+                  sort_order: i,
+                  list_price_override: l.list_price_override,
+                  discount_pct_override: l.discount_pct_override,
+                })),
+              );
             if (linesError) throw linesError;
           }
         }
@@ -922,17 +1495,31 @@ export function BomBuilder({
           const vId = await unassignedVerticalId();
           const { error } = await supabase
             .from("placed_feeders")
-            .insert({ vertical_id: vId, feeder_id: feederId, qty: m.qty, tier_number: 1, sort_order: 0 });
+            .insert({
+              vertical_id: vId,
+              feeder_id: feederId,
+              qty: m.qty,
+              tier_number: 1,
+              sort_order: 0,
+            });
           if (error) throw error;
         } else {
-          const priorModule = saved.modules.find((x) => x.feeder.id === m.feeder.id)!;
+          const priorModule = saved.modules.find(
+            (x) => x.feeder.id === m.feeder.id,
+          )!;
 
           if (forked) {
             // Every existing placement of the original library feeder --
             // wherever GA has them, across however many bays -- now belongs
             // to the forked custom feeder instead.
             for (const p of priorModule.baselinePlacements) {
-              await updateChecked(supabase, "placed_feeders", p.id, { feeder_id: feederId }, "feeder placement");
+              await updateChecked(
+                supabase,
+                "placed_feeders",
+                p.id,
+                { feeder_id: feederId },
+                "feeder placement",
+              );
             }
           }
 
@@ -941,19 +1528,36 @@ export function BomBuilder({
           // rather than writing one row's qty, preferring the unassigned
           // bucket (increase tops it up / decrease drains it first) before
           // touching anything already spatially placed in GA.
-          const savedQty = priorModule.baselinePlacements.reduce((s, p) => s + p.qty, 0);
+          const savedQty = priorModule.baselinePlacements.reduce(
+            (s, p) => s + p.qty,
+            0,
+          );
           const delta = m.qty - savedQty;
           if (delta !== 0) {
             const vId = await unassignedVerticalId();
-            const ordered = [...priorModule.baselinePlacements].sort((a, b) => (a.vertical_id === vId ? -1 : b.vertical_id === vId ? 1 : 0));
+            const ordered = [...priorModule.baselinePlacements].sort((a, b) =>
+              a.vertical_id === vId ? -1 : b.vertical_id === vId ? 1 : 0,
+            );
             if (delta > 0) {
               const target = ordered.find((p) => p.vertical_id === vId);
               if (target) {
-                await updateChecked(supabase, "placed_feeders", target.id, { qty: target.qty + delta }, "feeder placement");
+                await updateChecked(
+                  supabase,
+                  "placed_feeders",
+                  target.id,
+                  { qty: target.qty + delta },
+                  "feeder placement",
+                );
               } else {
                 const { error } = await supabase
                   .from("placed_feeders")
-                  .insert({ vertical_id: vId, feeder_id: feederId, qty: delta, tier_number: 1, sort_order: 0 });
+                  .insert({
+                    vertical_id: vId,
+                    feeder_id: feederId,
+                    qty: delta,
+                    tier_number: 1,
+                    sort_order: 0,
+                  });
                 if (error) throw error;
               }
             } else {
@@ -963,9 +1567,20 @@ export function BomBuilder({
                 const take = Math.min(remaining, p.qty);
                 const nextQty = p.qty - take;
                 if (nextQty <= 0) {
-                  await deleteChecked(supabase, "placed_feeders", p.id, "feeder placement");
+                  await deleteChecked(
+                    supabase,
+                    "placed_feeders",
+                    p.id,
+                    "feeder placement",
+                  );
                 } else {
-                  await updateChecked(supabase, "placed_feeders", p.id, { qty: nextQty }, "feeder placement");
+                  await updateChecked(
+                    supabase,
+                    "placed_feeders",
+                    p.id,
+                    { qty: nextQty },
+                    "feeder placement",
+                  );
                 }
                 remaining -= take;
               }
@@ -974,20 +1589,49 @@ export function BomBuilder({
 
           if (!forked) {
             const feederPatch: Partial<
-              Pick<Feeder, "name" | "tag" | "category" | "description" | "rated_current" | "pole_config" | "breaking_capacity" | "device_type" | "rated_kw">
+              Pick<
+                Feeder,
+                | "name"
+                | "tag"
+                | "category"
+                | "description"
+                | "rated_current"
+                | "pole_config"
+                | "breaking_capacity"
+                | "device_type"
+                | "rated_kw"
+              >
             > & { updated_at?: string } = {};
-            if (priorModule.feeder.name !== m.feeder.name) feederPatch.name = m.feeder.name;
-            if (priorModule.feeder.tag !== m.feeder.tag) feederPatch.tag = m.feeder.tag;
-            if (priorModule.feeder.category !== m.feeder.category) feederPatch.category = m.feeder.category;
-            if (priorModule.feeder.description !== m.feeder.description) feederPatch.description = m.feeder.description;
-            if (priorModule.feeder.rated_current !== m.feeder.rated_current) feederPatch.rated_current = m.feeder.rated_current;
-            if (priorModule.feeder.pole_config !== m.feeder.pole_config) feederPatch.pole_config = m.feeder.pole_config;
-            if (priorModule.feeder.breaking_capacity !== m.feeder.breaking_capacity) feederPatch.breaking_capacity = m.feeder.breaking_capacity;
-            if (priorModule.feeder.device_type !== m.feeder.device_type) feederPatch.device_type = m.feeder.device_type;
-            if (priorModule.feeder.rated_kw !== m.feeder.rated_kw) feederPatch.rated_kw = m.feeder.rated_kw;
+            if (priorModule.feeder.name !== m.feeder.name)
+              feederPatch.name = m.feeder.name;
+            if (priorModule.feeder.tag !== m.feeder.tag)
+              feederPatch.tag = m.feeder.tag;
+            if (priorModule.feeder.category !== m.feeder.category)
+              feederPatch.category = m.feeder.category;
+            if (priorModule.feeder.description !== m.feeder.description)
+              feederPatch.description = m.feeder.description;
+            if (priorModule.feeder.rated_current !== m.feeder.rated_current)
+              feederPatch.rated_current = m.feeder.rated_current;
+            if (priorModule.feeder.pole_config !== m.feeder.pole_config)
+              feederPatch.pole_config = m.feeder.pole_config;
+            if (
+              priorModule.feeder.breaking_capacity !==
+              m.feeder.breaking_capacity
+            )
+              feederPatch.breaking_capacity = m.feeder.breaking_capacity;
+            if (priorModule.feeder.device_type !== m.feeder.device_type)
+              feederPatch.device_type = m.feeder.device_type;
+            if (priorModule.feeder.rated_kw !== m.feeder.rated_kw)
+              feederPatch.rated_kw = m.feeder.rated_kw;
             if (Object.keys(feederPatch).length) {
               feederPatch.updated_at = new Date().toISOString();
-              await updateChecked(supabase, "feeders", m.feeder.id, feederPatch, "feeder");
+              await updateChecked(
+                supabase,
+                "feeders",
+                m.feeder.id,
+                feederPatch,
+                "feeder",
+              );
             }
           }
         }
@@ -996,7 +1640,12 @@ export function BomBuilder({
           const draftLineIds = new Set(m.lines.map((l) => l.id));
           for (const l of m.baselineLines) {
             if (!draftLineIds.has(l.id)) {
-              await deleteChecked(supabase, "feeder_items", l.id, "feeder line");
+              await deleteChecked(
+                supabase,
+                "feeder_items",
+                l.id,
+                "feeder line",
+              );
             }
           }
           for (const [i, l] of m.lines.entries()) {
@@ -1022,8 +1671,13 @@ export function BomBuilder({
                   supabase,
                   "feeder_items",
                   l.id,
-                  { qty: l.qty, sort_order: i, list_price_override: l.list_price_override, discount_pct_override: l.discount_pct_override },
-                  "feeder line"
+                  {
+                    qty: l.qty,
+                    sort_order: i,
+                    list_price_override: l.list_price_override,
+                    discount_pct_override: l.discount_pct_override,
+                  },
+                  "feeder line",
                 );
               }
             }
@@ -1049,7 +1703,9 @@ export function BomBuilder({
   }
 
   if (loading || !sb || !draft) {
-    return <div className="p-8 text-sm text-on-surface-variant">Loading...</div>;
+    return (
+      <div className="p-8 text-sm text-on-surface-variant">Loading...</div>
+    );
   }
 
   const badges = [
@@ -1068,50 +1724,121 @@ export function BomBuilder({
     if (m.feeder.is_library) placedCounts.set(m.feeder.id, m.qty);
   }
   const bomCategories = Array.from(
-    new Set(draft.modules.flatMap((m) => m.lines.map((l) => l.item.category)).filter((c): c is string => !!c))
+    new Set(
+      draft.modules
+        .flatMap((m) => m.lines.map((l) => l.item.category))
+        .filter((c): c is string => !!c),
+    ),
   ).sort();
 
+  const alertCount =
+    ampsIssues.length +
+    switchgearLow.length +
+    (incomerWarning ? 1 : 0) +
+    kaWarnings.length +
+    formulaWarnings.length +
+    (siteMissing ? 0 : derating.length);
+  const siteReasons = siteDeratingReasons(site.ambientC, site.altitudeM);
+  const siteAlert = siteMissing
+    ? "Site altitude / ambient temperature not set in Project Detail — breaker derating can't be checked"
+    : siteReasons.length > 0
+      ? `Non-standard site conditions: ${siteReasons.join("; ")} — breakers derate`
+      : null;
+
   return (
-    <div className="space-y-space-lg p-margin-lg">
+    <div className="space-y-space-lg px-margin-lg pb-margin-lg">
       <SavingOverlay show={saving} />
-      <div className="flex flex-wrap items-start justify-between gap-space-md">
-        <div>
-          <h1 className="font-display text-headline-lg text-on-surface">
-            BOM Builder — {sb.tag}
-            {sb.title ? `: ${sb.title}` : ""}
-          </h1>
-          {badges.length > 0 && (
-            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-              {badges.map((b) => (
-                <span key={b} className="rounded bg-surface-container-low px-1.5 py-0.5 font-label-md text-label-md text-on-surface-variant">
-                  {b}
-                </span>
-              ))}
-            </div>
+      {/* row3: alerts, BOM actions, add feeders, bulk discount */}
+      <div className="sticky top-0 z-20 -mx-margin-lg flex flex-wrap items-center gap-2 border-b border-surface-container-high bg-surface-container-lowest px-margin-lg py-2 shadow-xs">
+        {alertCount > 0 ? (
+          <button
+            onClick={() => setAlertsOpen(true)}
+            title={`${alertCount} alert${alertCount === 1 ? "" : "s"} — click to view`}
+            className="relative flex h-8 w-8 items-center justify-center rounded-full text-amber-600 hover:bg-amber-50"
+          >
+            <Icon name="warning" size={20} className="alert-glow" />
+            <span className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-amber-500 px-1 text-center text-[10px] font-bold leading-4 text-white">
+              {alertCount}
+            </span>
+          </button>
+        ) : (
+          <span
+            title="No alerts"
+            className="flex h-8 w-8 items-center justify-center text-emerald-600"
+          >
+            <Icon name="check_circle" size={18} />
+          </span>
+        )}
+        {siteAlert && (
+          <button
+            onClick={() => setAlertsOpen(true)}
+            title={siteAlert}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-amber-700 hover:bg-amber-50"
+          >
+            <Icon name="device_thermostat" size={20} />
+          </button>
+        )}
+        <span className="mx-1 h-5 w-px bg-surface-container-high" />
+        {!readOnly && (
+          <>
+            <AddFromLibrary
+              options={libraryFeedersAll}
+              placedCounts={placedCounts}
+              onSelect={addLibraryFeeder}
+            />
+            <AdHocFeederPanel
+              switchboardId={sb.id}
+              allItems={items}
+              onCreated={handleAdHocCreated}
+            />
+            {bomCategories.length > 0 && (
+              <CategoryDiscountTool
+                categories={bomCategories}
+                onApply={applyCategoryDiscount}
+              />
+            )}
+          </>
+        )}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {!readOnly && dirty && (
+            <span className="text-[12px] text-amber-600">Unsaved changes</span>
           )}
-        </div>
-        <div className="flex items-center gap-space-sm">
-          {!readOnly && dirty && <span className="font-body-sm text-body-sm text-amber-600">Unsaved changes</span>}
-          {!readOnly && !dirty && <span className="font-body-sm text-body-sm text-tertiary">Saved</span>}
+          {!readOnly && !dirty && (
+            <span className="text-[12px] text-tertiary">Saved</span>
+          )}
+          <button
+            onClick={() => setCostOpen(true)}
+            className="btn btn-outline btn-sm"
+          >
+            Cost breakdown
+          </button>
           <button
             disabled
             title="Export coming soon"
-            className="flex items-center gap-1 rounded bg-surface-container-low px-space-md py-space-sm font-label-md text-label-md text-on-surface-variant opacity-60"
+            className="btn btn-outline btn-sm opacity-60"
           >
-            <Icon name="file_save" size={16} /> Export BOM (PDF/XLSX)
+            Export BOM
           </button>
-          <RefreshItemsButton items={items} onRefreshed={setItems} lines={pricedLines} onPriceDecisions={applyPriceDecisions} />
+          <RefreshItemsButton
+            items={items}
+            onRefreshed={setItems}
+            lines={pricedLines}
+            onPriceDecisions={applyPriceDecisions}
+          />
           {!readOnly && (
             <>
-              <button onClick={handleCancel} disabled={!dirty || saving} className="btn btn-outline">
+              <button
+                onClick={handleCancel}
+                disabled={!dirty || saving}
+                className="btn btn-outline btn-sm"
+              >
                 Cancel
               </button>
               <button
                 onClick={handleSave}
                 disabled={!dirty || saving || saveBlocked}
-                className="btn btn-primary"
+                className="btn btn-primary btn-sm"
               >
-                <Icon name="save" size={16} />
                 {saving ? "Saving..." : "Save Changes"}
               </button>
             </>
@@ -1122,133 +1849,228 @@ export function BomBuilder({
       {readOnly && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-200/80 bg-amber-50/60 px-3 py-2 text-xs text-amber-800">
           <Icon name="visibility" size={15} />
-          {revisionArchived ? "This revision is archived — read only." : "This switchboard is locked by another user — read only until it's released."}
+          {revisionArchived
+            ? "This revision is archived — read only."
+            : "This switchboard is locked by another user — read only until it's released."}
         </div>
       )}
 
-      {ampsIssues.length > 0 && sb && (
-        <div className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-4 py-3 text-sm text-on-surface">
-          <div className="flex items-center gap-2 font-semibold text-amber-800">
-            <Icon name="warning" size={18} /> Warning: switchboard rating is below its feeders — you can still save
+      {alertsOpen && (
+        <Modal
+          title={`Alerts — ${sb.tag}`}
+          onClose={() => setAlertsOpen(false)}
+          width="max-w-3xl"
+        >
+          <div className="space-y-space-sm">
+            {siteAlert && (
+              <div className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-4 py-2 text-sm text-amber-900">
+                <p className="flex items-center gap-2 font-semibold">
+                  <Icon name="device_thermostat" size={18} /> {siteAlert}
+                </p>
+                <p className="mt-1 text-xs text-on-surface-variant">
+                  Set or check them in Project Detail.{" "}
+                  <a
+                    href="/how-it-works#derating"
+                    className="text-primary hover:underline"
+                  >
+                    How derating works
+                  </a>
+                </p>
+              </div>
+            )}
+            {ampsIssues.length > 0 && sb && (
+              <div className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-4 py-3 text-sm text-on-surface">
+                <div className="flex items-center gap-2 font-semibold text-amber-800">
+                  <Icon name="warning" size={18} /> Warning: switchboard rating
+                  is below its feeders — you can still save
+                </div>
+                <p className="mt-1">
+                  {sb.tag} is rated <b>{sb.amps}A</b>, but{" "}
+                  {ampsIssues.map((f, i) => (
+                    <span key={f.id}>
+                      {i > 0 ? ", " : ""}
+                      <b>{f.name}</b> is {f.rated_current}A
+                    </span>
+                  ))}
+                  .
+                </p>
+                <p className="mt-1 text-on-surface-variant">
+                  If that isn&apos;t intended: raise the switchboard&apos;s Amps
+                  to at least{" "}
+                  <b>
+                    {nextStandardAmps(
+                      Math.max(...ampsIssues.map((f) => f.rated_current!)),
+                    )}
+                    A
+                  </b>{" "}
+                  in Project Detail → Switchboards (save there first), or lower
+                  the rating of / replace the feeder
+                  {ampsIssues.length > 1 ? "s" : ""} highlighted below.
+                </p>
+              </div>
+            )}
+
+            {(switchgearLow.length > 0 || incomerWarning) && (
+              <div className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-4 py-2 text-sm text-on-surface">
+                <p className="flex items-center gap-2 font-semibold text-amber-800">
+                  <Icon name="warning" size={18} /> Warning: switchgear rating
+                  check
+                </p>
+                <ul className="mt-1 list-disc pl-6 text-xs">
+                  {incomerWarning && <li>{incomerWarning}</li>}
+                  {switchgearLow.map((w) => (
+                    <li key={w.id}>
+                      <b>{w.feeder}</b> is rated {w.rating}A but its switchgear{" "}
+                      <b>{w.item}</b> is only {w.amps}A — use one of at least{" "}
+                      {w.rating}A.
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-xs text-on-surface-variant">
+                  You can still save.
+                </p>
+              </div>
+            )}
+
+            {kaWarnings.length > 0 && sb && (
+              <div className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-4 py-2 text-sm text-on-surface">
+                <button
+                  onClick={() => setWarningsOpen((o) => !o)}
+                  className="flex w-full items-center gap-2 text-left font-semibold text-amber-800"
+                >
+                  <Icon name="warning" size={18} /> Warning: {kaWarnings.length}{" "}
+                  item{kaWarnings.length === 1 ? "" : "s"} rated below the
+                  switchboard&apos;s {sb.ka}kA fault level
+                  <span className="ml-auto flex items-center gap-1 text-xs font-medium">
+                    {warningsOpen ? "Hide" : "Show"}{" "}
+                    <Icon
+                      name={warningsOpen ? "expand_less" : "expand_more"}
+                      size={16}
+                    />
+                  </span>
+                </button>
+                {warningsOpen && (
+                  <>
+                    <ul className="mt-1 list-disc pl-6 text-xs">
+                      {kaWarnings.map((w) => (
+                        <li key={w.key}>
+                          <b>{w.item}</b> ({w.ka}kA) in {w.feeder}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-1 text-xs text-on-surface-variant">
+                      You can still save. If these aren&apos;t protected by an
+                      upstream device (cascading), pick a higher-kA item or
+                      check the switchboard&apos;s kA in Project Detail.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+
+            {formulaWarnings.length > 0 && (
+              <div className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-4 py-2 text-sm text-on-surface">
+                <p className="flex items-center gap-2 font-semibold text-amber-800">
+                  <Icon name="warning" size={18} /> Warning: ABB&apos;s Formula
+                  series ACB / MCCB is discouraged in ArTuK panels
+                </p>
+                <ul className="mt-1 list-disc pl-6 text-xs">
+                  {formulaWarnings.map((w) => (
+                    <li key={w.key}>
+                      <b>{w.item}</b> in {w.feeder}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-xs text-on-surface-variant">
+                  You can still save. Prefer Emax 2 ACBs and Tmax XT / T MCCBs.
+                </p>
+              </div>
+            )}
+
+            {derating.length > 0 && !siteMissing && (
+              <div className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-4 py-2 text-sm text-on-surface">
+                <p className="flex items-center gap-2 font-semibold text-amber-800">
+                  <Icon name="device_thermostat" size={18} />
+                  {siteMissing
+                    ? "Site altitude / ambient temperature not set — breaker derating can't be checked"
+                    : `Warning: ${derating.length} breaker${derating.length === 1 ? "" : "s"} derated below what the feeder needs (site ${site.ambientC} °C, ${site.altitudeM} m)`}
+                </p>
+                {siteMissing ? (
+                  <p className="mt-1 text-xs text-on-surface-variant">
+                    Enter them in Project Detail.
+                  </p>
+                ) : (
+                  <>
+                    <ul className="mt-1 list-disc pl-6 text-xs">
+                      {derating.map((w) => (
+                        <li key={w.key}>{deratingMessage(w)}</li>
+                      ))}
+                    </ul>
+                    <p className="mt-1 text-xs text-on-surface-variant">
+                      You can still save. Covers ABB Emax 2, Formula Air and
+                      Tmax XT.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+            {alertCount === 0 && !siteAlert && (
+              <p className="text-sm text-secondary">
+                No alerts for this switchboard.
+              </p>
+            )}
           </div>
-          <p className="mt-1">
-            {sb.tag} is rated <b>{sb.amps}A</b>, but{" "}
-            {ampsIssues.map((f, i) => (
-              <span key={f.id}>
-                {i > 0 ? ", " : ""}
-                <b>{f.name}</b> is {f.rated_current}A
-              </span>
-            ))}
-            .
-          </p>
-          <p className="mt-1 text-on-surface-variant">
-            If that isn&apos;t intended: raise the switchboard&apos;s Amps to at least <b>{nextStandardAmps(Math.max(...ampsIssues.map((f) => f.rated_current!)))}A</b> in Project
-            Detail → Switchboards (save there first), or lower the rating of / replace the feeder{ampsIssues.length > 1 ? "s" : ""} highlighted below.
-          </p>
-        </div>
+        </Modal>
       )}
 
-      {(switchgearLow.length > 0 || incomerWarning) && (
-        <div className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-4 py-2 text-sm text-on-surface">
-          <p className="flex items-center gap-2 font-semibold text-amber-800">
-            <Icon name="warning" size={18} /> Warning: switchgear rating check
-          </p>
-          <ul className="mt-1 list-disc pl-6 text-xs">
-            {incomerWarning && <li>{incomerWarning}</li>}
-            {switchgearLow.map((w) => (
-              <li key={w.id}>
-                <b>{w.feeder}</b> is rated {w.rating}A but its switchgear <b>{w.item}</b> is only {w.amps}A — use one of at least {w.rating}A.
-              </li>
-            ))}
-          </ul>
-          <p className="mt-1 text-xs text-on-surface-variant">You can still save.</p>
-        </div>
-      )}
-
-      {kaWarnings.length > 0 && sb && (
-        <div className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-4 py-2 text-sm text-on-surface">
-          <button onClick={() => setWarningsOpen((o) => !o)} className="flex w-full items-center gap-2 text-left font-semibold text-amber-800">
-            <Icon name="warning" size={18} /> Warning: {kaWarnings.length} item{kaWarnings.length === 1 ? "" : "s"} rated below the switchboard&apos;s {sb.ka}kA
-            fault level
-            <span className="ml-auto flex items-center gap-1 text-xs font-medium">
-              {warningsOpen ? "Hide" : "Show"} <Icon name={warningsOpen ? "expand_less" : "expand_more"} size={16} />
-            </span>
-          </button>
-          {warningsOpen && (
-          <>
-          <ul className="mt-1 list-disc pl-6 text-xs">
-            {kaWarnings.map((w) => (
-              <li key={w.key}>
-                <b>{w.item}</b> ({w.ka}kA) in {w.feeder}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-1 text-xs text-on-surface-variant">
-            You can still save. If these aren&apos;t protected by an upstream device (cascading), pick a higher-kA item or check the switchboard&apos;s kA in Project Detail.
-          </p>
-          </>
-          )}
-        </div>
-      )}
-
-      {formulaWarnings.length > 0 && (
-        <div className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-4 py-2 text-sm text-on-surface">
-          <p className="flex items-center gap-2 font-semibold text-amber-800">
-            <Icon name="warning" size={18} /> Warning: ABB&apos;s Formula series ACB / MCCB is discouraged in ArTuK panels
-          </p>
-          <ul className="mt-1 list-disc pl-6 text-xs">
-            {formulaWarnings.map((w) => (
-              <li key={w.key}>
-                <b>{w.item}</b> in {w.feeder}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-1 text-xs text-on-surface-variant">You can still save. Prefer Emax 2 ACBs and Tmax XT / T MCCBs.</p>
-        </div>
-      )}
-
-      {(derating.length > 0 || siteMissing) && (
-        <div className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-4 py-2 text-sm text-on-surface">
-          <p className="flex items-center gap-2 font-semibold text-amber-800">
-            <Icon name="device_thermostat" size={18} />
-            {siteMissing
-              ? "Site altitude / ambient temperature not set — breaker derating can't be checked"
-              : `Warning: ${derating.length} breaker${derating.length === 1 ? "" : "s"} derated below what the feeder needs (site ${site.ambientC} °C, ${site.altitudeM} m)`}
-          </p>
-          {siteMissing ? (
-            <p className="mt-1 text-xs text-on-surface-variant">Enter them in Project Detail.</p>
-          ) : (
-            <>
-              <ul className="mt-1 list-disc pl-6 text-xs">
-                {derating.map((w) => (
-                  <li key={w.key}>{deratingMessage(w)}</li>
-                ))}
-              </ul>
-              <p className="mt-1 text-xs text-on-surface-variant">You can still save. Covers ABB Emax 2, Formula Air and Tmax XT.</p>
-            </>
-          )}
-        </div>
-      )}
-
-      <CostBreakdownCard key={resetKey} breakdown={breakdown} switchboard={{ labor_wiring_pct: draft.laborWiring, labor_assembly_pct: draft.laborAssembly, labor_testing_pct: draft.laborTesting }} readOnly={readOnly} onLaborChange={updateLaborPct} />
-
-      {!readOnly && (
-        <div className="flex flex-wrap items-start gap-3">
-          <AddFromLibrary options={libraryFeedersAll} placedCounts={placedCounts} onSelect={addLibraryFeeder} />
-          <div className="flex-1">
-            <AdHocFeederPanel switchboardId={sb.id} allItems={items} onCreated={handleAdHocCreated} />
-          </div>
-          {bomCategories.length > 0 && <CategoryDiscountTool categories={bomCategories} onApply={applyCategoryDiscount} />}
-        </div>
+      {costOpen && (
+        <Modal
+          title={`Cost Breakdown — ${sb.tag}`}
+          onClose={() => setCostOpen(false)}
+          width="max-w-5xl"
+        >
+          <CostBreakdownCard
+            key={resetKey}
+            bare
+            breakdown={breakdown}
+            switchboard={{
+              labor_wiring_pct: draft.laborWiring,
+              labor_assembly_pct: draft.laborAssembly,
+              labor_testing_pct: draft.laborTesting,
+            }}
+            readOnly={readOnly}
+            onLaborChange={updateLaborPct}
+          />
+        </Modal>
       )}
 
       <div className="space-y-3">
         {draft.modules.length > 0 && (
-          <div className="flex items-center justify-end gap-3 text-xs">
-            <button onClick={() => setOpenIds(new Set(draft.modules.map((m) => m.feeder.id)))} className="flex items-center gap-1 text-primary hover:underline">
+          <div className="flex flex-wrap items-center justify-end gap-3 text-xs">
+            {badges.length > 0 && (
+              <div className="mr-auto flex flex-wrap items-center gap-1.5">
+                {badges.map((b) => (
+                  <span
+                    key={b}
+                    className="rounded bg-surface-container-low px-1.5 py-0.5 font-label-md text-label-md text-on-surface-variant"
+                  >
+                    {b}
+                  </span>
+                ))}
+              </div>
+            )}
+            <button
+              onClick={() =>
+                setOpenIds(new Set(draft.modules.map((m) => m.feeder.id)))
+              }
+              className="flex items-center gap-1 text-primary hover:underline"
+            >
               <Icon name="unfold_more" size={14} /> Expand all
             </button>
-            <button onClick={() => setOpenIds(new Set())} className="flex items-center gap-1 text-primary hover:underline">
+            <button
+              onClick={() => setOpenIds(new Set())}
+              className="flex items-center gap-1 text-primary hover:underline"
+            >
               <Icon name="unfold_less" size={14} /> Collapse all
             </button>
           </div>
@@ -1259,28 +2081,51 @@ export function BomBuilder({
             mod={mod}
             expanded={openIds.has(mod.feeder.id)}
             onToggleExpanded={() => toggleModule(mod.feeder.id)}
-            ampsError={ampsIssueIds.has(mod.feeder.id) && sb ? `Rated above the switchboard (${sb.amps}A)` : null}
+            ampsError={
+              ampsIssueIds.has(mod.feeder.id) && sb
+                ? `Rated above the switchboard (${sb.amps}A)`
+                : null
+            }
             readOnly={readOnly}
             canEditLines={!readOnly && (isAdmin || !mod.feeder.is_library)}
             allItems={items}
             onRename={(field, value) => renameFeeder(mod, field, value)}
-            onRatingChange={(field, value) => updateFeederRating(mod, field, value)}
+            onRatingChange={(field, value) =>
+              updateFeederRating(mod, field, value)
+            }
             onQtyChange={(qty) => updateModuleQty(mod, qty)}
             onAddLine={(item, qty) => addLine(mod, item, qty)}
             onAddLines={(entries) => addLines(mod, entries)}
             onItemCreated={handleItemCreated}
             onLineQtyChange={(lineId, qty) => updateLineQty(mod, lineId, qty)}
-            onLineOverrideChange={(lineId, field, value) => updateLineOverride(mod, lineId, field, value)}
+            onLineOverrideChange={(lineId, field, value) =>
+              updateLineOverride(mod, lineId, field, value)
+            }
             onRemoveLine={(lineId) => removeLine(mod, lineId)}
-            onDuplicate={!readOnly && !mod.feeder.id.startsWith("new-") ? () => duplicateModule(mod) : undefined}
+            onDuplicate={
+              !readOnly && !mod.feeder.id.startsWith("new-")
+                ? () => duplicateModule(mod)
+                : undefined
+            }
             onDelete={!readOnly ? () => deleteModule(mod) : undefined}
-            onPromote={!readOnly && !mod.feeder.is_library && !mod.feeder.id.startsWith("new-") ? () => promoteToLibrary(mod) : undefined}
-            onSplit={!readOnly && (isAdmin || !mod.feeder.is_library) ? (picks, name) => splitModule(mod, picks, name) : undefined}
+            onPromote={
+              !readOnly &&
+              !mod.feeder.is_library &&
+              !mod.feeder.id.startsWith("new-")
+                ? () => promoteToLibrary(mod)
+                : undefined
+            }
+            onSplit={
+              !readOnly && (isAdmin || !mod.feeder.is_library)
+                ? (picks, name) => splitModule(mod, picks, name)
+                : undefined
+            }
           />
         ))}
         {draft.modules.length === 0 && (
           <p className="rounded-xl border border-dashed border-surface-container-high py-10 text-center text-sm text-on-surface-variant">
-            No feeders in this switchboard&apos;s BOM yet. Add one from the library or build a custom feeder above.
+            No feeders in this switchboard&apos;s BOM yet. Add one from the
+            library or build a custom feeder above.
           </p>
         )}
       </div>
@@ -1319,19 +2164,19 @@ function AddFromLibrary({
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const matches = search
-    ? options.filter((o) => o.name.toLowerCase().includes(search.toLowerCase())).slice(0, 8)
+    ? options
+        .filter((o) => o.name.toLowerCase().includes(search.toLowerCase()))
+        .slice(0, 8)
     : options.slice(0, 8);
 
   return (
-    <div className="relative w-72">
-      <button onClick={() => setOpen(!open)} className="btn btn-outline w-full justify-between">
-        <span className="flex items-center gap-1.5">
-          <Icon name="library_add" size={16} /> Add Feeder from Library
-        </span>
-        <Icon name={open ? "expand_less" : "expand_more"} size={16} />
+    <div className="relative">
+      <button onClick={() => setOpen(!open)} className="btn btn-outline btn-sm">
+        <Icon name="library_add" size={15} /> Add Feeder from Library
+        <Icon name={open ? "expand_less" : "expand_more"} size={15} />
       </button>
       {open && (
-        <div className="absolute z-10 mt-1 w-full rounded-md border border-surface-container-high bg-surface-container-lowest shadow-md">
+        <div className="absolute left-0 z-30 mt-1 w-80 rounded-md border border-surface-container-high bg-surface-container-lowest shadow-md">
           <input
             autoFocus
             value={search}
@@ -1358,10 +2203,16 @@ function AddFromLibrary({
                     </span>
                   )}
                 </p>
-                <p className="text-xs text-on-surface-variant">{f.rating_summary || f.category || "—"}</p>
+                <p className="text-xs text-on-surface-variant">
+                  {f.rating_summary || f.category || "—"}
+                </p>
               </button>
             ))}
-            {matches.length === 0 && <p className="px-3 py-3 text-sm text-on-surface-variant">No matching feeders.</p>}
+            {matches.length === 0 && (
+              <p className="px-3 py-3 text-sm text-on-surface-variant">
+                No matching feeders.
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -1369,18 +2220,26 @@ function AddFromLibrary({
   );
 }
 
-function CategoryDiscountTool({ categories, onApply }: { categories: string[]; onApply: (category: string, discountPct: number) => void }) {
+function CategoryDiscountTool({
+  categories,
+  onApply,
+}: {
+  categories: string[];
+  onApply: (category: string, discountPct: number) => void;
+}) {
   const [category, setCategory] = useState("");
   const [discount, setDiscount] = useState("");
 
   return (
-    <div className="flex items-end gap-2 rounded-md border border-surface-container-high bg-surface-container-lowest px-3 py-2">
-      <div className="flex flex-col gap-0.5">
-        <label className="font-label-sm text-[10px] uppercase tracking-wide text-secondary">Bulk Discount — Category</label>
+    <div className="flex items-center gap-1.5 rounded-md border border-surface-container-high bg-surface-container-lowest px-2 py-1">
+      <span className="text-[11px] font-bold uppercase tracking-wide text-secondary">
+        Bulk discount
+      </span>
+      <div className="flex">
         <select
           value={category}
           onChange={(e) => setCategory(e.target.value)}
-          className="min-w-40 rounded border border-surface-container-high bg-surface-container-lowest px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+          className="min-w-36 rounded border border-surface-container-high bg-surface-container-lowest px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
         >
           <option value="">Select category...</option>
           {categories.map((c) => (
@@ -1390,9 +2249,10 @@ function CategoryDiscountTool({ categories, onApply }: { categories: string[]; o
           ))}
         </select>
       </div>
-      <div className="flex flex-col gap-0.5">
-        <label className="font-label-sm text-[10px] uppercase tracking-wide text-secondary">Disc %</label>
+      <div className="flex">
         <input
+          placeholder="Disc %"
+          aria-label="Discount %"
           type="text"
           inputMode="decimal"
           value={discount}
@@ -1447,14 +2307,21 @@ function FeederModuleCard({
   readOnly: boolean;
   canEditLines: boolean;
   allItems: ItemMaster[];
-  onRename: (field: "name" | "tag" | "device_type" | "category", value: string) => void;
+  onRename: (
+    field: "name" | "tag" | "device_type" | "category",
+    value: string,
+  ) => void;
   onRatingChange: (field: "rated_current" | "rated_kw", value: string) => void;
   onQtyChange: (qty: number) => void;
   onAddLine: (item: ItemMaster, qty: number) => void;
   onAddLines: (entries: { item: ItemMaster; qty: number }[]) => void;
   onItemCreated: (item: ItemMaster) => void;
   onLineQtyChange: (lineId: string, qty: number) => void;
-  onLineOverrideChange: (lineId: string, field: "list_price_override" | "discount_pct_override", value: number | null) => void;
+  onLineOverrideChange: (
+    lineId: string,
+    field: "list_price_override" | "discount_pct_override",
+    value: number | null,
+  ) => void;
   onRemoveLine: (lineId: string) => void;
   onDuplicate?: () => void;
   onDelete?: () => void;
@@ -1467,11 +2334,17 @@ function FeederModuleCard({
   const [bulkAddOpen, setBulkAddOpen] = useState(false);
   const [itemSearch, setItemSearch] = useState("");
   const [categoryChip, setCategoryChip] = useState<string | null>(null);
-  const [justAdded, setJustAdded] = useState<{ id: string; label: string }[]>([]);
+  const [justAdded, setJustAdded] = useState<{ id: string; label: string }[]>(
+    [],
+  );
 
   const subtotal = mod.qty * lineTotal(mod.lines);
 
-  const itemCategories = Array.from(new Set(allItems.map((i) => i.category).filter((c): c is string => !!c))).sort().slice(0, 8);
+  const itemCategories = Array.from(
+    new Set(allItems.map((i) => i.category).filter((c): c is string => !!c)),
+  )
+    .sort()
+    .slice(0, 8);
 
   const matches = itemSearch.trim()
     ? allItems
@@ -1490,7 +2363,12 @@ function FeederModuleCard({
 
   function addItem(item: ItemMaster) {
     onAddLine(item, 1);
-    setJustAdded((prev) => [{ id: item.id, label: `${itemCode(item)} — ${item.description}` }, ...prev].slice(0, 10));
+    setJustAdded((prev) =>
+      [
+        { id: item.id, label: `${itemCode(item)} — ${item.description}` },
+        ...prev,
+      ].slice(0, 10),
+    );
     setItemSearch("");
   }
 
@@ -1517,11 +2395,17 @@ function FeederModuleCard({
     >
       {ampsError && (
         <div className="flex items-center gap-1.5 bg-amber-50 px-4 py-1 text-xs font-medium text-amber-800">
-          <Icon name="warning" size={14} /> {ampsError} — lower this feeder&apos;s rating or raise the switchboard&apos;s Amps.
+          <Icon name="warning" size={14} /> {ampsError} — lower this
+          feeder&apos;s rating or raise the switchboard&apos;s Amps.
         </div>
       )}
-      <div className={`flex flex-wrap items-center gap-3 border-b px-4 py-2.5 ${headerClass}`}>
-        <button onClick={onToggleExpanded} className="text-on-surface-variant hover:text-on-surface-variant">
+      <div
+        className={`flex flex-wrap items-center gap-3 border-b px-4 py-2.5 ${headerClass}`}
+      >
+        <button
+          onClick={onToggleExpanded}
+          className="text-on-surface-variant hover:text-on-surface-variant"
+        >
           <Icon name={expanded ? "expand_less" : "expand_more"} size={18} />
         </button>
         <div className="flex flex-1 flex-wrap items-center gap-2">
@@ -1557,7 +2441,13 @@ function FeederModuleCard({
             className="w-32 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-0.5 text-[11px] text-secondary disabled:border-transparent disabled:bg-transparent"
           >
             <option value="">Function...</option>
-            {[...FEEDER_TYPES, ...(mod.feeder.category && !FEEDER_TYPES.includes(mod.feeder.category) ? [mod.feeder.category] : [])].map((t) => (
+            {[
+              ...FEEDER_TYPES,
+              ...(mod.feeder.category &&
+              !FEEDER_TYPES.includes(mod.feeder.category)
+                ? [mod.feeder.category]
+                : []),
+            ].map((t) => (
               <option key={t} value={t}>
                 {t}
               </option>
@@ -1577,13 +2467,16 @@ function FeederModuleCard({
               </option>
             ))}
           </select>
-          {mod.feeder.device_type && MOTOR_STARTER_TYPES.includes(mod.feeder.device_type) ? (
+          {mod.feeder.device_type &&
+          MOTOR_STARTER_TYPES.includes(mod.feeder.device_type) ? (
             <input
               disabled={readOnly || !canEditLines}
               type="text"
               inputMode="decimal"
               onKeyDown={numericKeyGuard()}
-              value={mod.feeder.rated_kw != null ? String(mod.feeder.rated_kw) : ""}
+              value={
+                mod.feeder.rated_kw != null ? String(mod.feeder.rated_kw) : ""
+              }
               onChange={(e) => onRatingChange("rated_kw", e.target.value)}
               placeholder="kW"
               className="w-16 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-0.5 text-right text-[11px] text-secondary disabled:border-transparent disabled:bg-transparent"
@@ -1594,7 +2487,11 @@ function FeederModuleCard({
               type="text"
               inputMode="decimal"
               onKeyDown={numericKeyGuard()}
-              value={mod.feeder.rated_current != null ? String(mod.feeder.rated_current) : ""}
+              value={
+                mod.feeder.rated_current != null
+                  ? String(mod.feeder.rated_current)
+                  : ""
+              }
               onChange={(e) => onRatingChange("rated_current", e.target.value)}
               placeholder="Amps"
               className="w-16 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-0.5 text-right text-[11px] text-secondary disabled:border-transparent disabled:bg-transparent"
@@ -1613,11 +2510,16 @@ function FeederModuleCard({
             className="w-14 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:bg-surface-container-low"
           />
         </div>
-        <span className="font-display text-sm font-semibold text-on-surface">{money(subtotal)}</span>
+        <span className="font-display text-sm font-semibold text-on-surface">
+          {money(subtotal)}
+        </span>
         {!readOnly && (
           <div className="flex items-center gap-2 text-xs">
             {onPromote && (
-              <button onClick={onPromote} className="flex items-center gap-1 text-primary hover:underline">
+              <button
+                onClick={onPromote}
+                className="flex items-center gap-1 text-primary hover:underline"
+              >
                 <Icon name="upload" size={13} /> Save In Library
               </button>
             )}
@@ -1643,12 +2545,20 @@ function FeederModuleCard({
               />
             )}
             {onDuplicate && (
-              <button onClick={onDuplicate} title="Duplicate feeder structure" className="text-secondary hover:text-on-surface">
+              <button
+                onClick={onDuplicate}
+                title="Duplicate feeder structure"
+                className="text-secondary hover:text-on-surface"
+              >
                 <Icon name="content_copy" size={15} />
               </button>
             )}
             {onDelete && (
-              <button onClick={onDelete} title="Remove from BOM" className="text-error hover:text-error/70">
+              <button
+                onClick={onDelete}
+                title="Remove from BOM"
+                className="text-error hover:text-error/70"
+              >
                 <Icon name="delete" size={15} />
               </button>
             )}
@@ -1679,23 +2589,43 @@ function FeederModuleCard({
             {/* data-grid: arrow keys / Enter move between this feeder's qty, list price and discount cells */}
             <tbody data-grid>
               {mod.lines.map((line, i) => {
-                const listPrice = line.list_price_override ?? line.item.list_price;
-                const discountPct = line.discount_pct_override ?? line.item.discount_pct;
-                const netRate = effectiveNetRate(line.item, line.list_price_override, line.discount_pct_override);
+                const listPrice =
+                  line.list_price_override ?? line.item.list_price;
+                const discountPct =
+                  line.discount_pct_override ?? line.item.discount_pct;
+                const netRate = effectiveNetRate(
+                  line.item,
+                  line.list_price_override,
+                  line.discount_pct_override,
+                );
                 // no price anywhere (list price, override or net cost) -- the
                 // line adds nothing to the cost, so flag it in faded red
                 const unpriced = !(netRate > 0);
                 return (
                   <tr
                     key={line.id}
-                    title={unpriced ? "No price for this item — set a list price in Item Master or override it on this line" : undefined}
+                    title={
+                      unpriced
+                        ? "No price for this item — set a list price in Item Master or override it on this line"
+                        : undefined
+                    }
                     className={`border-t border-surface-container ${unpriced ? "bg-red-50" : ""} ${itemRowClass(line.item)}`}
                   >
-                    <td className="px-2 py-1.5 text-on-surface-variant">{i + 1}</td>
-                    <td className="px-2 py-1.5 font-mono">{line.item.sku || "—"}</td>
-                    <td className="px-2 py-1.5 font-mono text-secondary">{line.item.vendor_cat || "—"}</td>
-                    <td className="px-2 py-1.5 text-on-surface-variant">{line.item.make || "—"}</td>
-                    <td className="px-2 py-1.5 text-on-surface-variant">{line.item.category || "—"}</td>
+                    <td className="px-2 py-1.5 text-on-surface-variant">
+                      {i + 1}
+                    </td>
+                    <td className="px-2 py-1.5 font-mono">
+                      {line.item.sku || "—"}
+                    </td>
+                    <td className="px-2 py-1.5 font-mono text-secondary">
+                      {line.item.vendor_cat || "—"}
+                    </td>
+                    <td className="px-2 py-1.5 text-on-surface-variant">
+                      {line.item.make || "—"}
+                    </td>
+                    <td className="px-2 py-1.5 text-on-surface-variant">
+                      {line.item.category || "—"}
+                    </td>
                     <td className="px-2 py-1.5">{line.item.description}</td>
                     <td className="px-2 py-1.5 text-right">
                       {canEditLines ? (
@@ -1706,7 +2636,12 @@ function FeederModuleCard({
                           data-row={i}
                           data-col={0}
                           onFocus={(e) => e.currentTarget.select()}
-                          onChange={(e) => onLineQtyChange(line.id, Number(e.target.value) || 0)}
+                          onChange={(e) =>
+                            onLineQtyChange(
+                              line.id,
+                              Number(e.target.value) || 0,
+                            )
+                          }
                           onKeyDown={numericGridKeys()}
                           className="w-16 rounded border border-surface-container-high px-1 py-0.5 text-right"
                         />
@@ -1724,7 +2659,15 @@ function FeederModuleCard({
                           data-row={i}
                           data-col={1}
                           onFocus={(e) => e.currentTarget.select()}
-                          onChange={(e) => onLineOverrideChange(line.id, "list_price_override", e.target.value === "" ? null : Number(e.target.value))}
+                          onChange={(e) =>
+                            onLineOverrideChange(
+                              line.id,
+                              "list_price_override",
+                              e.target.value === ""
+                                ? null
+                                : Number(e.target.value),
+                            )
+                          }
                           onKeyDown={numericGridKeys()}
                           className="w-20 rounded border border-surface-container-high px-1 py-0.5 text-right"
                         />
@@ -1744,7 +2687,15 @@ function FeederModuleCard({
                           data-row={i}
                           data-col={2}
                           onFocus={(e) => e.currentTarget.select()}
-                          onChange={(e) => onLineOverrideChange(line.id, "discount_pct_override", e.target.value === "" ? null : Number(e.target.value))}
+                          onChange={(e) =>
+                            onLineOverrideChange(
+                              line.id,
+                              "discount_pct_override",
+                              e.target.value === ""
+                                ? null
+                                : Number(e.target.value),
+                            )
+                          }
                           onKeyDown={numericGridKeys()}
                           className="w-16 rounded border border-surface-container-high px-1 py-0.5 text-right"
                         />
@@ -1754,12 +2705,21 @@ function FeederModuleCard({
                         "—"
                       )}
                     </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums text-secondary">{money(netRate)}</td>
-                    <td className="px-2 py-1.5 text-secondary">{line.item.uom}</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">{money(line.qty * netRate)}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums text-secondary">
+                      {money(netRate)}
+                    </td>
+                    <td className="px-2 py-1.5 text-secondary">
+                      {line.item.uom}
+                    </td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">
+                      {money(line.qty * netRate)}
+                    </td>
                     {canEditLines && (
                       <td className="px-2 py-1.5 text-right">
-                        <button onClick={() => onRemoveLine(line.id)} className="text-error hover:underline">
+                        <button
+                          onClick={() => onRemoveLine(line.id)}
+                          className="text-error hover:underline"
+                        >
                           ✕
                         </button>
                       </td>
@@ -1769,7 +2729,10 @@ function FeederModuleCard({
               })}
               {mod.lines.length === 0 && (
                 <tr>
-                  <td colSpan={canEditLines ? 13 : 12} className="px-2 py-4 text-center text-on-surface-variant">
+                  <td
+                    colSpan={canEditLines ? 13 : 12}
+                    className="px-2 py-4 text-center text-on-surface-variant"
+                  >
                     No items in this feeder yet.
                   </td>
                 </tr>
@@ -1792,21 +2755,37 @@ function FeederModuleCard({
 
           {canEditLines && (
             <div className="mt-2 flex flex-wrap gap-2">
-              <button type="button" onClick={() => setAddDialogOpen(true)} className="btn btn-primary btn-sm">
+              <button
+                type="button"
+                onClick={() => setAddDialogOpen(true)}
+                className="btn btn-primary btn-sm"
+              >
                 <Icon name="add" size={14} /> Add Item to Feeder
               </button>
-              <button type="button" onClick={() => setBulkAddOpen(true)} className="btn btn-secondary btn-sm" title="Paste a list of SKUs / catalogue numbers from Excel or Notepad">
+              <button
+                type="button"
+                onClick={() => setBulkAddOpen(true)}
+                className="btn btn-secondary btn-sm"
+                title="Paste a list of SKUs / catalogue numbers from Excel or Notepad"
+              >
                 <Icon name="content_paste" size={14} /> Paste Item Codes
               </button>
-              <button type="button" onClick={() => setCreateItemOpen(true)} className="btn btn-secondary btn-sm">
-                <Icon name="add_circle" size={14} /> Create New Item in Master &amp; Add
+              <button
+                type="button"
+                onClick={() => setCreateItemOpen(true)}
+                className="btn btn-secondary btn-sm"
+              >
+                <Icon name="add_circle" size={14} /> Create New Item in Master
+                &amp; Add
               </button>
             </div>
           )}
 
           <div className="mt-2 flex items-center justify-end gap-3 border-t border-surface-container pt-2 text-xs text-secondary">
             <span>{mod.lines.length} items</span>
-            <span className="font-semibold text-on-surface">Feeder Total: {money(subtotal)}</span>
+            <span className="font-semibold text-on-surface">
+              Feeder Total: {money(subtotal)}
+            </span>
           </div>
         </div>
       )}
@@ -1826,18 +2805,29 @@ function FeederModuleCard({
                   <Icon name="add_box" size={16} />
                 </div>
                 <div className="flex flex-col">
-                  <h3 className="font-headline-sm text-headline-sm text-on-surface">Add Item to Feeder</h3>
-                  <span className="font-label-sm text-label-sm text-on-surface-variant">{mod.feeder.name}</span>
+                  <h3 className="font-headline-sm text-headline-sm text-on-surface">
+                    Add Item to Feeder
+                  </h3>
+                  <span className="font-label-sm text-label-sm text-on-surface-variant">
+                    {mod.feeder.name}
+                  </span>
                 </div>
               </div>
-              <button onClick={closeAddDialog} className="rounded p-1 text-secondary hover:bg-surface-container hover:text-on-surface">
+              <button
+                onClick={closeAddDialog}
+                className="rounded p-1 text-secondary hover:bg-surface-container hover:text-on-surface"
+              >
                 <Icon name="close" size={18} />
               </button>
             </div>
 
             <div className="flex flex-col gap-space-sm p-space-md pb-0">
               <div className="relative flex items-center">
-                <Icon name="search" size={16} className="pointer-events-none absolute left-2 text-secondary" />
+                <Icon
+                  name="search"
+                  size={16}
+                  className="pointer-events-none absolute left-2 text-secondary"
+                />
                 <input
                   autoFocus
                   value={itemSearch}
@@ -1859,7 +2849,9 @@ function FeederModuleCard({
                     type="button"
                     onClick={() => setCategoryChip(null)}
                     className={`shrink-0 rounded-full px-2 py-0.5 transition-colors ${
-                      categoryChip === null ? "bg-primary font-semibold text-on-primary" : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container"
+                      categoryChip === null
+                        ? "bg-primary font-semibold text-on-primary"
+                        : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container"
                     }`}
                   >
                     All
@@ -1870,7 +2862,9 @@ function FeederModuleCard({
                       type="button"
                       onClick={() => setCategoryChip(c)}
                       className={`shrink-0 rounded-full px-2 py-0.5 transition-colors ${
-                        categoryChip === c ? "bg-primary font-semibold text-on-primary" : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container"
+                        categoryChip === c
+                          ? "bg-primary font-semibold text-on-primary"
+                          : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container"
                       }`}
                     >
                       {c}
@@ -1883,7 +2877,9 @@ function FeederModuleCard({
             <div className="flex-1 overflow-y-auto p-space-md pt-2">
               {matches.length === 0 ? (
                 <p className="py-6 text-center text-xs text-on-surface-variant">
-                  {itemSearch ? "No matching items." : "Start typing to search the item master."}
+                  {itemSearch
+                    ? "No matching items."
+                    : "Start typing to search the item master."}
                 </p>
               ) : (
                 <div className="divide-y divide-surface-container rounded border border-surface-container-high">
@@ -1894,11 +2890,23 @@ function FeederModuleCard({
                       onClick={() => addItem(m)}
                       className={`flex w-full items-start gap-2 px-2 py-1.5 text-left text-xs hover:bg-surface-container-low ${i === 0 ? "bg-primary/5" : ""} ${itemRowClass(m)}`}
                     >
-                      <span className="w-24 shrink-0 truncate font-mono text-secondary">{itemCode(m)}</span>
-                      <span className="w-24 shrink-0 truncate font-mono text-secondary">{m.vendor_cat || "—"}</span>
-                      <span className="w-28 shrink-0 truncate text-on-surface-variant">{m.make || "—"}</span>
-                      <span className="min-w-0 flex-1 whitespace-normal break-words">{m.description}</span>
-                      <Icon name="add" size={14} className="mt-0.5 shrink-0 text-primary" />
+                      <span className="w-24 shrink-0 truncate font-mono text-secondary">
+                        {itemCode(m)}
+                      </span>
+                      <span className="w-24 shrink-0 truncate font-mono text-secondary">
+                        {m.vendor_cat || "—"}
+                      </span>
+                      <span className="w-28 shrink-0 truncate text-on-surface-variant">
+                        {m.make || "—"}
+                      </span>
+                      <span className="min-w-0 flex-1 whitespace-normal break-words">
+                        {m.description}
+                      </span>
+                      <Icon
+                        name="add"
+                        size={14}
+                        className="mt-0.5 shrink-0 text-primary"
+                      />
                     </button>
                   ))}
                 </div>
@@ -1906,10 +2914,15 @@ function FeederModuleCard({
 
               {justAdded.length > 0 && (
                 <div className="mt-3">
-                  <p className="mb-1 font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">Added this session</p>
+                  <p className="mb-1 font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">
+                    Added this session
+                  </p>
                   <ul className="space-y-1">
                     {justAdded.map((a, i) => (
-                      <li key={`${a.id}-${i}`} className="flex items-center gap-1 rounded bg-tertiary-container/15 px-2 py-1 text-xs text-tertiary">
+                      <li
+                        key={`${a.id}-${i}`}
+                        className="flex items-center gap-1 rounded bg-tertiary-container/15 px-2 py-1 text-xs text-tertiary"
+                      >
                         <Icon name="check_circle" size={13} />
                         <span className="truncate">{a.label}</span>
                       </li>
@@ -1920,7 +2933,11 @@ function FeederModuleCard({
             </div>
 
             <div className="flex items-center justify-end gap-2 border-t border-surface-container-high p-space-md">
-              <button type="button" onClick={closeAddDialog} className="btn btn-primary btn-sm">
+              <button
+                type="button"
+                onClick={closeAddDialog}
+                className="btn btn-primary btn-sm"
+              >
                 Done
               </button>
             </div>
@@ -1928,12 +2945,18 @@ function FeederModuleCard({
         </div>
       )}
 
-      <CreateItemDialog open={createItemOpen} onClose={() => setCreateItemOpen(false)} onCreated={handleItemCreated} />
+      <CreateItemDialog
+        open={createItemOpen}
+        onClose={() => setCreateItemOpen(false)}
+        onCreated={handleItemCreated}
+      />
     </div>
   );
 }
 
-function LineItemsSection<T extends { id: string; description: string; qty: number; rate: number }>({
+function LineItemsSection<
+  T extends { id: string; description: string; qty: number; rate: number },
+>({
   title,
   lines,
   autoLines,
@@ -1956,165 +2979,256 @@ function LineItemsSection<T extends { id: string; description: string; qty: numb
   onUpdate: (id: string, patch: Partial<T>) => void;
   onRemove: (id: string) => void;
 }) {
-  const total = lines.reduce((s, l) => s + l.qty * l.rate, 0) + (autoLines?.total ?? 0) + (enclosureAuto?.total ?? 0);
+  const total =
+    lines.reduce((s, l) => s + l.qty * l.rate, 0) +
+    (autoLines?.total ?? 0) +
+    (enclosureAuto?.total ?? 0);
   const [partsOpen, setPartsOpen] = useState(false);
   // Starts collapsed -- the header still shows the section total.
   const [open, setOpen] = useState(false);
   return (
     <div className="overflow-hidden rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-xs">
       <div className="flex items-center justify-between gap-3 border-b border-surface-container bg-surface-container-low/60 px-4 py-2.5">
-        <button onClick={() => setOpen(!open)} className="flex flex-1 items-center gap-2 text-left">
-          <Icon name={open ? "expand_less" : "expand_more"} size={18} className="text-on-surface-variant" />
+        <button
+          onClick={() => setOpen(!open)}
+          className="flex flex-1 items-center gap-2 text-left"
+        >
+          <Icon
+            name={open ? "expand_less" : "expand_more"}
+            size={18}
+            className="text-on-surface-variant"
+          />
           <h3 className="text-sm font-semibold text-on-surface">{title}</h3>
-          {!open && <span className="ml-auto text-sm font-semibold tabular-nums text-on-surface">{money(total)}</span>}
+          {!open && (
+            <span className="ml-auto text-sm font-semibold tabular-nums text-on-surface">
+              {money(total)}
+            </span>
+          )}
         </button>
         {open && !readOnly && (
-          <button onClick={onAdd} className="flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+          <button
+            onClick={onAdd}
+            className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+          >
             <Icon name="add" size={14} /> Add line
           </button>
         )}
       </div>
       {open && (
-      <table className="w-full text-xs">
-        <thead className="text-left uppercase tracking-wide text-on-surface-variant">
-          <tr>
-            <th className="px-3 py-1.5">Description</th>
-            <th className="px-3 py-1.5 text-right">Qty</th>
-            <th className="px-3 py-1.5 text-right">Rate</th>
-            <th className="px-3 py-1.5 text-right">Amount</th>
-            {!readOnly && <th className="px-3 py-1.5" />}
-          </tr>
-        </thead>
-        <tbody>
-          {autoLines?.lines.map((l) => (
-            <tr key={`auto-${l.key}`} className="border-t border-surface-container bg-primary/5">
-              <td className="px-3 py-1.5">
-                <span className="mr-2 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-primary" title="From the GA busbar plan">
-                  Auto
-                </span>
-                {l.description}
-              </td>
-              <td className="px-3 py-1.5 text-right tabular-nums">{l.kg} kg</td>
-              <td className={`px-3 py-1.5 text-right tabular-nums ${autoLines.rateMissing ? "text-error" : ""}`}>{money(l.rate)}/kg</td>
-              <td className="px-3 py-1.5 text-right tabular-nums">{money(l.amount)}</td>
-              {!readOnly && <td />}
+        <table className="w-full text-xs">
+          <thead className="text-left uppercase tracking-wide text-on-surface-variant">
+            <tr>
+              <th className="px-3 py-1.5">Description</th>
+              <th className="px-3 py-1.5 text-right">Qty</th>
+              <th className="px-3 py-1.5 text-right">Rate</th>
+              <th className="px-3 py-1.5 text-right">Amount</th>
+              {!readOnly && <th className="px-3 py-1.5" />}
             </tr>
-          ))}
-          {autoLines && autoLines.lines.length > 0 && (
-            <tr className="border-t border-surface-container">
-              <td colSpan={5} className={`px-3 py-1 text-[11px] ${autoLines.rateMissing ? "text-error" : "text-on-surface-variant"}`}>
-                {autoLines.rateMissing
-                  ? `No ${autoLines.material === "Cu" ? "copper" : "aluminium"} busbar rate set for this project — set "Busbar Rate (INR/kg)" in Project Detail so these lines are costed.`
-                  : "Auto lines come from the GA busbar plan — change bar sizes in GA Builder (Busbars layer) and the per-kg rate in Project Detail. Add lines below for supports, sleeves, etc."}
-              </td>
-            </tr>
-          )}
-          {enclosureAuto && enclosureAuto.lines.length > 0 && (
-            <>
-              <tr className="border-t border-surface-container bg-primary/5">
-                <td colSpan={3} className="px-3 py-1.5">
-                  <button onClick={() => setPartsOpen((o) => !o)} className="flex items-center gap-1 text-left">
-                    <Icon name={partsOpen ? "expand_less" : "expand_more"} size={14} />
-                    <span className="mr-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-primary">Auto</span>
-                    ABB ArTu-K enclosure parts from the GA — {enclosureAuto.lines.length} part codes
-                  </button>
+          </thead>
+          <tbody>
+            {autoLines?.lines.map((l) => (
+              <tr
+                key={`auto-${l.key}`}
+                className="border-t border-surface-container bg-primary/5"
+              >
+                <td className="px-3 py-1.5">
+                  <span
+                    className="mr-2 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-primary"
+                    title="From the GA busbar plan"
+                  >
+                    Auto
+                  </span>
+                  {l.description}
                 </td>
-                <td className="px-3 py-1.5 text-right tabular-nums">{money(enclosureAuto.total)}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums">
+                  {l.kg} kg
+                </td>
+                <td
+                  className={`px-3 py-1.5 text-right tabular-nums ${autoLines.rateMissing ? "text-error" : ""}`}
+                >
+                  {money(l.rate)}/kg
+                </td>
+                <td className="px-3 py-1.5 text-right tabular-nums">
+                  {money(l.amount)}
+                </td>
                 {!readOnly && <td />}
               </tr>
-              {partsOpen &&
-                enclosureAuto.lines.map((l) => (
-                  <tr key={`enc-${l.code}`} className={`border-t border-surface-container ${l.priced ? "" : "bg-red-50"}`} title={l.why.join("\n")}>
-                    <td className="px-3 py-1 pl-8">
-                      <span className="mr-2 font-mono text-[11px]">{l.code}</span>
-                      <span className={l.inItemMaster ? "" : "text-error"}>{l.description}</span>
-                      {l.material && l.weightKg != null && (
-                        <span className="ml-2 text-[10px] text-on-surface-variant">
-                          {l.weightKg} kg {l.material}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-1 text-right tabular-nums">{l.qty}</td>
-                    <td className={`px-3 py-1 text-right tabular-nums ${l.priced ? "" : "text-error"}`}>{money(l.rate)}</td>
-                    <td className="px-3 py-1 text-right tabular-nums">{money(l.amount)}</td>
-                    {!readOnly && <td />}
-                  </tr>
-                ))}
+            ))}
+            {autoLines && autoLines.lines.length > 0 && (
               <tr className="border-t border-surface-container">
-                <td colSpan={5} className={`px-3 py-1 text-[11px] ${enclosureAuto.unpriced + enclosureAuto.missing > 0 ? "text-error" : "text-on-surface-variant"}`}>
-                  {enclosureAuto.unpriced + enclosureAuto.missing > 0
-                    ? `${enclosureAuto.unpriced} part code(s) aren't priced${enclosureAuto.missing ? ` and ${enclosureAuto.missing} aren't in Item Master` : ""} — GI / CRCA parts need a material and weight in Item Master and the project's GI / CRCA rate (Project Detail); other parts need a price in Item Master. `
-                    : ""}
-                  Built from the GA bay by bay using ABB&apos;s assembly kit lists; hover a part for where it&apos;s used. Add lines below for anything else (roof filters, louvres, finishing kits).
-                  {enclosureAuto.warnings.map((w, i) => (
-                    <span key={i} className="block text-amber-700">
-                      {w}
-                    </span>
-                  ))}
+                <td
+                  colSpan={5}
+                  className={`px-3 py-1 text-[11px] ${autoLines.rateMissing ? "text-error" : "text-on-surface-variant"}`}
+                >
+                  {autoLines.rateMissing
+                    ? `No ${autoLines.material === "Cu" ? "copper" : "aluminium"} busbar rate set for this project — set "Busbar Rate (INR/kg)" in Project Detail so these lines are costed.`
+                    : "Auto lines come from the GA busbar plan — change bar sizes in GA Builder (Busbars layer) and the per-kg rate in Project Detail. Add lines below for supports, sleeves, etc."}
                 </td>
               </tr>
-            </>
-          )}
-          {lines.map((l) => (
-            <tr key={l.id} className="border-t border-surface-container">
-              <td className="px-3 py-1.5">
-                <input
-                  disabled={readOnly}
-                  value={l.description}
-                  onChange={(e) => onUpdate(l.id, { description: e.target.value } as Partial<T>)}
-                  className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 focus:border-surface-container-high disabled:bg-transparent"
-                />
-              </td>
-              <td className="px-3 py-1.5 text-right">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  disabled={readOnly}
-                  value={l.qty}
-                  onChange={(e) => onUpdate(l.id, { qty: Number(e.target.value) || 0 } as Partial<T>)}
-                  onKeyDown={numericKeyGuard()}
-                  className="w-16 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
-                />
-              </td>
-              <td className="px-3 py-1.5 text-right">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  disabled={readOnly}
-                  value={l.rate}
-                  onChange={(e) => onUpdate(l.id, { rate: Number(e.target.value) || 0 } as Partial<T>)}
-                  onKeyDown={numericKeyGuard()}
-                  className="w-24 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
-                />
-              </td>
-              <td className="px-3 py-1.5 text-right tabular-nums">{money(l.qty * l.rate)}</td>
-              {!readOnly && (
-                <td className="px-3 py-1.5 text-right">
-                  <button onClick={() => onRemove(l.id)} className="text-error hover:underline">
-                    ✕
-                  </button>
+            )}
+            {enclosureAuto && enclosureAuto.lines.length > 0 && (
+              <>
+                <tr className="border-t border-surface-container bg-primary/5">
+                  <td colSpan={3} className="px-3 py-1.5">
+                    <button
+                      onClick={() => setPartsOpen((o) => !o)}
+                      className="flex items-center gap-1 text-left"
+                    >
+                      <Icon
+                        name={partsOpen ? "expand_less" : "expand_more"}
+                        size={14}
+                      />
+                      <span className="mr-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-primary">
+                        Auto
+                      </span>
+                      ABB ArTu-K enclosure parts from the GA —{" "}
+                      {enclosureAuto.lines.length} part codes
+                    </button>
+                  </td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">
+                    {money(enclosureAuto.total)}
+                  </td>
+                  {!readOnly && <td />}
+                </tr>
+                {partsOpen &&
+                  enclosureAuto.lines.map((l) => (
+                    <tr
+                      key={`enc-${l.code}`}
+                      className={`border-t border-surface-container ${l.priced ? "" : "bg-red-50"}`}
+                      title={l.why.join("\n")}
+                    >
+                      <td className="px-3 py-1 pl-8">
+                        <span className="mr-2 font-mono text-[11px]">
+                          {l.code}
+                        </span>
+                        <span className={l.inItemMaster ? "" : "text-error"}>
+                          {l.description}
+                        </span>
+                        {l.material && l.weightKg != null && (
+                          <span className="ml-2 text-[10px] text-on-surface-variant">
+                            {l.weightKg} kg {l.material}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-1 text-right tabular-nums">
+                        {l.qty}
+                      </td>
+                      <td
+                        className={`px-3 py-1 text-right tabular-nums ${l.priced ? "" : "text-error"}`}
+                      >
+                        {money(l.rate)}
+                      </td>
+                      <td className="px-3 py-1 text-right tabular-nums">
+                        {money(l.amount)}
+                      </td>
+                      {!readOnly && <td />}
+                    </tr>
+                  ))}
+                <tr className="border-t border-surface-container">
+                  <td
+                    colSpan={5}
+                    className={`px-3 py-1 text-[11px] ${enclosureAuto.unpriced + enclosureAuto.missing > 0 ? "text-error" : "text-on-surface-variant"}`}
+                  >
+                    {enclosureAuto.unpriced + enclosureAuto.missing > 0
+                      ? `${enclosureAuto.unpriced} part code(s) aren't priced${enclosureAuto.missing ? ` and ${enclosureAuto.missing} aren't in Item Master` : ""} — GI / CRCA parts need a material and weight in Item Master and the project's GI / CRCA rate (Project Detail); other parts need a price in Item Master. `
+                      : ""}
+                    Built from the GA bay by bay using ABB&apos;s assembly kit
+                    lists; hover a part for where it&apos;s used. Add lines
+                    below for anything else (roof filters, louvres, finishing
+                    kits).
+                    {enclosureAuto.warnings.map((w, i) => (
+                      <span key={i} className="block text-amber-700">
+                        {w}
+                      </span>
+                    ))}
+                  </td>
+                </tr>
+              </>
+            )}
+            {lines.map((l) => (
+              <tr key={l.id} className="border-t border-surface-container">
+                <td className="px-3 py-1.5">
+                  <input
+                    disabled={readOnly}
+                    value={l.description}
+                    onChange={(e) =>
+                      onUpdate(l.id, {
+                        description: e.target.value,
+                      } as Partial<T>)
+                    }
+                    className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 focus:border-surface-container-high disabled:bg-transparent"
+                  />
                 </td>
+                <td className="px-3 py-1.5 text-right">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    disabled={readOnly}
+                    value={l.qty}
+                    onChange={(e) =>
+                      onUpdate(l.id, {
+                        qty: Number(e.target.value) || 0,
+                      } as Partial<T>)
+                    }
+                    onKeyDown={numericKeyGuard()}
+                    className="w-16 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
+                  />
+                </td>
+                <td className="px-3 py-1.5 text-right">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    disabled={readOnly}
+                    value={l.rate}
+                    onChange={(e) =>
+                      onUpdate(l.id, {
+                        rate: Number(e.target.value) || 0,
+                      } as Partial<T>)
+                    }
+                    onKeyDown={numericKeyGuard()}
+                    className="w-24 rounded border border-surface-container-high px-1 py-0.5 text-right disabled:border-transparent disabled:bg-transparent"
+                  />
+                </td>
+                <td className="px-3 py-1.5 text-right tabular-nums">
+                  {money(l.qty * l.rate)}
+                </td>
+                {!readOnly && (
+                  <td className="px-3 py-1.5 text-right">
+                    <button
+                      onClick={() => onRemove(l.id)}
+                      className="text-error hover:underline"
+                    >
+                      ✕
+                    </button>
+                  </td>
+                )}
+              </tr>
+            ))}
+            {lines.length === 0 &&
+              !autoLines?.lines.length &&
+              !enclosureAuto?.lines.length && (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="px-3 py-4 text-center text-on-surface-variant"
+                  >
+                    No lines yet.
+                  </td>
+                </tr>
               )}
-            </tr>
-          ))}
-          {lines.length === 0 && !autoLines?.lines.length && !enclosureAuto?.lines.length && (
-            <tr>
-              <td colSpan={5} className="px-3 py-4 text-center text-on-surface-variant">
-                No lines yet.
+          </tbody>
+          <tfoot>
+            <tr className="border-t border-surface-container-high bg-surface-container-low font-medium">
+              <td colSpan={3} className="px-3 py-1.5 text-right">
+                Total
               </td>
+              <td className="px-3 py-1.5 text-right tabular-nums">
+                {money(total)}
+              </td>
+              {!readOnly && <td />}
             </tr>
-          )}
-        </tbody>
-        <tfoot>
-          <tr className="border-t border-surface-container-high bg-surface-container-low font-medium">
-            <td colSpan={3} className="px-3 py-1.5 text-right">
-              Total
-            </td>
-            <td className="px-3 py-1.5 text-right tabular-nums">{money(total)}</td>
-            {!readOnly && <td />}
-          </tr>
-        </tfoot>
-      </table>
+          </tfoot>
+        </table>
       )}
     </div>
   );

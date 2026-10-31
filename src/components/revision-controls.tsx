@@ -34,9 +34,16 @@ export function RevisionControls({
   const canUnarchive = archived && (createdBy === currentUserId || isAdmin);
 
   async function handleArchive() {
-    if (!confirm("Archive this revision? It becomes read-only for everyone until un-archived.")) return;
+    if (
+      !confirm(
+        "Archive this revision? It becomes read-only for everyone until un-archived.",
+      )
+    )
+      return;
     setBusy(true);
-    const { error } = await supabase.rpc("archive_revision", { p_revision_id: revisionId });
+    const { error } = await supabase.rpc("archive_revision", {
+      p_revision_id: revisionId,
+    });
     setBusy(false);
     if (error) {
       alert(error.message);
@@ -49,7 +56,9 @@ export function RevisionControls({
 
   async function handleUnarchive() {
     setBusy(true);
-    const { error } = await supabase.rpc("unarchive_revision", { p_revision_id: revisionId });
+    const { error } = await supabase.rpc("unarchive_revision", {
+      p_revision_id: revisionId,
+    });
     setBusy(false);
     if (error) {
       alert(error.message);
@@ -62,7 +71,9 @@ export function RevisionControls({
 
   async function handleCreateRevision() {
     setBusy(true);
-    const { data, error } = await supabase.rpc("create_revision", { p_revision_id: revisionId });
+    const { data, error } = await supabase.rpc("create_revision", {
+      p_revision_id: revisionId,
+    });
     setBusy(false);
     if (error) {
       alert(error.message);
@@ -81,7 +92,7 @@ export function RevisionControls({
         <select
           value={revisionId}
           onChange={(e) => router.push(`/revisions/${e.target.value}`)}
-          className="rounded-md border border-surface-container-high px-2 py-1 text-xs"
+          className="rounded-md border border-surface-container-high px-1.5 py-0.5 text-xs"
         >
           {siblingRevisions.map((s) => (
             <option key={s.id} value={s.id}>
@@ -94,7 +105,7 @@ export function RevisionControls({
       <button
         onClick={handleCreateRevision}
         disabled={busy}
-        className="rounded-md border border-surface-container-high bg-surface-container-lowest px-2.5 py-1 text-xs font-medium text-on-surface hover:bg-surface-container-low disabled:opacity-50"
+        className="rounded-md border border-surface-container-high bg-surface-container-lowest px-2 py-0.5 text-xs font-medium text-on-surface hover:bg-surface-container-low disabled:opacity-50"
       >
         + New revision
       </button>
@@ -108,7 +119,7 @@ export function RevisionControls({
             <button
               onClick={handleUnarchive}
               disabled={busy}
-              className="rounded-md border border-surface-container-high bg-surface-container-lowest px-2.5 py-1 text-xs font-medium text-on-surface hover:bg-surface-container-low disabled:opacity-50"
+              className="rounded-md border border-surface-container-high bg-surface-container-lowest px-2 py-0.5 text-xs font-medium text-on-surface hover:bg-surface-container-low disabled:opacity-50"
             >
               Un-archive
             </button>
@@ -118,7 +129,7 @@ export function RevisionControls({
         <button
           onClick={handleArchive}
           disabled={busy}
-          className="rounded-md border border-surface-container-high bg-surface-container-lowest px-2.5 py-1 text-xs font-medium text-on-surface hover:bg-surface-container-low disabled:opacity-50"
+          className="rounded-md border border-surface-container-high bg-surface-container-lowest px-2 py-0.5 text-xs font-medium text-on-surface hover:bg-surface-container-low disabled:opacity-50"
         >
           Archive
         </button>
