@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
-import { LookupSelect } from "@/components/lookup-select";
 import type { Customer } from "@/types/database";
 
 export function NewProjectModal({ customers }: { customers: Customer[] }) {
@@ -16,7 +15,11 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
   const [title, setTitle] = useState("");
   const [revisionName, setRevisionName] = useState("");
   const [notes, setNotes] = useState("");
-  const [salesExecId, setSalesExecId] = useState<string | null>(null);
+  const [salesExecId, setSalesExecId] = useState("");
+  const [newSalesExecName, setNewSalesExecName] = useState("");
+  const [salesExecs, setSalesExecs] = useState<{ id: string; name: string }[]>(
+    [],
+  );
   const [quoteRequiredBy, setQuoteRequiredBy] = useState("");
   const [crmEnquiryNumber, setCrmEnquiryNumber] = useState("");
   const [nature, setNature] = useState<"" | "bidding" | "purchase">("");
@@ -24,6 +27,24 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
   const [error, setError] = useState<string | null>(null);
 
   const creatingNewCustomer = customerId === "__new__";
+  const creatingNewSalesExec = salesExecId === "__new__";
+
+  // sales exec list, loaded when the dialog opens
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await createClient()
+        .from("sales_execs")
+        .select("id, name")
+        .order("name");
+      if (!cancelled)
+        setSalesExecs((data ?? []) as { id: string; name: string }[]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   function reset() {
     setCustomerId("");
@@ -31,7 +52,8 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
     setTitle("");
     setRevisionName("");
     setNotes("");
-    setSalesExecId(null);
+    setSalesExecId("");
+    setNewSalesExecName("");
     setQuoteRequiredBy("");
     setCrmEnquiryNumber("");
     setNature("");
@@ -85,6 +107,34 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
       customerName = customer.name;
     }
 
+    let finalSalesExecId: string | null = salesExecId || null;
+    if (creatingNewSalesExec) {
+      if (!newSalesExecName.trim()) {
+        setError("Give the new sales exec a name.");
+        setSaving(false);
+        return;
+      }
+      // reuse one that already has this name instead of duplicating it
+      const { data: existing } = await supabase
+        .from("sales_execs")
+        .select("id")
+        .ilike("name", newSalesExecName.trim())
+        .limit(1);
+      const { data: exec, error: execError } = existing?.length
+        ? { data: existing[0], error: null }
+        : await supabase
+            .from("sales_execs")
+            .insert({ name: newSalesExecName.trim() })
+            .select("id")
+            .single();
+      if (execError || !exec) {
+        setError(execError?.message ?? "Could not create sales exec.");
+        setSaving(false);
+        return;
+      }
+      finalSalesExecId = exec.id;
+    }
+
     const { data: project, error: projectError } = await supabase
       .from("projects")
       .insert({
@@ -93,7 +143,7 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
         notes: notes.trim() || null,
         created_by: user?.id,
         stage: "new", // shown as "Yet to quote"
-        sales_exec_id: salesExecId,
+        sales_exec_id: finalSalesExecId,
         quote_required_by: quoteRequiredBy || null,
         crm_enquiry_number: crmEnquiryNumber.trim() || null,
         nature: nature || null,
@@ -243,12 +293,28 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
                   <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-secondary">
                     Sales Exec
                   </label>
-                  <LookupSelect
-                    table="sales_execs"
+                  <select
                     value={salesExecId}
-                    onChange={(id) => setSalesExecId(id)}
-                    placeholder="Select or add sales exec..."
-                  />
+                    onChange={(e) => setSalesExecId(e.target.value)}
+                    className="h-9 w-full rounded bg-surface px-space-sm font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">No sales exec yet</option>
+                    {salesExecs.map((x) => (
+                      <option key={x.id} value={x.id}>
+                        {x.name}
+                      </option>
+                    ))}
+                    <option value="__new__">+ Add New Sales Exec...</option>
+                  </select>
+                  {creatingNewSalesExec && (
+                    <input
+                      autoFocus
+                      value={newSalesExecName}
+                      onChange={(e) => setNewSalesExecName(e.target.value)}
+                      placeholder="New sales exec name"
+                      className="mt-space-2xs h-9 w-full rounded bg-surface px-space-sm font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  )}
                 </div>
                 <div className="flex flex-col gap-space-2xs">
                   <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-secondary">
