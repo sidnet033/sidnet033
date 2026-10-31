@@ -18,7 +18,9 @@ export function useSwitchboardHeartbeat(switchboardId: string | null) {
     let stopped = false;
 
     const beat = async () => {
-      if (stopped || document.visibilityState === "hidden") return;
+      // background tabs keep beating too: an open tab -- maybe holding
+      // unsaved work -- keeps its switchboard lock alive
+      if (stopped) return;
       if (!userId)
         userId = (await supabase.auth.getUser()).data.user?.id ?? null;
       if (!userId || stopped) return;
@@ -94,4 +96,17 @@ export function useOnlineSwitchboards(): Map<string, string[]> {
     };
   }, []);
   return online;
+}
+
+/** browser "leave site? changes may not be saved" prompt while there's unsaved work */
+export function useWarnOnUnload(dirty: boolean) {
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
 }

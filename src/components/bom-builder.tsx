@@ -1,5 +1,6 @@
 "use client";
 
+import { useWarnOnUnload } from "@/lib/switchboard-presence";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -541,6 +542,7 @@ export function BomBuilder({
     (sb.locked_by !== null && sb.locked_by !== currentUserId);
   const dirty =
     !!draft && !!saved && JSON.stringify(draft) !== JSON.stringify(saved);
+  useWarnOnUnload(dirty);
 
   // No feeder in the BOM may be rated above the switchboard itself -- Save
   // stays blocked until either side is changed.

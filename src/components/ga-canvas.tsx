@@ -1,5 +1,6 @@
 "use client";
 
+import { useWarnOnUnload } from "@/lib/switchboard-presence";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
@@ -648,6 +649,7 @@ export function GaCanvas({
     (isArtuk ? artukHeight !== savedArtukHeight : panelHeightSetting !== savedPanelHeight) ||
     busbarHeight !== savedBusbarHeight ||
     JSON.stringify(busbarOverrides) !== JSON.stringify(savedBusbarOverrides);
+  useWarnOnUnload(dirty);
 
   const bays = verticals.filter((v) => v.bay_type !== "unassigned").sort((a, b) => a.sort_order - b.sort_order);
   const busductTotal = bays.reduce((s, v) => s + (v.busduct_entries ?? 0), 0);
