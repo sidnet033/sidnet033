@@ -1,5 +1,7 @@
 "use client";
 
+import { searchItems } from "@/lib/item-search";
+import { ItemSearchHelp } from "@/components/search-help";
 import { CategoryFilter } from "@/components/category-multi-select";
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -136,19 +138,12 @@ export function FeederMasterWorkspace({
     new Set(items.map((i) => i.category).filter((c): c is string => !!c)),
   ).sort();
 
-  const itemMatches = itemSearch.trim()
-    ? items
-        .filter((i) => {
-          if (categoryChips.size && !categoryChips.has(i.category ?? ""))
-            return false;
-          const q = itemSearch.toLowerCase();
-          return (
-            itemCode(i).toLowerCase().includes(q) ||
-            i.description.toLowerCase().includes(q)
-          );
-        })
-        .slice(0, 10)
-    : [];
+  const itemMatches = searchItems(
+    items,
+    itemSearch,
+    10,
+    (i) => !categoryChips.size || categoryChips.has(i.category ?? ""),
+  );
 
   function selectFeeder(f: Feeder) {
     setSelectedId(f.id);
@@ -1002,9 +997,10 @@ export function FeederMasterWorkspace({
                         setItemSearch(e.target.value);
                         setSelectedItem(null);
                       }}
-                      placeholder="Search Item Master by SKU, description, vendor catalog #, or brand..."
-                      className="h-9 w-full rounded border border-outline-variant bg-surface-container-low/40 pl-9 pr-space-md font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      placeholder="Search SKU, cat #, make, category, description — use | for several"
+                      className="h-9 w-full rounded border border-outline-variant bg-surface-container-low/40 pl-9 pr-8 font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
                     />
+                    <ItemSearchHelp />
                     {itemMatches.length > 0 && !selectedItem && (
                       <div className="absolute top-full z-10 mt-1 max-h-56 w-full overflow-y-auto rounded border border-outline-variant bg-surface-container-lowest shadow-md">
                         {itemMatches.map((item) => (

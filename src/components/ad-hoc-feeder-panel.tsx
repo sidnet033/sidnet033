@@ -1,5 +1,7 @@
 "use client";
 
+import { searchItems } from "@/lib/item-search";
+import { ItemSearchHelp } from "@/components/search-help";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { itemCode, itemRowClass } from "@/lib/item-display";
@@ -37,15 +39,7 @@ export function AdHocFeederPanel({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const matches = itemSearch
-    ? allItems
-        .filter(
-          (i) =>
-            itemCode(i).toLowerCase().includes(itemSearch.toLowerCase()) ||
-            i.description.toLowerCase().includes(itemSearch.toLowerCase()),
-        )
-        .slice(0, 8)
-    : [];
+  const matches = searchItems(allItems, itemSearch, 8);
 
   function addLine() {
     const item = allItems.find((i) => i.id === selectedItemId);
@@ -109,15 +103,13 @@ export function AdHocFeederPanel({
       return;
     }
 
-    const { error: linesError } = await supabase
-      .from("feeder_items")
-      .insert(
-        lines.map((l) => ({
-          feeder_id: feeder.id,
-          item_id: l.item.id,
-          qty: l.qty,
-        })),
-      );
+    const { error: linesError } = await supabase.from("feeder_items").insert(
+      lines.map((l) => ({
+        feeder_id: feeder.id,
+        item_id: l.item.id,
+        qty: l.qty,
+      })),
+    );
 
     setSaving(false);
 
@@ -202,19 +194,20 @@ export function AdHocFeederPanel({
           </div>
         )}
 
-        <div className="relative">
+        <div className="relative flex items-center">
           <input
             value={itemSearch}
             onChange={(e) => {
               setItemSearch(e.target.value);
               setSelectedItemId("");
             }}
-            placeholder="Search item master..."
+            placeholder="Search item master — use | for several phrases"
             autoComplete="off"
-            className="w-full rounded border border-surface-container-high px-2 py-1 text-xs"
+            className="w-full rounded border border-surface-container-high py-1 pl-2 pr-7 text-xs"
           />
+          <ItemSearchHelp />
           {matches.length > 0 && !selectedItemId && (
-            <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-surface-container-high bg-surface-container-lowest shadow-sm">
+            <div className="absolute left-0 top-full z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-surface-container-high bg-surface-container-lowest shadow-sm">
               {matches.map((m) => (
                 <button
                   type="button"

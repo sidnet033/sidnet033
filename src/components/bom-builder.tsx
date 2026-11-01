@@ -1,5 +1,7 @@
 "use client";
 
+import { searchItems } from "@/lib/item-search";
+import { ItemSearchHelp } from "@/components/search-help";
 import { CategoryFilter } from "@/components/category-multi-select";
 import { useWarnOnUnload } from "@/lib/switchboard-presence";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -2374,21 +2376,12 @@ function FeederModuleCard({
     new Set(allItems.map((i) => i.category).filter((c): c is string => !!c)),
   ).sort();
 
-  const matches = itemSearch.trim()
-    ? allItems
-        .filter((i) => {
-          if (categoryChips.size && !categoryChips.has(i.category ?? ""))
-            return false;
-          const q = itemSearch.toLowerCase();
-          return (
-            itemCode(i).toLowerCase().includes(q) ||
-            (i.vendor_cat ?? "").toLowerCase().includes(q) ||
-            (i.make ?? "").toLowerCase().includes(q) ||
-            i.description.toLowerCase().includes(q)
-          );
-        })
-        .slice(0, 20)
-    : [];
+  const matches = searchItems(
+    allItems,
+    itemSearch,
+    20,
+    (i) => !categoryChips.size || categoryChips.has(i.category ?? ""),
+  );
 
   function addItem(item: ItemMaster) {
     onAddLine(item, 1);
@@ -2885,10 +2878,11 @@ function FeederModuleCard({
                       addItem(matches[0]);
                     }
                   }}
-                  placeholder="Search by SKU, vendor cat, make or description... (Enter to add)"
+                  placeholder="Search SKU, cat #, make, category, description — use | for several (Enter to add)"
                   autoComplete="off"
-                  className="h-9 w-full rounded border border-surface-container-high bg-surface pl-8 pr-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="h-9 w-full rounded border border-surface-container-high bg-surface pl-8 pr-8 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                 />
+                <ItemSearchHelp />
               </div>
               {itemCategories.length > 0 && (
                 <CategoryFilter
