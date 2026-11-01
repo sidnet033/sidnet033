@@ -20,6 +20,22 @@ type LogRow = {
   new_discount_pct: number | null;
 };
 
+type RateRow = {
+  id: string;
+  created_at: string;
+  user_id: string | null;
+  item_code: string | null;
+  item_description: string | null;
+  old_list_price: number | null;
+  new_list_price: number | null;
+  old_discount_pct: number | null;
+  new_discount_pct: number | null;
+  old_unit_cost: number | null;
+  new_unit_cost: number | null;
+  was_higher: boolean;
+  project: { code: string | null; title: string | null } | null;
+};
+
 const inr = (n: number | null) =>
   n == null
     ? "—"
@@ -39,8 +55,18 @@ export default async function PriceLogPage() {
     .order("created_at", { ascending: false })
     .limit(1000);
   const rows = (data ?? []) as LogRow[];
+  const { data: rateData } = await supabase
+    .from("item_rate_update_log")
+    .select("*, project:projects(code, title)")
+    .order("created_at", { ascending: false })
+    .limit(1000);
+  const rateRows = (rateData ?? []) as RateRow[];
   const userIds = [
-    ...new Set(rows.map((r) => r.user_id).filter((v): v is string => !!v)),
+    ...new Set(
+      [...rows, ...rateRows]
+        .map((r) => r.user_id)
+        .filter((v): v is string => !!v),
+    ),
   ];
   const { data: profiles } = userIds.length
     ? await supabase.from("profiles").select("id, full_name").in("id", userIds)
@@ -85,6 +111,79 @@ export default async function PriceLogPage() {
           so these never change existing projects.
         </p>
       </div>
+      <h2 className="pt-2 text-[15px] font-bold text-on-surface">
+        Item Master rates updated from projects
+      </h2>
+      <p className="-mt-3 text-sm text-secondary">
+        Rates copied into the Item Master by the Estimation Head (or an admin)
+        from Quoted projects — Project Details → Update Item Master rates.
+      </p>
+      {rateRows.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-surface-container-high py-6 text-center text-sm text-secondary">
+          No updates yet.
+        </p>
+      ) : (
+        <div className="overflow-hidden rounded-xl bg-surface-container-lowest shadow-sm">
+          <table className="w-full border-collapse text-[12px]">
+            <thead className="bg-surface-container-low text-left text-[11px] uppercase tracking-wider text-secondary">
+              <tr>
+                <th className="px-3 py-1.5">When / by</th>
+                <th className="px-3 py-1.5">Project</th>
+                <th className="px-3 py-1.5">Item</th>
+                <th className="px-3 py-1.5 text-right">List price</th>
+                <th className="px-3 py-1.5 text-right">Discount</th>
+                <th className="px-3 py-1.5 text-right">Net rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rateRows.map((r) => (
+                <tr
+                  key={r.id}
+                  className={`border-t border-surface-container ${r.was_higher ? "bg-amber-50" : ""}`}
+                >
+                  <td className="whitespace-nowrap px-3 py-1.5">
+                    {new Date(r.created_at).toLocaleString("en-IN", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                    <span className="block text-secondary">
+                      {r.user_id ? (names.get(r.user_id) ?? "—") : "—"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-1.5">{r.project?.code ?? "—"}</td>
+                  <td className="px-3 py-1.5">
+                    <span className="font-mono">{r.item_code ?? "—"}</span>
+                    <span className="ml-1.5 text-secondary">
+                      {r.item_description}
+                    </span>
+                    {r.was_higher && (
+                      <span className="ml-1.5 rounded-full bg-amber-200 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
+                        Higher
+                      </span>
+                    )}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
+                    {inr(r.old_list_price)} → <b>{inr(r.new_list_price)}</b>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
+                    {pct(r.old_discount_pct)} → <b>{pct(r.new_discount_pct)}</b>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">
+                    {inr(r.old_unit_cost)} → <b>{inr(r.new_unit_cost)}</b>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <h2 className="pt-2 text-[15px] font-bold text-on-surface">
+        Library feeder price updates
+      </h2>
       {batches.length === 0 && (
         <p className="rounded-lg border border-dashed border-surface-container-high py-10 text-center text-sm text-secondary">
           No price updates yet.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { getSwitchboardCostBreakdown } from "@/lib/switchboard-cost";
 import type { ProjectStage, Switchboard } from "@/types/database";
@@ -37,6 +37,17 @@ function inrShort(n: number) {
 }
 function inrFull(n: number) {
   return `₹${Math.round(n).toLocaleString("en-IN")}`;
+}
+
+// Indian financial year containing today: 1 Apr – 31 Mar
+function currentFy() {
+  const t = new Date();
+  const startYear = t.getMonth() >= 3 ? t.getFullYear() : t.getFullYear() - 1;
+  return {
+    from: `${startYear}-04-01`,
+    to: `${startYear + 1}-03-31`,
+    label: `FY ${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`,
+  };
 }
 
 function isoDay(d: Date) {
@@ -143,11 +154,10 @@ function EnquiryReport({
   groupBy: GroupBy;
   defaultMeasure: Measure;
 }) {
-  const today = new Date();
-  const [from, setFrom] = useState(
-    isoDay(new Date(today.getFullYear(), today.getMonth() - 2, 1)),
-  );
-  const [to, setTo] = useState(isoDay(today));
+  // default: the current financial year, 1 Apr – 31 Mar
+  const fy = currentFy();
+  const [from, setFrom] = useState(fy.from);
+  const [to, setTo] = useState(fy.to);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
@@ -316,6 +326,15 @@ function EnquiryReport({
     }
   }
 
+  // open with the report already run for the current FY
+  const runRef = useRef(run);
+  useEffect(() => {
+    runRef.current = run;
+  });
+  useEffect(() => {
+    void runRef.current();
+  }, []);
+
   return (
     <div className="max-w-5xl space-y-space-md">
       <div>
@@ -374,6 +393,17 @@ function EnquiryReport({
           Include revisions
         </label>
         <button
+          type="button"
+          onClick={() => {
+            setFrom(fy.from);
+            setTo(fy.to);
+          }}
+          title="Set the dates to the current financial year"
+          className="btn btn-outline h-8"
+        >
+          {fy.label}
+        </button>
+        <button
           onClick={run}
           disabled={loading}
           className="btn btn-primary h-8"
@@ -415,7 +445,7 @@ function EnquiryReport({
         </div>
       ) : (
         <p className="rounded-xl border border-dashed border-surface-container-high py-12 text-center text-[13px] text-secondary">
-          Pick a date range and click Show Report.
+          {loading ? "Loading…" : "Pick a date range and click Show Report."}
         </p>
       )}
     </div>

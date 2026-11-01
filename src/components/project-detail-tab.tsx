@@ -1,5 +1,6 @@
 "use client";
 
+import { ItemRateSyncDialog } from "@/components/item-rate-sync-dialog";
 import { searchPhrases } from "@/lib/item-search";
 import { ItemSearchHelp } from "@/components/search-help";
 import { isGoogleDriveLink } from "@/lib/drive-link";
@@ -166,6 +167,7 @@ export function ProjectDetailTab({
   switchboards,
   currentUserId,
   isAdmin,
+  isEstimationHead = false,
   revisionId,
   revisionArchived,
   onOpenSwitchboard,
@@ -182,12 +184,18 @@ export function ProjectDetailTab({
   switchboards: SwitchboardListItem[];
   currentUserId: string;
   isAdmin: boolean;
+  /** Estimation Head role: may push this project's rates into the Item Master */
+  isEstimationHead?: boolean;
   revisionId: string;
   revisionArchived: boolean;
   onOpenSwitchboard: (switchboardId: string, tab?: Tab) => void;
   onSwitchboardDeleted: (switchboardId: string) => void;
 }) {
   const router = useRouter();
+  const [rateSyncOpen, setRateSyncOpen] = useState(false);
+  // Quoted or any later stage (saved stage, not an unsaved edit)
+  const canSyncRates =
+    (isAdmin || isEstimationHead) && !["new", "wip"].includes(project.stage);
   const supabase = useMemo(() => createClient(), []);
 
   const [savedSnapshot, setSavedSnapshot] = useState<ProjectPatch>(() =>
@@ -815,6 +823,23 @@ export function ProjectDetailTab({
               <Icon name="error" size={15} /> Fix {liveRemainingAlerts.length}{" "}
               alert{liveRemainingAlerts.length === 1 ? "" : "s"} to save
             </span>
+          )}
+          {canSyncRates && (
+            <button
+              onClick={() => setRateSyncOpen(true)}
+              title="Copy the rates used in this project into the Item Master (Estimation Head)"
+              className="btn btn-outline"
+            >
+              Update Item Master rates
+            </button>
+          )}
+          {rateSyncOpen && (
+            <ItemRateSyncDialog
+              revisionId={revisionId}
+              switchboardIds={switchboards.map((s) => s.switchboard.id)}
+              projectLabel={`${project.code} Rev ${revision.revision_number}`}
+              onClose={() => setRateSyncOpen(false)}
+            />
           )}
           <button
             disabled

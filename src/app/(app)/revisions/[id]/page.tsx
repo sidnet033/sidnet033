@@ -7,17 +7,31 @@ import { RevisionWorkspace } from "@/components/revision-workspace";
 
 export const dynamic = "force-dynamic";
 
-export default async function RevisionPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function RevisionPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = await params;
   const supabase = await createClient();
   const current = await getCurrentUser();
   const isAdmin = current?.profile?.role === "admin";
 
-  const [ctx, allItems] = await Promise.all([getRevisionContext(id), fetchAllItemMaster(supabase)]);
+  const [ctx, allItems, { data: estimationHead }] = await Promise.all([
+    getRevisionContext(id),
+    fetchAllItemMaster(supabase),
+    supabase.rpc("is_estimation_head"),
+  ]);
 
   return (
     <Suspense fallback={null}>
-      <RevisionWorkspace ctx={ctx} currentUserId={current?.userId ?? ""} isAdmin={isAdmin} allItems={allItems} />
+      <RevisionWorkspace
+        ctx={ctx}
+        currentUserId={current?.userId ?? ""}
+        isAdmin={isAdmin}
+        isEstimationHead={estimationHead === true}
+        allItems={allItems}
+      />
     </Suspense>
   );
 }

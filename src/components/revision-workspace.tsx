@@ -40,11 +40,13 @@ export function RevisionWorkspace({
   ctx,
   currentUserId,
   isAdmin,
+  isEstimationHead = false,
   allItems,
 }: {
   ctx: RevisionContext;
   currentUserId: string;
   isAdmin: boolean;
+  isEstimationHead?: boolean;
   allItems: ItemMaster[];
 }) {
   const router = useRouter();
@@ -167,6 +169,7 @@ export function RevisionWorkspace({
             switchboards={switchboards}
             currentUserId={currentUserId}
             isAdmin={isAdmin}
+            isEstimationHead={isEstimationHead}
             revisionId={revision.id}
             revisionArchived={archived}
             onOpenSwitchboard={openSwitchboard}
