@@ -1,5 +1,7 @@
 "use client";
 
+import { searchPhrases } from "@/lib/item-search";
+import { ItemSearchHelp } from "@/components/search-help";
 import { isGoogleDriveLink } from "@/lib/drive-link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -561,6 +563,38 @@ export function ProjectDetailTab({
   const [typeOptions, setTypeOptions] = useState<
     { id: string; name: string }[]
   >([]);
+  const [boardFilter, setBoardFilter] = useState("");
+  // "a|b|c": switchboards matching any phrase in their tag, name or specs
+  const boardPhrases = searchPhrases(boardFilter);
+  const shownBoardIds = new Set(
+    boards
+      .filter((b) => {
+        if (!boardPhrases.length) return true;
+        const sb = b.switchboard;
+        const typeName = typeOptions.find(
+          (t) => t.id === sb.switchboard_type_id,
+        )?.name;
+        const h = [
+          sb.tag,
+          sb.title,
+          sb.description,
+          typeName,
+          sb.std,
+          sb.form_of_separation,
+          sb.amps != null ? `${sb.amps}A` : null,
+          sb.ip_rating ? `IP${sb.ip_rating}` : null,
+          sb.ka != null ? `${sb.ka}kA` : null,
+          sb.cable_entry,
+          sb.cable_exit,
+          sb.busbar,
+        ]
+          .filter(Boolean)
+          .join(" \u0000 ")
+          .toLowerCase();
+        return boardPhrases.some((p) => h.includes(p));
+      })
+      .map((b) => b.switchboard.id),
+  );
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -1231,6 +1265,33 @@ export function ProjectDetailTab({
                 {boards.length} Switchboards
               </span>
             </span>
+            {boards.length > 0 && (
+              <div className="ml-auto mr-space-sm flex items-center gap-2">
+                {boardPhrases.length > 0 && (
+                  <span className="text-xs text-secondary">
+                    {shownBoardIds.size} of {boards.length} shown
+                  </span>
+                )}
+                <div className="relative flex w-72 items-center">
+                  <Icon
+                    name="filter_list"
+                    size={15}
+                    className="pointer-events-none absolute left-2 text-secondary"
+                  />
+                  <input
+                    value={boardFilter}
+                    onChange={(e) => setBoardFilter(e.target.value)}
+                    placeholder="Filter switchboards — use | for several"
+                    className="h-8 w-full rounded border border-surface-container-high bg-surface-container-lowest pl-7 pr-8 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <ItemSearchHelp
+                    fields="tag, name, description, type, standard, form, amps, IP, kA, cable entry/exit and busbar"
+                    example="mcc|pcc|ip54"
+                    noun="switchboards"
+                  />
+                </div>
+              </div>
+            )}
             {!revisionArchived && (
               <button
                 onClick={handleAddSwitchboard}
@@ -1293,7 +1354,8 @@ export function ProjectDetailTab({
             ) : (
               (() => {
                 // Switchboards run across as columns; their properties run down as rows.
-                const columns = boards.map((item, index) => {
+                const columns = boards.flatMap((item, index) => {
+                  if (!shownBoardIds.has(item.switchboard.id)) return [];
                   const sb = item.switchboard;
                   const isLockedByMe = sb.locked_by === currentUserId;
                   const isLockedByOther =
@@ -1306,6 +1368,7 @@ export function ProjectDetailTab({
                   const isRenaming = renamingId === sb.id;
                   return {
                     id: sb.id,
+                    n: index + 1,
                     cells: [
                       /* # */ <>{index + 1}</>,
                       /* Switchboard */ <>
@@ -1647,6 +1710,12 @@ export function ProjectDetailTab({
                     ],
                   };
                 });
+                if (columns.length === 0)
+                  return (
+                    <p className="px-space-md py-10 text-center text-xs text-secondary">
+                      No switchboards match &quot;{boardFilter}&quot;.
+                    </p>
+                  );
                 const ROWS: {
                   label: string;
                   idx: number;
@@ -1705,7 +1774,7 @@ export function ProjectDetailTab({
                         <th className="sticky left-0 z-10 w-40 min-w-40 bg-surface-container-low px-space-md py-space-sm font-label-md text-label-md uppercase tracking-wider">
                           Switchboard
                         </th>
-                        {columns.map((c, i) => (
+                        {columns.map((c) => (
                           <th
                             key={c.id}
                             className="min-w-48 border-l border-surface-container px-space-md py-space-sm font-normal normal-case tracking-normal"
@@ -1713,7 +1782,7 @@ export function ProjectDetailTab({
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0 flex-1">
                                 <span className="text-[11px] text-secondary">
-                                  #{i + 1}
+                                  #{c.n}
                                 </span>
                                 {c.cells[1]}
                               </div>
