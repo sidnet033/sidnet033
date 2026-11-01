@@ -21,6 +21,7 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
     [],
   );
   const [quoteRequiredBy, setQuoteRequiredBy] = useState("");
+  const [enquiryDate, setEnquiryDate] = useState("");
   const [crmEnquiryNumber, setCrmEnquiryNumber] = useState("");
   const [nature, setNature] = useState<"" | "bidding" | "purchase">("");
   const [saving, setSaving] = useState(false);
@@ -55,6 +56,7 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
     setSalesExecId("");
     setNewSalesExecName("");
     setQuoteRequiredBy("");
+    setEnquiryDate("");
     setCrmEnquiryNumber("");
     setNature("");
     setError(null);
@@ -65,6 +67,10 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
     e.preventDefault();
     if (!title.trim()) {
       setError("Give the project a title.");
+      return;
+    }
+    if (!enquiryDate) {
+      setError("Enter the enquiry date.");
       return;
     }
     setSaving(true);
@@ -145,6 +151,7 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
         stage: "new", // shown as "Yet to quote"
         sales_exec_id: finalSalesExecId,
         quote_required_by: quoteRequiredBy || null,
+        crm_enquiry_date: enquiryDate,
         crm_enquiry_number: crmEnquiryNumber.trim() || null,
         nature: nature || null,
       })
@@ -324,6 +331,18 @@ export function NewProjectModal({ customers }: { customers: Customer[] }) {
                     value={crmEnquiryNumber}
                     onChange={(e) => setCrmEnquiryNumber(e.target.value)}
                     placeholder="e.g., ENQ-2026-0142"
+                    className="h-9 w-full rounded bg-surface px-space-sm font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                <div className="flex flex-col gap-space-2xs">
+                  <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-secondary">
+                    Enquiry Date <span className="text-error">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={enquiryDate}
+                    onChange={(e) => setEnquiryDate(e.target.value)}
                     className="h-9 w-full rounded bg-surface px-space-sm font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
