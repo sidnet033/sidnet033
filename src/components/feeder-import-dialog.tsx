@@ -6,7 +6,11 @@ import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { numericKeyGuard } from "@/lib/numeric-input";
-import { isBreakerCategory, isFrameRequiredCategory } from "@/lib/item-display";
+import {
+  isBreakerCategory,
+  isFrameRequiredCategory,
+  itemCode,
+} from "@/lib/item-display";
 import {
   TEMPLATE_COLUMNS,
   buildItemIndex,
@@ -29,7 +33,15 @@ import {
 } from "@/lib/feeder-import";
 import type { Feeder, ItemMaster, ItemSource } from "@/types/database";
 
-type Stage = "landing" | "reading" | "missing" | "creating" | "confirm" | "importing" | "done" | "error";
+type Stage =
+  | "landing"
+  | "reading"
+  | "missing"
+  | "creating"
+  | "confirm"
+  | "importing"
+  | "done"
+  | "error";
 
 export function FeederImportDialog({
   feeders,
@@ -71,12 +83,20 @@ export function FeederImportDialog({
     setSummary(null);
   }
 
-  async function proceedToConfirm(groups: ClassifiedGroup[], newlyCreatedItems: ItemMaster[]) {
+  async function proceedToConfirm(
+    groups: ClassifiedGroup[],
+    newlyCreatedItems: ItemMaster[],
+  ) {
     const supabase = createClient();
     const index = buildItemIndex([...items, ...newlyCreatedItems]);
-    const extendFeederIds = groups.filter((g) => g.mode === "extend").map((g) => g.existingFeeder!.id);
-    const { itemIdsByFeederId, nextSortOrderByFeederId } = await fetchExtendContext(supabase, extendFeederIds);
-    setPlan(planImport(groups, index, itemIdsByFeederId, nextSortOrderByFeederId));
+    const extendFeederIds = groups
+      .filter((g) => g.mode === "extend")
+      .map((g) => g.existingFeeder!.id);
+    const { itemIdsByFeederId, nextSortOrderByFeederId } =
+      await fetchExtendContext(supabase, extendFeederIds);
+    setPlan(
+      planImport(groups, index, itemIdsByFeederId, nextSortOrderByFeederId),
+    );
     setStage("confirm");
   }
 
@@ -144,16 +164,25 @@ export function FeederImportDialog({
     const { created, errors } = await createMissingItems(supabase, drafts);
     setItemsCreatedCount(created.length);
     if (errors.length > 0) {
-      setDraftError(`${errors.length} item(s) could not be created; their lines will be skipped. First: ${errors[0].reason}`);
+      setDraftError(
+        `${errors.length} item(s) could not be created; their lines will be skipped. First: ${errors[0].reason}`,
+      );
     }
     await proceedToConfirm(classified, created);
   }
 
-  async function handleProceed() {
+  // acceptedFeederIds: existing feeders whose new lines the user approved
+  async function handleProceed(acceptedFeederIds: Set<string>) {
     if (!plan) return;
     setStage("importing");
     const supabase = createClient();
-    const result = await executeImport(supabase, plan, feeders);
+    const approvedPlan: ImportPlan = {
+      ...plan,
+      extensions: plan.extensions.filter(
+        (e) => e.addLines.length === 0 || acceptedFeederIds.has(e.feeder.id),
+      ),
+    };
+    const result = await executeImport(supabase, approvedPlan, feeders);
     await logFeederImport(supabase, {
       fileName,
       itemsCreated: itemsCreatedCount,
@@ -162,7 +191,12 @@ export function FeederImportDialog({
     });
     setSummary(result);
     setStage("done");
-    if (result.feedersCreated > 0 || result.feedersExtended > 0 || itemsCreatedCount > 0) onDone();
+    if (
+      result.feedersCreated > 0 ||
+      result.feedersExtended > 0 ||
+      itemsCreatedCount > 0
+    )
+      onDone();
   }
 
   async function downloadFailedRows() {
@@ -171,10 +205,16 @@ export function FeederImportDialog({
     if (failed.length === 0) return;
     const wb = new ExcelJS.Workbook();
     const sheet = wb.addWorksheet("Feeders");
-    sheet.columns = TEMPLATE_COLUMNS.map((c) => ({ header: c, key: c, width: 18 }));
+    sheet.columns = TEMPLATE_COLUMNS.map((c) => ({
+      header: c,
+      key: c,
+      width: 18,
+    }));
     for (const f of failed) sheet.addRow(f.raw);
     const buffer = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -198,8 +238,18 @@ export function FeederImportDialog({
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse-surface/40 p-4 backdrop-blur-sm" onClick={stage === "landing" || stage === "error" ? reset : undefined}>
-          <SavingOverlay show={stage === "creating" || stage === "importing"} label={stage === "creating" ? "Creating items..." : "Importing feeders..."} />
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-inverse-surface/40 p-4 backdrop-blur-sm"
+          onClick={stage === "landing" || stage === "error" ? reset : undefined}
+        >
+          <SavingOverlay
+            show={stage === "creating" || stage === "importing"}
+            label={
+              stage === "creating"
+                ? "Creating items..."
+                : "Importing feeders..."
+            }
+          />
           <div
             className="flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-[8px] bg-surface-container-lowest shadow-md"
             onClick={(e) => e.stopPropagation()}
@@ -210,11 +260,18 @@ export function FeederImportDialog({
                   <Icon name="input" size={20} />
                 </div>
                 <div>
-                  <h2 className="font-display text-sm font-semibold text-on-surface">Import Feeder XLS</h2>
-                  {fileName && <p className="text-xs text-secondary">{fileName}</p>}
+                  <h2 className="font-display text-sm font-semibold text-on-surface">
+                    Import Feeder XLS
+                  </h2>
+                  {fileName && (
+                    <p className="text-xs text-secondary">{fileName}</p>
+                  )}
                 </div>
               </div>
-              <button onClick={reset} className="rounded p-1 text-secondary hover:bg-surface-container-low hover:text-on-surface">
+              <button
+                onClick={reset}
+                className="rounded p-1 text-secondary hover:bg-surface-container-low hover:text-on-surface"
+              >
                 <Icon name="close" size={18} />
               </button>
             </div>
@@ -223,8 +280,10 @@ export function FeederImportDialog({
               {stage === "landing" && (
                 <div className="space-y-4">
                   <p className="text-sm text-on-surface-variant">
-                    Upload a feeder list to create new library feeders, and add new BOM lines to feeders that already exist. Feeders
-                    aren&rsquo;t edited or overwritten — only new items and new lines get added.
+                    Upload a feeder list to create new library feeders, and add
+                    new BOM lines to feeders that already exist. Feeders
+                    aren&rsquo;t edited or overwritten — only new items and new
+                    lines get added.
                   </p>
                   <div className="flex items-center gap-3">
                     <a
@@ -236,22 +295,37 @@ export function FeederImportDialog({
                     </a>
                     <label className="flex cursor-pointer items-center gap-1.5 rounded-[4px] bg-primary px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-container">
                       <Icon name="upload_file" size={16} /> Upload file
-                      <input ref={inputRef} type="file" accept=".xlsx" onChange={handleFile} className="hidden" />
+                      <input
+                        ref={inputRef}
+                        type="file"
+                        accept=".xlsx"
+                        onChange={handleFile}
+                        className="hidden"
+                      />
                     </label>
                   </div>
                 </div>
               )}
 
-              {(stage === "reading" || stage === "creating" || stage === "importing") && (
+              {(stage === "reading" ||
+                stage === "creating" ||
+                stage === "importing") && (
                 <p className="py-8 text-center text-sm text-on-surface-variant">
-                  {stage === "reading" ? "Reading file..." : stage === "creating" ? "Creating items..." : "Importing feeders..."}
+                  {stage === "reading"
+                    ? "Reading file..."
+                    : stage === "creating"
+                      ? "Creating items..."
+                      : "Importing feeders..."}
                 </p>
               )}
 
               {stage === "error" && (
                 <div className="space-y-3">
                   <p className="text-sm text-error">{errorText}</p>
-                  <button onClick={reset} className="rounded-[4px] bg-surface-container-low px-3 py-1.5 text-xs font-medium text-on-surface hover:bg-surface-container-high">
+                  <button
+                    onClick={reset}
+                    className="rounded-[4px] bg-surface-container-low px-3 py-1.5 text-xs font-medium text-on-surface hover:bg-surface-container-high"
+                  >
                     Close
                   </button>
                 </div>
@@ -260,15 +334,22 @@ export function FeederImportDialog({
               {stage === "missing" && (
                 <div className="space-y-4">
                   <div className="rounded-[4px] bg-surface-container-low p-3 text-xs text-on-surface-variant">
-                    {totalFeeders} feeder{totalFeeders === 1 ? "" : "s"} ({newCount} new, {extendCount} existing to extend), {totalLines} item
-                    line{totalLines === 1 ? "" : "s"}, <span className="font-semibold text-on-surface">{drafts.length} item(s) missing</span>{" "}
+                    {totalFeeders} feeder{totalFeeders === 1 ? "" : "s"} (
+                    {newCount} new, {extendCount} existing to extend),{" "}
+                    {totalLines} item line{totalLines === 1 ? "" : "s"},{" "}
+                    <span className="font-semibold text-on-surface">
+                      {drafts.length} item(s) missing
+                    </span>{" "}
                     from Item Master.
                   </div>
                   <p className="text-sm text-on-surface-variant">
-                    Fill in the details for the missing items you want to create. Description, Make, Category, and Source are always
-                    required; for ACB, MCCB, and MCB items, Amps, Poles, and kA are required too. Unchecked items won&rsquo;t be created — any
-                    feeder line that needs one of them will be skipped (a brand-new feeder needing one is skipped entirely; an existing feeder
-                    just won&rsquo;t get that line).
+                    Fill in the details for the missing items you want to
+                    create. Description, Make, Category, and Source are always
+                    required; for ACB, MCCB, and MCB items, Amps, Poles, and kA
+                    are required too. Unchecked items won&rsquo;t be created —
+                    any feeder line that needs one of them will be skipped (a
+                    brand-new feeder needing one is skipped entirely; an
+                    existing feeder just won&rsquo;t get that line).
                   </p>
                   <div className="overflow-x-auto rounded-[4px] border border-outline-variant/40">
                     <table className="w-full min-w-[980px] text-left text-xs">
@@ -290,17 +371,29 @@ export function FeederImportDialog({
                       </thead>
                       <tbody className="divide-y divide-surface-container">
                         {drafts.map((d) => (
-                          <MissingItemRow key={d.key} draft={d} onChange={(p) => patchDraft(d.key, p)} />
+                          <MissingItemRow
+                            key={d.key}
+                            draft={d}
+                            onChange={(p) => patchDraft(d.key, p)}
+                          />
                         ))}
                       </tbody>
                     </table>
                   </div>
-                  {draftError && <p className="text-xs text-error">{draftError}</p>}
+                  {draftError && (
+                    <p className="text-xs text-error">{draftError}</p>
+                  )}
                   <div className="flex items-center justify-end gap-2 border-t border-outline-variant/30 pt-3">
-                    <button onClick={reset} className="rounded-[4px] px-3 py-1.5 text-sm font-medium text-secondary hover:bg-surface-container-low">
+                    <button
+                      onClick={reset}
+                      className="rounded-[4px] px-3 py-1.5 text-sm font-medium text-secondary hover:bg-surface-container-low"
+                    >
                       Cancel
                     </button>
-                    <button onClick={handleContinueFromMissing} className="rounded-[4px] bg-primary px-4 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-container">
+                    <button
+                      onClick={handleContinueFromMissing}
+                      className="rounded-[4px] bg-primary px-4 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-container"
+                    >
                       Continue
                     </button>
                   </div>
@@ -308,57 +401,106 @@ export function FeederImportDialog({
               )}
 
               {stage === "confirm" && plan && (
-                <ConfirmStep plan={plan} itemsCreatedCount={itemsCreatedCount} onCancel={reset} onProceed={handleProceed} />
+                <ConfirmStep
+                  plan={plan}
+                  itemsCreatedCount={itemsCreatedCount}
+                  onCancel={reset}
+                  onProceed={handleProceed}
+                />
               )}
 
               {stage === "done" && summary && (
                 <div className="space-y-3">
                   <div className="grid grid-cols-4 gap-2 text-center">
                     <div className="rounded-[4px] bg-tertiary-fixed/50 p-2">
-                      <p className="text-[15px] font-bold text-on-tertiary-fixed">{summary.feedersCreated}</p>
-                      <p className="text-[10px] uppercase tracking-wide text-on-tertiary-fixed/80">New feeders</p>
+                      <p className="text-[15px] font-bold text-on-tertiary-fixed">
+                        {summary.feedersCreated}
+                      </p>
+                      <p className="text-[10px] uppercase tracking-wide text-on-tertiary-fixed/80">
+                        New feeders
+                      </p>
                     </div>
                     <div className="rounded-[4px] bg-secondary-container/60 p-2">
-                      <p className="text-[15px] font-bold text-on-secondary-container">{itemsCreatedCount}</p>
-                      <p className="text-[10px] uppercase tracking-wide text-on-secondary-container/80">Items created</p>
+                      <p className="text-[15px] font-bold text-on-secondary-container">
+                        {itemsCreatedCount}
+                      </p>
+                      <p className="text-[10px] uppercase tracking-wide text-on-secondary-container/80">
+                        Items created
+                      </p>
                     </div>
                     <div className="rounded-[4px] bg-secondary-container/60 p-2">
                       <p className="text-[15px] font-bold text-on-secondary-container">
                         {summary.linesAdded}
-                        <span className="text-xs font-normal"> / {summary.feedersExtended}f</span>
+                        <span className="text-xs font-normal">
+                          {" "}
+                          / {summary.feedersExtended}f
+                        </span>
                       </p>
-                      <p className="text-[10px] uppercase tracking-wide text-on-secondary-container/80">Lines added</p>
+                      <p className="text-[10px] uppercase tracking-wide text-on-secondary-container/80">
+                        Lines added
+                      </p>
                     </div>
                     <div className="rounded-[4px] bg-error-container p-2">
-                      <p className="text-[15px] font-bold text-on-error-container">{summary.feedersSkipped.length + rowErrors.length}</p>
-                      <p className="text-[10px] uppercase tracking-wide text-on-error-container/80">Skipped</p>
+                      <p className="text-[15px] font-bold text-on-error-container">
+                        {summary.feedersSkipped.length + rowErrors.length}
+                      </p>
+                      <p className="text-[10px] uppercase tracking-wide text-on-error-container/80">
+                        Skipped
+                      </p>
                     </div>
                   </div>
 
-                  {(summary.feedersSkipped.length > 0 || rowErrors.length > 0) && (
+                  {(summary.feedersSkipped.length > 0 ||
+                    rowErrors.length > 0) && (
                     <div className="max-h-40 space-y-1 overflow-y-auto rounded-[4px] bg-surface-container-low p-2">
                       {summary.feedersSkipped.map((s, i) => (
-                        <p key={`f${i}`} className="text-[11px] text-on-surface-variant">
-                          <span className="font-medium text-error">{s.name}:</span> {s.reason}
+                        <p
+                          key={`f${i}`}
+                          className="text-[11px] text-on-surface-variant"
+                        >
+                          <span className="font-medium text-error">
+                            {s.name}:
+                          </span>{" "}
+                          {s.reason}
                         </p>
                       ))}
                       {rowErrors.map((r, i) => (
-                        <p key={`r${i}`} className="text-[11px] text-on-surface-variant">
-                          <span className="font-medium text-error">Row {r.rowNumber}:</span> {r.reason}
+                        <p
+                          key={`r${i}`}
+                          className="text-[11px] text-on-surface-variant"
+                        >
+                          <span className="font-medium text-error">
+                            Row {r.rowNumber}:
+                          </span>{" "}
+                          {r.reason}
                         </p>
                       ))}
                     </div>
                   )}
 
-                  <p className="text-[11px] text-secondary">Saved to the import audit log.</p>
+                  <p className="text-[11px] text-secondary">
+                    Saved to the import audit log.
+                  </p>
 
                   <div className="flex items-center justify-end gap-2">
-                    {(summary.failedRows.length > 0 || rowErrors.length > 0) && (
-                      <button onClick={downloadFailedRows} className="rounded-[4px] border border-outline-variant/60 px-3 py-1.5 text-xs font-medium text-on-surface hover:bg-surface-container-low">
-                        <Icon name="file_download" size={14} className="mr-1 inline" /> Download failed rows
+                    {(summary.failedRows.length > 0 ||
+                      rowErrors.length > 0) && (
+                      <button
+                        onClick={downloadFailedRows}
+                        className="rounded-[4px] border border-outline-variant/60 px-3 py-1.5 text-xs font-medium text-on-surface hover:bg-surface-container-low"
+                      >
+                        <Icon
+                          name="file_download"
+                          size={14}
+                          className="mr-1 inline"
+                        />{" "}
+                        Download failed rows
                       </button>
                     )}
-                    <button onClick={reset} className="rounded-[4px] bg-primary px-4 py-1.5 text-xs font-medium text-on-primary hover:bg-primary-container">
+                    <button
+                      onClick={reset}
+                      className="rounded-[4px] bg-primary px-4 py-1.5 text-xs font-medium text-on-primary hover:bg-primary-container"
+                    >
                       Done
                     </button>
                   </div>
@@ -381,61 +523,224 @@ function ConfirmStep({
   plan: ImportPlan;
   itemsCreatedCount: number;
   onCancel: () => void;
-  onProceed: () => void;
+  onProceed: (acceptedFeederIds: Set<string>) => void;
 }) {
+  const extensionsToReview = plan.extensions.filter(
+    (e) => e.addLines.length > 0,
+  );
+  // changes to existing library feeders need approval: all ticked to start
+  const [accepted, setAccepted] = useState<Set<string>>(
+    () => new Set(extensionsToReview.map((e) => e.feeder.id)),
+  );
+  const [openIds, setOpenIds] = useState<Set<string>>(
+    () =>
+      new Set(
+        extensionsToReview.length <= 5
+          ? extensionsToReview.map((e) => e.feeder.id)
+          : [],
+      ),
+  );
   const willCreate = plan.newFeeders.length;
   const blocked = plan.blockedFeeders.length;
-  const extensionsWithLines = plan.extensions.filter((e) => e.addLines.length > 0);
+  const extensionsWithLines = plan.extensions.filter(
+    (e) => e.addLines.length > 0,
+  );
   const linesToAdd = plan.extensions.reduce((s, e) => s + e.addLines.length, 0);
-  const linesSkipped = plan.extensions.reduce((s, e) => s + e.unresolvedLines.length, 0);
+  const linesSkipped = plan.extensions.reduce(
+    (s, e) => s + e.unresolvedLines.length,
+    0,
+  );
 
   return (
     <div className="space-y-4">
-      {itemsCreatedCount > 0 && <p className="text-sm text-on-surface-variant">{itemsCreatedCount} item(s) created in Item Master.</p>}
+      {itemsCreatedCount > 0 && (
+        <p className="text-sm text-on-surface-variant">
+          {itemsCreatedCount} item(s) created in Item Master.
+        </p>
+      )}
 
       <div className="space-y-2 text-sm">
         <p>
-          <span className="font-semibold text-on-surface">{willCreate}</span> new feeder{willCreate === 1 ? "" : "s"} will be created.
+          <span className="font-semibold text-on-surface">{willCreate}</span>{" "}
+          new feeder{willCreate === 1 ? "" : "s"} will be created.
         </p>
         {blocked > 0 && (
           <div className="rounded-[4px] bg-error-container/40 p-2">
-            <p className="font-medium text-error">{blocked} new feeder(s) will NOT be created — missing item(s):</p>
+            <p className="font-medium text-error">
+              {blocked} new feeder(s) will NOT be created — missing item(s):
+            </p>
             <ul className="mt-1 space-y-0.5 text-[11px] text-on-surface-variant">
               {plan.blockedFeeders.map((b, i) => (
                 <li key={i}>
-                  <span className="font-medium">{b.group.displayName}</span> — {b.missingRefs.map((r) => r.sku || r.vendorCat || "?").join(", ")}
+                  <span className="font-medium">{b.group.displayName}</span> —{" "}
+                  {b.missingRefs
+                    .map((r) => r.sku || r.vendorCat || "?")
+                    .join(", ")}
                 </li>
               ))}
             </ul>
           </div>
         )}
         <p>
-          <span className="font-semibold text-on-surface">{linesToAdd}</span> new line{linesToAdd === 1 ? "" : "s"} will be added to{" "}
-          <span className="font-semibold text-on-surface">{extensionsWithLines.length}</span> existing feeder(s) — their own fields and
-          existing lines are left untouched.
+          <span className="font-semibold text-on-surface">{linesToAdd}</span>{" "}
+          new line{linesToAdd === 1 ? "" : "s"} would be added to{" "}
+          <span className="font-semibold text-on-surface">
+            {extensionsWithLines.length}
+          </span>{" "}
+          existing feeder(s) — their own fields and existing lines are left
+          untouched. <b>Review and approve these changes below.</b>
         </p>
-        {linesSkipped > 0 && <p className="text-[11px] text-on-surface-variant">{linesSkipped} line(s) on existing feeders skipped (missing item not created).</p>}
+        {extensionsToReview.length > 0 && (
+          <div className="rounded-[4px] border border-outline-variant/40">
+            <div className="flex items-center justify-between border-b border-outline-variant/30 bg-surface-container-low px-2 py-1 text-[11px]">
+              <span className="font-bold uppercase tracking-wide text-secondary">
+                Changes to existing feeders
+              </span>
+              <span className="flex gap-2">
+                <button
+                  onClick={() =>
+                    setAccepted(
+                      new Set(extensionsToReview.map((e) => e.feeder.id)),
+                    )
+                  }
+                  className="text-primary hover:underline"
+                >
+                  Approve all
+                </button>
+                <button
+                  onClick={() => setAccepted(new Set())}
+                  className="text-primary hover:underline"
+                >
+                  Approve none
+                </button>
+              </span>
+            </div>
+            <div className="max-h-72 overflow-y-auto">
+              {extensionsToReview.map((e) => {
+                const isOpen = openIds.has(e.feeder.id);
+                const on = accepted.has(e.feeder.id);
+                return (
+                  <div
+                    key={e.feeder.id}
+                    className={`border-b border-outline-variant/20 px-2 py-1.5 last:border-b-0 ${on ? "" : "opacity-60"}`}
+                  >
+                    <div className="flex items-center gap-2 text-[12px]">
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={() =>
+                          setAccepted((prev) => {
+                            const n = new Set(prev);
+                            if (n.has(e.feeder.id)) n.delete(e.feeder.id);
+                            else n.add(e.feeder.id);
+                            return n;
+                          })
+                        }
+                      />
+                      <button
+                        onClick={() =>
+                          setOpenIds((prev) => {
+                            const n = new Set(prev);
+                            if (n.has(e.feeder.id)) n.delete(e.feeder.id);
+                            else n.add(e.feeder.id);
+                            return n;
+                          })
+                        }
+                        className="flex flex-1 items-center gap-1 text-left"
+                      >
+                        <Icon
+                          name={isOpen ? "expand_less" : "expand_more"}
+                          size={14}
+                        />
+                        <b>{e.feeder.name}</b>
+                        {e.feeder.tag && (
+                          <span className="font-mono text-[11px] text-secondary">
+                            {e.feeder.tag}
+                          </span>
+                        )}
+                        <span className="ml-auto text-emerald-700">
+                          +{e.addLines.length} line(s)
+                        </span>
+                        {e.alreadyLinkedLines.length > 0 && (
+                          <span className="text-secondary">
+                            · {e.alreadyLinkedLines.length} already in feeder
+                          </span>
+                        )}
+                      </button>
+                    </div>
+                    {isOpen && (
+                      <table className="ml-6 mt-1 w-[calc(100%-1.5rem)] text-[11px]">
+                        <tbody>
+                          {e.addLines.map((l, i) => (
+                            <tr key={i} className="text-emerald-800">
+                              <td className="w-6 pr-1">+</td>
+                              <td className="pr-2 font-mono">
+                                {itemCode(l.item)}
+                              </td>
+                              <td className="pr-2">{l.item.description}</td>
+                              <td className="whitespace-nowrap text-right">
+                                qty {l.qty}
+                              </td>
+                              <td className="pl-2 text-secondary">
+                                row {l.rowNumber}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {linesSkipped > 0 && (
+          <p className="text-[11px] text-on-surface-variant">
+            {linesSkipped} line(s) on existing feeders skipped (missing item not
+            created).
+          </p>
+        )}
       </div>
 
       <div className="flex items-center justify-end gap-2 border-t border-outline-variant/30 pt-3">
-        <button onClick={onCancel} className="rounded-[4px] px-3 py-1.5 text-sm font-medium text-secondary hover:bg-surface-container-low">
+        <button
+          onClick={onCancel}
+          className="rounded-[4px] px-3 py-1.5 text-sm font-medium text-secondary hover:bg-surface-container-low"
+        >
           Cancel
         </button>
-        <button onClick={onProceed} className="rounded-[4px] bg-primary px-4 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-container">
-          Proceed
+        <button
+          onClick={() => onProceed(accepted)}
+          className="rounded-[4px] bg-primary px-4 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-container"
+        >
+          {extensionsToReview.length > 0
+            ? `Proceed — ${accepted.size} of ${extensionsToReview.length} existing feeder change(s) approved`
+            : "Proceed"}
         </button>
       </div>
     </div>
   );
 }
 
-function MissingItemRow({ draft, onChange }: { draft: MissingItemDraft; onChange: (p: Partial<MissingItemDraft>) => void }) {
-  const effectiveSource: ItemSource | "" = draft.source || (draft.sku.trim() ? "" : "Estimation");
+function MissingItemRow({
+  draft,
+  onChange,
+}: {
+  draft: MissingItemDraft;
+  onChange: (p: Partial<MissingItemDraft>) => void;
+}) {
+  const effectiveSource: ItemSource | "" =
+    draft.source || (draft.sku.trim() ? "" : "Estimation");
   const breaker = isBreakerCategory(draft.category);
   return (
     <tr className="h-9">
       <td className="px-2">
-        <input type="checkbox" checked={draft.create} onChange={(e) => onChange({ create: e.target.checked })} />
+        <input
+          type="checkbox"
+          checked={draft.create}
+          onChange={(e) => onChange({ create: e.target.checked })}
+        />
       </td>
       <td className="px-2">
         <input
@@ -536,7 +841,9 @@ function MissingItemRow({ draft, onChange }: { draft: MissingItemDraft; onChange
           value={draft.frame}
           onChange={(e) => onChange({ frame: e.target.value })}
           disabled={!draft.create}
-          placeholder={isFrameRequiredCategory(draft.category) ? "Required" : ""}
+          placeholder={
+            isFrameRequiredCategory(draft.category) ? "Required" : ""
+          }
           title="e.g. E1.2, E2.2, XT4, T5"
           className="w-16 rounded border border-outline-variant/60 px-1.5 py-1 text-xs disabled:opacity-40"
         />
