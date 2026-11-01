@@ -1,6 +1,6 @@
 "use client";
 
-import { searchItems } from "@/lib/item-search";
+import { searchByPhrases, searchItems } from "@/lib/item-search";
 import { ItemSearchHelp } from "@/components/search-help";
 import { CategoryFilter } from "@/components/category-multi-select";
 import { useWarnOnUnload } from "@/lib/switchboard-presence";
@@ -2193,11 +2193,16 @@ function AddFromLibrary({
 }) {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
-  const matches = search
-    ? options
-        .filter((o) => o.name.toLowerCase().includes(search.toLowerCase()))
-        .slice(0, 8)
-    : options.slice(0, 8);
+  // "a|b|c": feeders matching any phrase in name, tag, category or rating
+  const matches = searchByPhrases(
+    options,
+    search,
+    (o) =>
+      [o.name, o.tag, o.category, o.rating_summary]
+        .filter(Boolean)
+        .join(" \u0000 "),
+    15,
+  );
 
   return (
     <div className="relative">
@@ -2207,13 +2212,20 @@ function AddFromLibrary({
       </button>
       {open && (
         <div className="absolute left-0 z-30 mt-1 w-80 rounded-md border border-surface-container-high bg-surface-container-lowest shadow-md">
-          <input
-            autoFocus
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search library feeders..."
-            className="w-full border-b border-surface-container px-3 py-2 text-sm focus:outline-none"
-          />
+          <div className="relative flex items-center">
+            <input
+              autoFocus
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search library feeders — use | for several"
+              className="w-full border-b border-surface-container py-2 pl-3 pr-8 text-sm focus:outline-none"
+            />
+            <ItemSearchHelp
+              fields="feeder name, tag, category and rating"
+              example="incomer|acb|1600a"
+              noun="feeders"
+            />
+          </div>
           <div className="max-h-64 overflow-y-auto">
             {matches.map((f) => (
               <button

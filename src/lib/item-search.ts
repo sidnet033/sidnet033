@@ -28,6 +28,26 @@ export function itemSearchScore(item: ItemMaster, phrases: string[]): number {
   return score;
 }
 
+/** same "a|b|c" rule for any records: rank by how many phrases appear in text(record) */
+export function searchByPhrases<T>(
+  records: T[],
+  query: string,
+  text: (r: T) => string,
+  limit: number,
+): T[] {
+  const phrases = searchPhrases(query);
+  if (!phrases.length) return records.slice(0, limit);
+  return records
+    .map((r, idx) => {
+      const h = text(r).toLowerCase();
+      return { r, idx, score: phrases.filter((p) => h.includes(p)).length };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score || a.idx - b.idx)
+    .slice(0, limit)
+    .map((x) => x.r);
+}
+
 export function searchItems(
   items: ItemMaster[],
   query: string,

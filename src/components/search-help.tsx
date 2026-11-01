@@ -5,8 +5,14 @@ import { Icon } from "@/components/icon";
 // ⓘ next to an item search box: how multi-phrase search works.
 export function ItemSearchHelp({
   className = "right-2",
+  fields = "SKU, vendor cat #, make, category and description",
+  example = "actuator|teknic|3co|acb",
+  noun = "items",
 }: {
   className?: string;
+  fields?: string;
+  example?: string;
+  noun?: string;
 }) {
   return (
     <span className={`group absolute inline-flex ${className}`}>
@@ -24,13 +30,13 @@ export function ItemSearchHelp({
       >
         <b>How search works</b>
         <br />
-        Type a word or part of one — it&apos;s matched against SKU, vendor cat
-        #, make, category and description.
+        Type a word or part of one — it&apos;s matched against {fields}.
         <br />
         <br />
-        Separate several phrases with <b>|</b> to find items matching <i>any</i>{" "}
-        of them, e.g. <span className="font-mono">actuator|teknic|3co|acb</span>
-        . Items matching the most phrases are listed first.
+        Separate several phrases with <b>|</b> to find {noun} matching{" "}
+        <i>any</i> of them, e.g. <span className="font-mono">{example}</span>.{" "}
+        {noun.charAt(0).toUpperCase() + noun.slice(1)} matching the most phrases
+        are listed first.
       </span>
     </span>
   );
