@@ -68,6 +68,7 @@ import {
   deviceDepthFor,
   DEFAULT_COMPARTMENT_HEIGHT_MM,
   artukBaySize,
+  mccBayDepth,
   blankCompartmentLabel,
   chamberPositionFor,
   compartmentHeightFor,
@@ -1368,8 +1369,39 @@ export function GaCanvas({
     } else if (rightIsOldPartner && right && current?.id !== c.id) {
       next = next.filter((v) => v.id !== right.id);
     }
-    // one depth for the whole panel: the deepest bay's
-    const depth = panelDepthOf(next);
+    // One depth for the whole panel: the deepest bay's REQUIRED depth --
+    // worked out per bay (not read off depth_mm, which every bay shares),
+    // so switching away from a deep config lets the panel get shallower.
+    const opts = {
+      arrangement,
+      frontAccess: cableAccess === "Front",
+      amps: sb.amps,
+      mainRuns:
+        busbarPlan?.segments.find((seg) => seg.kind === "main")?.runs ?? 1,
+    };
+    const ordered = next
+      .filter((v) => v.bay_type !== "unassigned")
+      .sort((a, b) => a.sort_order - b.sort_order);
+    const required = ordered.map((v, i) => {
+      if (v.id === bayId) return c.depthMm;
+      // the chosen config's partner bay
+      if (c.partner && i > 0 && ordered[i - 1].id === bayId) return c.depthMm;
+      if (isAlley(v.bay_type)) {
+        // a partner (e.g. cable chamber) of the bay to its left
+        const left = ordered[i - 1];
+        const leftCfg = left ? currentConfigOf(left, v) : null;
+        return leftCfg?.partner ? leftCfg.depthMm : null;
+      }
+      const own = currentConfigOf(v, ordered[i + 1] ?? null);
+      if (own) return own.depthMm;
+      const left = ordered[i - 1];
+      const leftCfg = left ? currentConfigOf(left, v) : null;
+      if (leftCfg?.partner) return leftCfg.depthMm;
+      return artukBaySize(v, opts)?.depthMm ?? mccBayDepth(opts);
+    });
+    const depth = required.some((d) => d != null)
+      ? Math.max(...required.filter((d): d is number => d != null))
+      : panelDepthOf(next);
     setVerticals(
       next.map((v) =>
         v.bay_type === "unassigned"
