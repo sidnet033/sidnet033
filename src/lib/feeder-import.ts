@@ -1,9 +1,15 @@
+import { fetchAllRows } from "@/lib/fetch-all";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { excelCellText } from "@/lib/excel-cell";
 import { DEVICE_TYPE_LABELS } from "@/lib/artuk-sizing";
 import { FEEDER_TYPES, computeFeederTag } from "@/lib/feeder-tag";
 import { validateNewItemFields } from "@/lib/item-display";
-import type { DeviceType, Feeder, ItemMaster, ItemSource } from "@/types/database";
+import type {
+  DeviceType,
+  Feeder,
+  ItemMaster,
+  ItemSource,
+} from "@/types/database";
 
 // Template columns, in the order the generated .xlsx uses -- shared by the
 // parser (reading these keys out of the header row) and the failed-rows
@@ -50,18 +56,32 @@ export type ParsedFeederLine = {
   raw: Record<string, string>;
 };
 
-export type RowError = { rowNumber: number; reason: string; raw: Record<string, string> };
+export type RowError = {
+  rowNumber: number;
+  reason: string;
+  raw: Record<string, string>;
+};
 
 // A minimal shape an ExcelJS.Worksheet satisfies -- keeps this module free
 // of a hard ExcelJS dependency (same separation as item-import.ts, which
 // this mirrors: ExcelJS only ever gets imported in the "use client" dialog
 // that actually reads/writes .xlsx bytes).
 export type SheetLike = {
-  getRow(n: number): { eachCell(cb: (cell: { value: unknown }, col: number) => void): void };
-  eachRow(cb: (row: { getCell(i: number): { value: unknown }; cellCount: number }, rowNumber: number) => void): void;
+  getRow(n: number): {
+    eachCell(cb: (cell: { value: unknown }, col: number) => void): void;
+  };
+  eachRow(
+    cb: (
+      row: { getCell(i: number): { value: unknown }; cellCount: number },
+      rowNumber: number,
+    ) => void,
+  ): void;
 };
 
-export function parseFeederSheet(sheet: SheetLike): { lines: ParsedFeederLine[]; rowErrors: RowError[] } {
+export function parseFeederSheet(sheet: SheetLike): {
+  lines: ParsedFeederLine[];
+  rowErrors: RowError[];
+} {
   const headerRow = sheet.getRow(1);
   const columnIndex: Record<string, number> = {};
   headerRow.eachCell((cell, colNumber) => {
@@ -93,22 +113,34 @@ export function parseFeederSheet(sheet: SheetLike): { lines: ParsedFeederLine[];
       return;
     }
     if (!raw.item_sku && !raw.item_vendor_cat) {
-      rowErrors.push({ rowNumber, reason: "Missing both item_sku and item_vendor_cat", raw });
+      rowErrors.push({
+        rowNumber,
+        reason: "Missing both item_sku and item_vendor_cat",
+        raw,
+      });
       return;
     }
 
-    const feederType = raw.feeder_type && FEEDER_TYPE_SET.has(raw.feeder_type) ? raw.feeder_type : null;
+    const feederType =
+      raw.feeder_type && FEEDER_TYPE_SET.has(raw.feeder_type)
+        ? raw.feeder_type
+        : null;
     const deviceTypeKey = raw.device_type.toUpperCase().replace(/\s+/g, "_");
-    const deviceType = DEVICE_TYPE_SET.has(deviceTypeKey) ? (deviceTypeKey as DeviceType) : null;
+    const deviceType = DEVICE_TYPE_SET.has(deviceTypeKey)
+      ? (deviceTypeKey as DeviceType)
+      : null;
     const qtyNum = Number(raw.item_qty);
-    const qty = raw.item_qty && !Number.isNaN(qtyNum) && qtyNum > 0 ? qtyNum : 1;
+    const qty =
+      raw.item_qty && !Number.isNaN(qtyNum) && qtyNum > 0 ? qtyNum : 1;
 
     lines.push({
       rowNumber,
       feederName: raw.feeder_name,
       feederType,
       deviceType,
-      ratedCurrent: raw.rated_current ? Number(raw.rated_current) || null : null,
+      ratedCurrent: raw.rated_current
+        ? Number(raw.rated_current) || null
+        : null,
       ratedKw: raw.rated_kw ? Number(raw.rated_kw) || null : null,
       poleConfig: raw.pole_config || null,
       breakingCapacity: raw.breaking_capacity || null,
@@ -153,23 +185,34 @@ export function groupFeederLines(lines: ParsedFeederLine[]): FeederGroup[] {
   return order.map((k) => byKey.get(k)!);
 }
 
-export type ClassifiedGroup = FeederGroup & { mode: "create" | "extend"; existingFeeder?: Feeder };
+export type ClassifiedGroup = FeederGroup & {
+  mode: "create" | "extend";
+  existingFeeder?: Feeder;
+};
 
 // A group whose name matches an existing library feeder extends it
 // (adds only new lines, never touches the feeder's own fields or existing
 // lines); everything else is a brand-new feeder.
-export function classifyGroups(groups: FeederGroup[], existingFeeders: Feeder[]): ClassifiedGroup[] {
+export function classifyGroups(
+  groups: FeederGroup[],
+  existingFeeders: Feeder[],
+): ClassifiedGroup[] {
   const byName = new Map<string, Feeder>();
   for (const f of existingFeeders) byName.set(f.name.trim().toLowerCase(), f);
   return groups.map((g) => {
     const existing = byName.get(g.key);
-    return existing ? { ...g, mode: "extend" as const, existingFeeder: existing } : { ...g, mode: "create" as const };
+    return existing
+      ? { ...g, mode: "extend" as const, existingFeeder: existing }
+      : { ...g, mode: "create" as const };
   });
 }
 
 // ---- Item resolution ----
 
-export type ItemIndex = { bySku: Map<string, ItemMaster>; byVendorCat: Map<string, ItemMaster> };
+export type ItemIndex = {
+  bySku: Map<string, ItemMaster>;
+  byVendorCat: Map<string, ItemMaster>;
+};
 
 export function buildItemIndex(items: ItemMaster[]): ItemIndex {
   const bySku = new Map<string, ItemMaster>();
@@ -181,9 +224,14 @@ export function buildItemIndex(items: ItemMaster[]): ItemIndex {
   return { bySku, byVendorCat };
 }
 
-function resolveItemForLine(line: ParsedFeederLine, index: ItemIndex): ItemMaster | null {
-  if (line.itemSku && index.bySku.has(line.itemSku)) return index.bySku.get(line.itemSku)!;
-  if (line.itemVendorCat && index.byVendorCat.has(line.itemVendorCat)) return index.byVendorCat.get(line.itemVendorCat)!;
+function resolveItemForLine(
+  line: ParsedFeederLine,
+  index: ItemIndex,
+): ItemMaster | null {
+  if (line.itemSku && index.bySku.has(line.itemSku))
+    return index.bySku.get(line.itemSku)!;
+  if (line.itemVendorCat && index.byVendorCat.has(line.itemVendorCat))
+    return index.byVendorCat.get(line.itemVendorCat)!;
   return null;
 }
 
@@ -196,7 +244,10 @@ export type MissingItemRef = {
   lineCount: number;
 };
 
-export function findMissingItems(groups: ClassifiedGroup[], index: ItemIndex): MissingItemRef[] {
+export function findMissingItems(
+  groups: ClassifiedGroup[],
+  index: ItemIndex,
+): MissingItemRef[] {
   const byKey = new Map<string, MissingItemRef>();
   for (const g of groups) {
     for (const line of g.lines) {
@@ -240,7 +291,9 @@ export type MissingItemDraft = {
   create: boolean;
 };
 
-export function buildMissingItemDrafts(missing: MissingItemRef[]): MissingItemDraft[] {
+export function buildMissingItemDrafts(
+  missing: MissingItemRef[],
+): MissingItemDraft[] {
   return missing.map((m) => ({
     key: `${m.sku ?? ""}|${m.vendorCat ?? ""}`,
     sku: m.sku ?? "",
@@ -299,15 +352,21 @@ function draftToItemRow(d: MissingItemDraft) {
 
 export async function createMissingItems(
   supabase: SupabaseClient,
-  drafts: MissingItemDraft[]
-): Promise<{ created: ItemMaster[]; errors: { key: string; reason: string }[] }> {
+  drafts: MissingItemDraft[],
+): Promise<{
+  created: ItemMaster[];
+  errors: { key: string; reason: string }[];
+}> {
   const toCreate = drafts.filter((d) => d.create);
   const created: ItemMaster[] = [];
   const errors: { key: string; reason: string }[] = [];
   if (toCreate.length === 0) return { created, errors };
 
   const payload = toCreate.map(draftToItemRow);
-  const { data, error } = await supabase.from("item_master").insert(payload).select("*");
+  const { data, error } = await supabase
+    .from("item_master")
+    .insert(payload)
+    .select("*");
   if (!error && data) {
     created.push(...(data as ItemMaster[]));
     return { created, errors };
@@ -316,8 +375,16 @@ export async function createMissingItems(
   // Whole-batch failure (e.g. one bad row) falls back to one-by-one so a
   // single bad row doesn't sink every other item in the batch.
   for (const d of toCreate) {
-    const { data: row, error: rowError } = await supabase.from("item_master").insert(draftToItemRow(d)).select("*").single();
-    if (rowError || !row) errors.push({ key: d.key, reason: rowError?.message ?? "Could not create item." });
+    const { data: row, error: rowError } = await supabase
+      .from("item_master")
+      .insert(draftToItemRow(d))
+      .select("*")
+      .single();
+    if (rowError || !row)
+      errors.push({
+        key: d.key,
+        reason: rowError?.message ?? "Could not create item.",
+      });
     else created.push(row as ItemMaster);
   }
   return { created, errors };
@@ -327,7 +394,10 @@ export async function createMissingItems(
 
 export type PlannedLine = ParsedFeederLine & { item: ItemMaster };
 export type PlannedNewFeeder = { group: ClassifiedGroup; lines: PlannedLine[] };
-export type BlockedFeeder = { group: ClassifiedGroup; missingRefs: { sku: string | null; vendorCat: string | null }[] };
+export type BlockedFeeder = {
+  group: ClassifiedGroup;
+  missingRefs: { sku: string | null; vendorCat: string | null }[];
+};
 export type PlannedExtension = {
   feeder: Feeder;
   addLines: PlannedLine[];
@@ -336,24 +406,54 @@ export type PlannedExtension = {
   startSortOrder: number;
 };
 
-export type ImportPlan = { newFeeders: PlannedNewFeeder[]; blockedFeeders: BlockedFeeder[]; extensions: PlannedExtension[] };
+export type ImportPlan = {
+  newFeeders: PlannedNewFeeder[];
+  blockedFeeders: BlockedFeeder[];
+  extensions: PlannedExtension[];
+};
 
 // Fetches, once, what every extend-mode feeder in this run already has
 // linked (so a re-listed item doesn't get added twice) and the next free
 // sort_order for each (so new lines append after its existing ones).
 export async function fetchExtendContext(
   supabase: SupabaseClient,
-  feederIds: string[]
-): Promise<{ itemIdsByFeederId: Map<string, Set<string>>; nextSortOrderByFeederId: Map<string, number> }> {
+  feederIds: string[],
+): Promise<{
+  itemIdsByFeederId: Map<string, Set<string>>;
+  nextSortOrderByFeederId: Map<string, number>;
+}> {
   const itemIdsByFeederId = new Map<string, Set<string>>();
   const nextSortOrderByFeederId = new Map<string, number>();
-  if (feederIds.length === 0) return { itemIdsByFeederId, nextSortOrderByFeederId };
+  if (feederIds.length === 0)
+    return { itemIdsByFeederId, nextSortOrderByFeederId };
 
-  const { data } = await supabase.from("feeder_items").select("feeder_id, item_id, sort_order").in("feeder_id", feederIds);
-  for (const row of (data ?? []) as { feeder_id: string; item_id: string; sort_order: number }[]) {
-    if (!itemIdsByFeederId.has(row.feeder_id)) itemIdsByFeederId.set(row.feeder_id, new Set());
+  const data = await fetchAllRows<{
+    feeder_id: string;
+    item_id: string;
+    sort_order: number;
+  }>((from, to) =>
+    supabase
+      .from("feeder_items")
+      .select("feeder_id, item_id, sort_order")
+      .in("feeder_id", feederIds)
+      .order("id")
+      .range(from, to),
+  );
+  for (const row of (data ?? []) as {
+    feeder_id: string;
+    item_id: string;
+    sort_order: number;
+  }[]) {
+    if (!itemIdsByFeederId.has(row.feeder_id))
+      itemIdsByFeederId.set(row.feeder_id, new Set());
     itemIdsByFeederId.get(row.feeder_id)!.add(row.item_id);
-    nextSortOrderByFeederId.set(row.feeder_id, Math.max(nextSortOrderByFeederId.get(row.feeder_id) ?? 0, row.sort_order + 1));
+    nextSortOrderByFeederId.set(
+      row.feeder_id,
+      Math.max(
+        nextSortOrderByFeederId.get(row.feeder_id) ?? 0,
+        row.sort_order + 1,
+      ),
+    );
   }
   return { itemIdsByFeederId, nextSortOrderByFeederId };
 }
@@ -366,7 +466,7 @@ export function planImport(
   groups: ClassifiedGroup[],
   index: ItemIndex,
   itemIdsByFeederId: Map<string, Set<string>>,
-  nextSortOrderByFeederId: Map<string, number>
+  nextSortOrderByFeederId: Map<string, number>,
 ): ImportPlan {
   const newFeeders: PlannedNewFeeder[] = [];
   const blockedFeeders: BlockedFeeder[] = [];
@@ -375,17 +475,24 @@ export function planImport(
   for (const g of groups) {
     if (g.mode === "create") {
       const resolved: PlannedLine[] = [];
-      const missingRefs: { sku: string | null; vendorCat: string | null }[] = [];
+      const missingRefs: { sku: string | null; vendorCat: string | null }[] =
+        [];
       for (const line of g.lines) {
         const item = resolveItemForLine(line, index);
         if (item) resolved.push({ ...line, item });
-        else missingRefs.push({ sku: line.itemSku, vendorCat: line.itemVendorCat });
+        else
+          missingRefs.push({
+            sku: line.itemSku,
+            vendorCat: line.itemVendorCat,
+          });
       }
-      if (missingRefs.length > 0) blockedFeeders.push({ group: g, missingRefs });
+      if (missingRefs.length > 0)
+        blockedFeeders.push({ group: g, missingRefs });
       else newFeeders.push({ group: g, lines: resolved });
     } else {
       const feederId = g.existingFeeder!.id;
-      const existingItemIds = itemIdsByFeederId.get(feederId) ?? new Set<string>();
+      const existingItemIds =
+        itemIdsByFeederId.get(feederId) ?? new Set<string>();
       const startSortOrder = nextSortOrderByFeederId.get(feederId) ?? 0;
       const addLines: PlannedLine[] = [];
       const alreadyLinkedLines: ParsedFeederLine[] = [];
@@ -404,7 +511,13 @@ export function planImport(
         seen.add(item.id);
         addLines.push({ ...line, item });
       }
-      extensions.push({ feeder: g.existingFeeder!, addLines, alreadyLinkedLines, unresolvedLines, startSortOrder });
+      extensions.push({
+        feeder: g.existingFeeder!,
+        addLines,
+        alreadyLinkedLines,
+        unresolvedLines,
+        startSortOrder,
+      });
     }
   }
 
@@ -422,7 +535,11 @@ export type FeederImportSummary = {
   failedRows: RowError[];
 };
 
-export async function executeImport(supabase: SupabaseClient, plan: ImportPlan, allExistingFeeders: Feeder[]): Promise<FeederImportSummary> {
+export async function executeImport(
+  supabase: SupabaseClient,
+  plan: ImportPlan,
+  allExistingFeeders: Feeder[],
+): Promise<FeederImportSummary> {
   const summary: FeederImportSummary = {
     feedersCreated: 0,
     feedersExtended: 0,
@@ -433,16 +550,34 @@ export async function executeImport(supabase: SupabaseClient, plan: ImportPlan, 
   };
 
   for (const b of plan.blockedFeeders) {
-    const missingDesc = b.missingRefs.map((r) => r.sku || r.vendorCat || "?").join(", ");
+    const missingDesc = b.missingRefs
+      .map((r) => r.sku || r.vendorCat || "?")
+      .join(", ");
     const reason = `Not created -- missing item(s): ${missingDesc}`;
-    summary.feedersSkipped.push({ name: b.group.displayName, reason, rowNumber: b.group.lines[0]?.rowNumber ?? 0 });
-    for (const line of b.group.lines) summary.failedRows.push({ rowNumber: line.rowNumber, reason: "Feeder not created (missing item)", raw: line.raw });
+    summary.feedersSkipped.push({
+      name: b.group.displayName,
+      reason,
+      rowNumber: b.group.lines[0]?.rowNumber ?? 0,
+    });
+    for (const line of b.group.lines)
+      summary.failedRows.push({
+        rowNumber: line.rowNumber,
+        reason: "Feeder not created (missing item)",
+        raw: line.raw,
+      });
   }
 
   for (const ext of plan.extensions) {
     for (const line of ext.unresolvedLines) {
-      summary.rowsSkipped.push({ row: line.rowNumber, reason: "Item not created -- line not added" });
-      summary.failedRows.push({ rowNumber: line.rowNumber, reason: "Item not created -- line not added", raw: line.raw });
+      summary.rowsSkipped.push({
+        row: line.rowNumber,
+        reason: "Item not created -- line not added",
+      });
+      summary.failedRows.push({
+        rowNumber: line.rowNumber,
+        reason: "Item not created -- line not added",
+        raw: line.raw,
+      });
     }
   }
 
@@ -457,9 +592,16 @@ export async function executeImport(supabase: SupabaseClient, plan: ImportPlan, 
   for (const nf of plan.newFeeders) {
     const first = nf.group.lines[0];
     const category = first.feederType ?? "";
-    const ratedCurrent = first.ratedCurrent != null ? String(first.ratedCurrent) : "";
+    const ratedCurrent =
+      first.ratedCurrent != null ? String(first.ratedCurrent) : "";
     const firstMake = nf.lines[0]?.item.make ?? null;
-    const tag = computeFeederTag(category, ratedCurrent, firstMake, tagPool, null);
+    const tag = computeFeederTag(
+      category,
+      ratedCurrent,
+      firstMake,
+      tagPool,
+      null,
+    );
 
     const { data: feederRow, error } = await supabase
       .from("feeders")
@@ -480,18 +622,43 @@ export async function executeImport(supabase: SupabaseClient, plan: ImportPlan, 
 
     if (error || !feederRow) {
       const reason = error?.message ?? "Could not create feeder.";
-      summary.feedersSkipped.push({ name: nf.group.displayName, reason, rowNumber: first.rowNumber });
-      for (const line of nf.group.lines) summary.failedRows.push({ rowNumber: line.rowNumber, reason, raw: line.raw });
+      summary.feedersSkipped.push({
+        name: nf.group.displayName,
+        reason,
+        rowNumber: first.rowNumber,
+      });
+      for (const line of nf.group.lines)
+        summary.failedRows.push({
+          rowNumber: line.rowNumber,
+          reason,
+          raw: line.raw,
+        });
       continue;
     }
     tagPool.push(feederRow as Feeder);
 
-    const linesPayload = nf.lines.map((l, i) => ({ feeder_id: feederRow.id, item_id: l.item.id, qty: l.qty, sort_order: i }));
-    const { error: linesError } = await supabase.from("feeder_items").insert(linesPayload);
+    const linesPayload = nf.lines.map((l, i) => ({
+      feeder_id: feederRow.id,
+      item_id: l.item.id,
+      qty: l.qty,
+      sort_order: i,
+    }));
+    const { error: linesError } = await supabase
+      .from("feeder_items")
+      .insert(linesPayload);
     if (linesError) {
       const reason = `Feeder created but items failed: ${linesError.message}`;
-      summary.feedersSkipped.push({ name: nf.group.displayName, reason, rowNumber: first.rowNumber });
-      for (const line of nf.group.lines) summary.failedRows.push({ rowNumber: line.rowNumber, reason, raw: line.raw });
+      summary.feedersSkipped.push({
+        name: nf.group.displayName,
+        reason,
+        rowNumber: first.rowNumber,
+      });
+      for (const line of nf.group.lines)
+        summary.failedRows.push({
+          rowNumber: line.rowNumber,
+          reason,
+          raw: line.raw,
+        });
       continue;
     }
     summary.feedersCreated += 1;
@@ -499,10 +666,20 @@ export async function executeImport(supabase: SupabaseClient, plan: ImportPlan, 
 
   for (const ext of plan.extensions) {
     if (ext.addLines.length === 0) continue;
-    const payload = ext.addLines.map((l, i) => ({ feeder_id: ext.feeder.id, item_id: l.item.id, qty: l.qty, sort_order: ext.startSortOrder + i }));
+    const payload = ext.addLines.map((l, i) => ({
+      feeder_id: ext.feeder.id,
+      item_id: l.item.id,
+      qty: l.qty,
+      sort_order: ext.startSortOrder + i,
+    }));
     const { error } = await supabase.from("feeder_items").insert(payload);
     if (error) {
-      for (const line of ext.addLines) summary.failedRows.push({ rowNumber: line.rowNumber, reason: error.message, raw: line.raw });
+      for (const line of ext.addLines)
+        summary.failedRows.push({
+          rowNumber: line.rowNumber,
+          reason: error.message,
+          raw: line.raw,
+        });
       continue;
     }
     summary.feedersExtended += 1;
@@ -516,13 +693,21 @@ export async function executeImport(supabase: SupabaseClient, plan: ImportPlan, 
 // admin audit log the item xlsx/Google Sheet imports use.
 export async function logFeederImport(
   supabase: SupabaseClient,
-  params: { fileName?: string | null; itemsCreated: number; summary: FeederImportSummary; importedByName?: string | null }
+  params: {
+    fileName?: string | null;
+    itemsCreated: number;
+    summary: FeederImportSummary;
+    importedByName?: string | null;
+  },
 ) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
   const failures = [
-    ...params.summary.feedersSkipped.map((f) => ({ row: f.rowNumber, reason: `${f.name}: ${f.reason}` })),
+    ...params.summary.feedersSkipped.map((f) => ({
+      row: f.rowNumber,
+      reason: `${f.name}: ${f.reason}`,
+    })),
     ...params.summary.rowsSkipped,
   ];
   await supabase.from("import_logs").insert({
@@ -532,7 +717,10 @@ export async function logFeederImport(
     updated_count: params.itemsCreated,
     failed_count: failures.length,
     failures,
-    details: { feeders_extended: params.summary.feedersExtended, lines_added: params.summary.linesAdded },
+    details: {
+      feeders_extended: params.summary.feedersExtended,
+      lines_added: params.summary.linesAdded,
+    },
     imported_by: user?.id ?? null,
     imported_by_name: params.importedByName ?? null,
   });

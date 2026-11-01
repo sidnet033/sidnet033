@@ -1,5 +1,6 @@
 "use client";
 
+import { fetchAllRows } from "@/lib/fetch-all";
 import { ColorLegend } from "@/components/color-legend";
 import { FilterSelect, filterHit } from "@/components/multi-filter";
 import { PastePricesDialog } from "@/components/paste-prices-dialog";
@@ -180,15 +181,19 @@ export function FeederMasterWorkspace({
     const feederList = (freshFeeders ?? []) as Feeder[];
     setFeeders(feederList);
     const feederIds = feederList.map((f) => f.id);
-    const { data: lines } = feederIds.length
-      ? await supabase
-          .from("feeder_items")
-          .select("*, item:item_master(*)")
-          .in("feeder_id", feederIds)
-          .order("sort_order")
-      : { data: [] };
+    const lines = feederIds.length
+      ? await fetchAllRows((from, to) =>
+          supabase
+            .from("feeder_items")
+            .select("*, item:item_master(*)")
+            .in("feeder_id", feederIds)
+            .order("sort_order")
+            .order("id")
+            .range(from, to),
+        )
+      : [];
     const nextLinesByFeeder: Record<string, FeederItemWithDetails[]> = {};
-    for (const line of (lines ?? []) as unknown as FeederItemWithDetails[]) {
+    for (const line of lines as FeederItemWithDetails[]) {
       (nextLinesByFeeder[line.feeder_id] ??= []).push(line);
     }
     setLinesByFeeder(nextLinesByFeeder);

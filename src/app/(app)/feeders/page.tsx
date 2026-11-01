@@ -1,3 +1,4 @@
+import { fetchAllRows } from "@/lib/fetch-all";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth";
 import { fetchAllItemMaster } from "@/lib/item-display";
@@ -17,12 +18,20 @@ export default async function FeedersPage() {
   ]);
 
   const feederIds = ((feeders ?? []) as Feeder[]).map((f) => f.id);
-  const { data: lines } = feederIds.length
-    ? await supabase.from("feeder_items").select("*, item:item_master(*)").in("feeder_id", feederIds).order("sort_order")
-    : { data: [] };
+  const lines = feederIds.length
+    ? await fetchAllRows((from, to) =>
+        supabase
+          .from("feeder_items")
+          .select("*, item:item_master(*)")
+          .in("feeder_id", feederIds)
+          .order("sort_order")
+          .order("id")
+          .range(from, to),
+      )
+    : [];
 
   const linesByFeeder: Record<string, FeederItemWithDetails[]> = {};
-  for (const line of (lines ?? []) as unknown as FeederItemWithDetails[]) {
+  for (const line of lines as FeederItemWithDetails[]) {
     (linesByFeeder[line.feeder_id] ??= []).push(line);
   }
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { findDuplicateGroups } from "@/lib/item-duplicates";
+import { DuplicateResolverDialog } from "@/components/duplicate-resolver-dialog";
 import { ColorLegend } from "@/components/color-legend";
 import { FilterSelect, filterHit } from "@/components/multi-filter";
 import { itemSearchScore, searchPhrases } from "@/lib/item-search";
@@ -413,6 +415,7 @@ export function ItemMasterTable({
     () => loadSavedView().rowsPerPage || 25,
   );
   const [duplicatesOnly, setDuplicatesOnly] = useState(false);
+  const [resolverOpen, setResolverOpen] = useState(false);
   const [savedViewFlash, setSavedViewFlash] = useState(false);
 
   const [columnOrder, setColumnOrder] = useState<ColumnKey[]>(() => {
@@ -506,6 +509,7 @@ export function ItemMasterTable({
   // Archived items are left out of the comparison entirely -- an active
   // item that merely happens to share its description/SKU with something
   // that was already archived isn't a live duplicate worth flagging.
+  const duplicateGroups = useMemo(() => findDuplicateGroups(items), [items]);
   const duplicateIds = useMemo(() => {
     const bySku = new Map<string, string[]>();
     const byVendorCat = new Map<string, string[]>();
@@ -1504,6 +1508,13 @@ export function ItemMasterTable({
         </div>
       </div>
 
+      {resolverOpen && duplicateGroups.length > 0 && (
+        <DuplicateResolverDialog
+          groups={duplicateGroups}
+          onResolved={() => void refresh()}
+          onClose={() => setResolverOpen(false)}
+        />
+      )}
       {duplicateIds.size > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-[8px] border border-error/30 bg-error-container px-4 py-2.5 text-sm text-on-error-container">
           <span className="flex items-center gap-2">
@@ -1511,6 +1522,15 @@ export function ItemMasterTable({
             {duplicateIds.size} item(s) look like duplicates (matching SKU,
             Vendor Cat, or same Description + Make). Review and clean these up.
           </span>
+          {isAdmin && (
+            <button
+              onClick={() => setResolverOpen(true)}
+              className="ml-auto flex items-center gap-1.5 rounded bg-surface-container-lowest px-2.5 py-1 text-xs font-bold text-error hover:bg-surface-container-low"
+            >
+              Review side by side ({duplicateGroups.length} group
+              {duplicateGroups.length === 1 ? "" : "s"})
+            </button>
+          )}
           <button
             onClick={() => setDuplicatesOnly((v) => !v)}
             className="flex items-center gap-1.5 rounded bg-error px-2.5 py-1 text-xs font-medium text-on-error hover:bg-error/90"
