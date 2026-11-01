@@ -1863,6 +1863,7 @@ export function BomBuilder({
             Export BOM
           </button>
           <RefreshItemsButton
+            small
             items={items}
             onRefreshed={setItems}
             lines={pricedLines}
