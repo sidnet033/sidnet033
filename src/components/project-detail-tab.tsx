@@ -311,8 +311,19 @@ export function ProjectDetailTab({
     form.site_ambient_temp_c,
     form.site_altitude_m,
   );
+  // Enquiry number, enquiry date and quote-by date are required too.
+  const enquiryMissing = [
+    !form.crm_enquiry_number?.trim() && "CRM enquiry number",
+    !form.crm_enquiry_date && "enquiry date",
+    !form.quote_required_by && "quote required by",
+  ].filter((v): v is string => !!v);
+  const requiredMissing = [
+    ...enquiryMissing,
+    ...(siteMissing ? ["site altitude and ambient temperature"] : []),
+  ];
   // Amps below a feeder's rating is a warning (allowed), not a blocker.
-  const saveBlocked = liveRemainingAlerts.length > 0 || siteMissing;
+  const saveBlocked =
+    liveRemainingAlerts.length > 0 || requiredMissing.length > 0;
 
   const [review, setReview] = useState<ReviewItem[] | null>(null);
   const [applyingFixes, setApplyingFixes] = useState(false);
@@ -741,10 +752,10 @@ export function ProjectDetailTab({
               Unsaved changes
             </span>
           )}
-          {!revisionArchived && siteMissing && (
+          {!revisionArchived && requiredMissing.length > 0 && (
             <span className="flex items-center gap-1 font-body-sm text-body-sm font-medium text-error">
-              <Icon name="error" size={15} /> Enter site altitude and ambient
-              temperature to save
+              <Icon name="error" size={15} /> Enter {requiredMissing.join(", ")}{" "}
+              to save
             </span>
           )}
           {!revisionArchived && dirty && liveRemainingAlerts.length > 0 && (
@@ -765,8 +776,8 @@ export function ProjectDetailTab({
               onClick={handleSave}
               disabled={!dirty || saving || saveBlocked}
               title={
-                siteMissing
-                  ? "Enter the site altitude and ambient temperature first"
+                requiredMissing.length > 0
+                  ? `Enter ${requiredMissing.join(", ")} first`
                   : liveRemainingAlerts.length > 0
                     ? "Fix the alerts in this revision first (see Alerts & Warnings)"
                     : undefined
@@ -915,36 +926,39 @@ export function ProjectDetailTab({
                     </select>
                   )}
                 </Field>
-                <Field label="CRM Enquiry Number">
+                <Field label="CRM Enquiry Number *">
                   <input
+                    required
                     disabled={revisionArchived}
                     value={form.crm_enquiry_number ?? ""}
                     onChange={(e) =>
                       patch("crm_enquiry_number", e.target.value || null)
                     }
-                    className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low"
+                    className={`w-full rounded border bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low ${!revisionArchived && !form.crm_enquiry_number?.trim() ? "border-error/60" : "border-surface-container-high"}`}
                   />
                 </Field>
-                <Field label="Enquiry Date">
+                <Field label="Enquiry Date *">
                   <input
+                    required
                     type="date"
                     disabled={revisionArchived}
                     value={form.crm_enquiry_date ?? ""}
                     onChange={(e) =>
                       patch("crm_enquiry_date", e.target.value || null)
                     }
-                    className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low"
+                    className={`w-full rounded border bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low ${!revisionArchived && !form.crm_enquiry_date ? "border-error/60" : "border-surface-container-high"}`}
                   />
                 </Field>
-                <Field label="Quote Required By">
+                <Field label="Quote Required By *">
                   <input
+                    required
                     type="date"
                     disabled={revisionArchived}
                     value={form.quote_required_by ?? ""}
                     onChange={(e) =>
                       patch("quote_required_by", e.target.value || null)
                     }
-                    className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low"
+                    className={`w-full rounded border bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low ${!revisionArchived && !form.quote_required_by ? "border-error/60" : "border-surface-container-high"}`}
                   />
                 </Field>
                 <Field label="Nature">

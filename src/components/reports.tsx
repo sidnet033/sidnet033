@@ -10,6 +10,7 @@ import type { ProjectStage, Switchboard } from "@/types/database";
 const REPORTS = [
   { id: "enquiries-by-status", label: "Enquiries by status" },
   { id: "value-by-sales-exec", label: "Enquiry value by sales exec" },
+  { id: "count-by-customer", label: "Enquiries by customer" },
 ] as const;
 type ReportId = (typeof REPORTS)[number]["id"];
 
@@ -78,6 +79,13 @@ export function ReportsHome() {
             defaultMeasure="value"
           />
         )}
+        {active === "count-by-customer" && (
+          <EnquiryReport
+            key="customer"
+            groupBy="customer"
+            defaultMeasure="count"
+          />
+        )}
       </main>
     </div>
   );
@@ -93,7 +101,38 @@ type Result = {
   total: number;
 };
 
-type GroupBy = "stage" | "salesExec";
+type GroupBy = "stage" | "salesExec" | "customer";
+const GROUPS: Record<
+  Exclude<GroupBy, "stage">,
+  {
+    table: "sales_execs" | "customers";
+    none: string;
+    title: string;
+    blurb: string;
+    column: string;
+    empty: string;
+    onlyNonZero: boolean;
+  }
+> = {
+  salesExec: {
+    table: "sales_execs",
+    none: "No sales exec",
+    title: "Enquiry value by sales exec",
+    blurb: "Enquiries (projects) handled by each sales exec",
+    column: "Sales exec",
+    empty: "No sales execs set up yet.",
+    onlyNonZero: false,
+  },
+  customer: {
+    table: "customers",
+    none: "No customer",
+    title: "Enquiries by customer",
+    blurb: "Enquiries (projects) from each customer",
+    column: "Customer",
+    empty: "No enquiries from any customer in this period.",
+    onlyNonZero: true,
+  },
+};
 const UNASSIGNED = "__none__";
 
 // One report engine, grouped either by status or by sales exec.
@@ -129,7 +168,9 @@ function EnquiryReport({
         await Promise.all([
           supabase
             .from("projects")
-            .select("id, stage, sales_exec_id, crm_enquiry_date, created_at"),
+            .select(
+              "id, stage, sales_exec_id, customer_id, crm_enquiry_date, created_at",
+            ),
           supabase
             .from("revisions")
             .select("id, project_id, revision_number, created_at"),
@@ -167,7 +208,9 @@ function EnquiryReport({
         const group =
           groupBy === "stage"
             ? (p.stage as string)
-            : ((p.sales_exec_id as string | null) ?? UNASSIGNED);
+            : groupBy === "salesExec"
+              ? ((p.sales_exec_id as string | null) ?? UNASSIGNED)
+              : ((p.customer_id as string | null) ?? UNASSIGNED);
         const list = (revsByProject.get(p.id as string) ?? []).sort(
           (x, y) => x.n - y.n,
         );
@@ -236,9 +279,10 @@ function EnquiryReport({
           count: tally.get(s.id) ?? 0,
         }));
       } else {
-        // every sales exec, biggest first; enquiries with none go last
+        // every sales exec / customer, biggest first; enquiries with none go last
+        const g = GROUPS[groupBy];
         const { data: execs, error: execErr } = await supabase
-          .from("sales_execs")
+          .from(g.table)
           .select("id, name");
         if (execErr) throw execErr;
         counts = (execs ?? [])
@@ -247,11 +291,12 @@ function EnquiryReport({
             label: x.name as string,
             count: tally.get(x.id as string) ?? 0,
           }))
+          .filter((x) => !g.onlyNonZero || x.count > 0)
           .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
         if (tally.get(UNASSIGNED))
           counts.push({
             id: UNASSIGNED,
-            label: "No sales exec",
+            label: g.none,
             count: tally.get(UNASSIGNED)!,
           });
       }
@@ -275,14 +320,12 @@ function EnquiryReport({
     <div className="max-w-5xl space-y-space-md">
       <div>
         <h1 className="font-headline-lg text-headline-lg text-on-surface">
-          {groupBy === "stage"
-            ? "Enquiries by status"
-            : "Enquiry value by sales exec"}
+          {groupBy === "stage" ? "Enquiries by status" : GROUPS[groupBy].title}
         </h1>
         <p className="text-[12px] text-secondary">
           {groupBy === "stage"
             ? "Enquiries (projects) in each status"
-            : "Enquiries (projects) handled by each sales exec"}
+            : GROUPS[groupBy].blurb}
           , by count or by value. Value is the quoted price (cost + margin ×
           qty, INR) of each project&apos;s latest revision, dated by CRM enquiry
           date (or the date the project was created). Tick &quot;Include
@@ -498,7 +541,9 @@ function CountsTable({ result }: { result: Result }) {
       <thead>
         <tr className="border-b border-surface-container-high text-left text-[11px] font-bold uppercase tracking-wider text-secondary">
           <th className="py-1.5">
-            {result.groupBy === "stage" ? "Status" : "Sales exec"}
+            {result.groupBy === "stage"
+              ? "Status"
+              : GROUPS[result.groupBy].column}
           </th>
           <th className="py-1.5 text-right">
             {result.measure === "count" ? "Enquiries" : "Value (INR)"}
@@ -538,7 +583,9 @@ function HBarChart({ result }: { result: Result }) {
   const max = Math.max(1, ...result.counts.map((c) => c.count));
   if (result.counts.length === 0)
     return (
-      <p className="text-[13px] text-secondary">No sales execs set up yet.</p>
+      <p className="text-[13px] text-secondary">
+        {result.groupBy === "stage" ? "" : GROUPS[result.groupBy].empty}
+      </p>
     );
   return (
     <div className="space-y-1.5">

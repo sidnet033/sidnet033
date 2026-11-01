@@ -121,18 +121,18 @@ export function RevisionWorkspace({
             );
           })}
         </nav>
-        {selectedSwitchboard && (
-          <span
-            className="truncate whitespace-nowrap text-[13px] font-bold text-on-surface"
-            title="Open switchboard"
-          >
-            {selectedSwitchboard.switchboard.tag}
-            {selectedSwitchboard.switchboard.title
-              ? `: ${selectedSwitchboard.switchboard.title}`
-              : ""}
-          </span>
-        )}
         <div className="ml-auto flex shrink-0 items-center gap-space-md">
+          {selectedSwitchboard && (
+            <span
+              className="max-w-72 truncate whitespace-nowrap text-[13px] font-bold text-primary"
+              title="Open switchboard"
+            >
+              {selectedSwitchboard.switchboard.tag}
+              {selectedSwitchboard.switchboard.title
+                ? `: ${selectedSwitchboard.switchboard.title}`
+                : ""}
+            </span>
+          )}
           <RevisionControls
             revisionId={revision.id}
             initialArchived={revision.archived}

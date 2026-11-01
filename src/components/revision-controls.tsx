@@ -84,7 +84,7 @@ export function RevisionControls({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="rounded border border-surface-container-high bg-surface-container-low px-1.5 py-0.5 font-mono text-[11px] font-medium text-on-surface-variant">
+      <span className="rounded border border-primary/30 bg-primary/5 px-1.5 py-0.5 font-mono text-[11px] font-bold text-primary">
         Rev {revisionNumber}
       </span>
 
