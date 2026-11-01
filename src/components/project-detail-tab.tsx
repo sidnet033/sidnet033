@@ -1,5 +1,6 @@
 "use client";
 
+import { isGoogleDriveLink } from "@/lib/drive-link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -99,6 +100,7 @@ type ProjectPatch = {
   crm_enquiry_number: string | null;
   crm_enquiry_date: string | null;
   quote_required_by: string | null;
+  drive_links: string[];
   nature: "bidding" | "purchase" | null;
   site_country: string | null;
   consultant_id: string | null;
@@ -129,6 +131,7 @@ function snapshotOf(project: Project): ProjectPatch {
     crm_enquiry_number: project.crm_enquiry_number,
     crm_enquiry_date: project.crm_enquiry_date,
     quote_required_by: project.quote_required_by,
+    drive_links: project.drive_links ?? [],
     nature: project.nature,
     site_country: project.site_country,
     consultant_id: project.consultant_id,
@@ -317,13 +320,22 @@ export function ProjectDetailTab({
     !form.crm_enquiry_date && "enquiry date",
     !form.quote_required_by && "quote required by",
   ].filter((v): v is string => !!v);
+  // Google Drive / Docs links: optional while "Yet to quote", required
+  // (at least one) at any later stage; every link entered must be genuine.
+  const badLinks = form.drive_links.filter((l) => !isGoogleDriveLink(l));
+  const linksRequired = form.stage !== "new";
   const requiredMissing = [
     ...enquiryMissing,
+    ...(linksRequired && form.drive_links.length === 0
+      ? ["a Google Drive / Docs link"]
+      : []),
     ...(siteMissing ? ["site altitude and ambient temperature"] : []),
   ];
   // Amps below a feeder's rating is a warning (allowed), not a blocker.
   const saveBlocked =
-    liveRemainingAlerts.length > 0 || requiredMissing.length > 0;
+    liveRemainingAlerts.length > 0 ||
+    requiredMissing.length > 0 ||
+    badLinks.length > 0;
 
   const [review, setReview] = useState<ReviewItem[] | null>(null);
   const [applyingFixes, setApplyingFixes] = useState(false);
@@ -752,6 +764,12 @@ export function ProjectDetailTab({
               Unsaved changes
             </span>
           )}
+          {!revisionArchived && badLinks.length > 0 && (
+            <span className="flex items-center gap-1 font-body-sm text-body-sm font-medium text-error">
+              <Icon name="error" size={15} /> Fix {badLinks.length} Google Drive
+              link{badLinks.length === 1 ? "" : "s"} to save
+            </span>
+          )}
           {!revisionArchived && requiredMissing.length > 0 && (
             <span className="flex items-center gap-1 font-body-sm text-body-sm font-medium text-error">
               <Icon name="error" size={15} /> Enter {requiredMissing.join(", ")}{" "}
@@ -778,9 +796,11 @@ export function ProjectDetailTab({
               title={
                 requiredMissing.length > 0
                   ? `Enter ${requiredMissing.join(", ")} first`
-                  : liveRemainingAlerts.length > 0
-                    ? "Fix the alerts in this revision first (see Alerts & Warnings)"
-                    : undefined
+                  : badLinks.length > 0
+                    ? "Fix the Google Drive links first"
+                    : liveRemainingAlerts.length > 0
+                      ? "Fix the alerts in this revision first (see Alerts & Warnings)"
+                      : undefined
               }
               className="flex items-center gap-1 rounded bg-primary px-space-lg py-space-sm font-label-md text-label-md text-on-primary shadow-sm transition-all hover:bg-primary-container disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -1174,6 +1194,13 @@ export function ProjectDetailTab({
                   />
                 </Field>
               </div>
+
+              <DriveLinksField
+                links={form.drive_links}
+                required={linksRequired}
+                disabled={revisionArchived}
+                onChange={(links) => patch("drive_links", links)}
+              />
 
               <div>
                 <label className="mb-1 block font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">
@@ -1855,5 +1882,90 @@ function DensityInput({
       }}
       className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low"
     />
+  );
+}
+
+// Links to the enquiry's Google Drive folders / Docs / Sheets: one row per
+// link, each checked as you type.
+function DriveLinksField({
+  links,
+  required,
+  disabled,
+  onChange,
+}: {
+  links: string[];
+  required: boolean;
+  disabled: boolean;
+  onChange: (links: string[]) => void;
+}) {
+  const missing = required && links.length === 0;
+  return (
+    <div>
+      <label className="mb-1 block font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">
+        Google Drive / Docs Links{required ? " *" : ""}
+      </label>
+      <div
+        className={`space-y-1.5 rounded-lg border p-space-sm ${!disabled && missing ? "border-error/60" : "border-surface-container-high"}`}
+      >
+        {links.map((link, i) => {
+          const ok = isGoogleDriveLink(link);
+          return (
+            <div key={i} className="flex items-center gap-2">
+              <input
+                disabled={disabled}
+                value={link}
+                onChange={(e) =>
+                  onChange(links.map((l, j) => (j === i ? e.target.value : l)))
+                }
+                placeholder="https://drive.google.com/drive/folders/..."
+                className={`min-w-0 flex-1 rounded border bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low ${ok || disabled ? "border-surface-container-high" : "border-error/60"}`}
+              />
+              {ok ? (
+                <a
+                  href={link.trim()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 text-[12px] text-primary hover:underline"
+                >
+                  Open
+                </a>
+              ) : (
+                <span className="shrink-0 text-[12px] text-error">
+                  {link.trim()
+                    ? "Not a Google Drive / Docs link"
+                    : "Paste a link"}
+                </span>
+              )}
+              {!disabled && (
+                <button
+                  type="button"
+                  onClick={() => onChange(links.filter((_, j) => j !== i))}
+                  aria-label="Remove link"
+                  className="shrink-0 rounded p-1 text-secondary hover:bg-surface-container-high hover:text-error"
+                >
+                  <Icon name="close" size={14} />
+                </button>
+              )}
+            </div>
+          );
+        })}
+        {links.length === 0 && (
+          <p className="text-[12px] text-secondary">
+            {required
+              ? "Required once the enquiry is past Yet to quote."
+              : "Optional while the enquiry is Yet to quote."}
+          </p>
+        )}
+        {!disabled && (
+          <button
+            type="button"
+            onClick={() => onChange([...links, ""])}
+            className="text-[12px] font-bold text-primary hover:underline"
+          >
+            + Add link
+          </button>
+        )}
+      </div>
+    </div>
   );
 }

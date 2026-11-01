@@ -153,6 +153,7 @@ export type Project = {
   enclosure_rate_crca: number;
   site_altitude_m: number | null;
   quote_required_by: string | null;
+  drive_links: string[];
   nature: "bidding" | "purchase" | null;
   site_ambient_temp_c: number | null;
 };
