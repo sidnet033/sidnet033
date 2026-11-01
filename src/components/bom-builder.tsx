@@ -1,7 +1,7 @@
 "use client";
 
 import { PastePricesDialog } from "@/components/paste-prices-dialog";
-import { searchByPhrases, searchItems } from "@/lib/item-search";
+import { searchByPhrases, searchItems, searchPhrases } from "@/lib/item-search";
 import { ItemSearchHelp } from "@/components/search-help";
 import { CategoryFilter } from "@/components/category-multi-select";
 import { useWarnOnUnload } from "@/lib/switchboard-presence";
@@ -458,6 +458,7 @@ export function BomBuilder({
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [costOpen, setCostOpen] = useState(false);
   const [pricePasteOpen, setPricePasteOpen] = useState(false);
+  const [feederFilter, setFeederFilter] = useState("");
 
   // Creating a new item from within the BOM Builder (e.g. next to "Add Item
   // to Feeder") should be searchable immediately across every feeder module
@@ -1740,6 +1741,29 @@ export function BomBuilder({
     ),
   ).sort();
 
+  // "a|b|c": feeders matching any phrase in their name, tag, function,
+  // rating or any of their items (code, make, description); order kept
+  const filterPhrases = searchPhrases(feederFilter);
+  const visibleModules = filterPhrases.length
+    ? draft.modules.filter((m) => {
+        const h = [
+          m.feeder.name,
+          m.feeder.tag,
+          m.feeder.category,
+          m.feeder.rating_summary,
+          ...m.lines.flatMap((l) => [
+            itemCode(l.item),
+            l.item.make,
+            l.item.description,
+          ]),
+        ]
+          .filter(Boolean)
+          .join(" \u0000 ")
+          .toLowerCase();
+        return filterPhrases.some((p) => h.includes(p));
+      })
+    : draft.modules;
+
   const alertCount =
     ampsIssues.length +
     switchgearLow.length +
@@ -2125,9 +2149,32 @@ export function BomBuilder({
                 ))}
               </div>
             )}
+            <div className="relative flex w-72 items-center">
+              <Icon
+                name="filter_list"
+                size={15}
+                className="pointer-events-none absolute left-2 text-secondary"
+              />
+              <input
+                value={feederFilter}
+                onChange={(e) => setFeederFilter(e.target.value)}
+                placeholder="Filter feeders — use | for several"
+                className="h-7 w-full rounded border border-surface-container-high bg-surface-container-lowest pl-7 pr-8 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <ItemSearchHelp
+                fields="feeder name, tag, function, rating and the feeder's items (code, make, description)"
+                example="incomer|acb|motor"
+                noun="feeders"
+              />
+            </div>
+            {filterPhrases.length > 0 && (
+              <span className="text-secondary">
+                {visibleModules.length} of {draft.modules.length} feeders
+              </span>
+            )}
             <button
               onClick={() =>
-                setOpenIds(new Set(draft.modules.map((m) => m.feeder.id)))
+                setOpenIds(new Set(visibleModules.map((m) => m.feeder.id)))
               }
               className="flex items-center gap-1 text-primary hover:underline"
             >
@@ -2141,7 +2188,12 @@ export function BomBuilder({
             </button>
           </div>
         )}
-        {draft.modules.map((mod) => (
+        {filterPhrases.length > 0 && visibleModules.length === 0 && (
+          <p className="rounded-xl border border-dashed border-surface-container-high py-6 text-center text-sm text-on-surface-variant">
+            No feeders match &quot;{feederFilter}&quot;.
+          </p>
+        )}
+        {visibleModules.map((mod) => (
           <FeederModuleCard
             key={mod.feeder.id}
             mod={mod}
@@ -2419,7 +2471,8 @@ function FeederModuleCard({
     [],
   );
 
-  const subtotal = mod.qty * lineTotal(mod.lines);
+  const unitCost = lineTotal(mod.lines); // one feeder
+  const subtotal = mod.qty * unitCost; // x qty, shown in the header
 
   const itemCategories = Array.from(
     new Set(allItems.map((i) => i.category).filter((c): c is string => !!c)),
@@ -2877,7 +2930,7 @@ function FeederModuleCard({
           <div className="mt-2 flex items-center justify-end gap-3 border-t border-surface-container pt-2 text-xs text-secondary">
             <span>{mod.lines.length} items</span>
             <span className="font-semibold text-on-surface">
-              Feeder Total: {money(subtotal)}
+              Feeder Cost (1 no.): {money(unitCost)}
             </span>
           </div>
         </div>
