@@ -1,5 +1,11 @@
 "use client";
 
+import { ArtukBayConfigDialog } from "@/components/artuk-bay-config-dialog";
+import {
+  configMisfits,
+  currentConfigOf,
+  type ArtukBayConfig,
+} from "@/lib/artuk-bay-configs";
 import { useWarnOnUnload } from "@/lib/switchboard-presence";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -17,7 +23,13 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { createClient } from "@/lib/supabase/client";
-import type { BayType, Feeder, PlacedFeeder, Switchboard, Vertical } from "@/types/database";
+import type {
+  BayType,
+  Feeder,
+  PlacedFeeder,
+  Switchboard,
+  Vertical,
+} from "@/types/database";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { numericKeyGuard } from "@/lib/numeric-input";
@@ -29,7 +41,12 @@ import {
   lookupAcbBaySpec,
   suggestAcbFrame,
 } from "@/lib/artuk-sizing";
-import { bayFunctionOf, type BusbarOverride, type BusbarPlan, type BusbarSegment } from "@/lib/busbar-plan";
+import {
+  bayFunctionOf,
+  type BusbarOverride,
+  type BusbarPlan,
+  type BusbarSegment,
+} from "@/lib/busbar-plan";
 import {
   ARTUK_CHAMBER_HEIGHTS_MM,
   ARTUK_FIXED_MM,
@@ -61,7 +78,12 @@ import {
   type VerticalWithFeeders,
 } from "@/lib/ga-layout";
 import { planBusbarSupports } from "@/lib/busbar-supports";
-import { BusbarFrontOverlay, BusbarSchedule, BusbarSegmentPanel, BusbarSideOverlay } from "@/components/ga-busbar-layer";
+import {
+  BusbarFrontOverlay,
+  BusbarSchedule,
+  BusbarSegmentPanel,
+  BusbarSideOverlay,
+} from "@/components/ga-busbar-layer";
 
 type PlacedWithFeeder = VerticalWithFeeders["placed"][number];
 
@@ -71,14 +93,30 @@ type PlacedWithFeeder = VerticalWithFeeders["placed"][number];
 // bay when dropped.
 type AvailableUnit = { unitId: string; placedId: string; feeder: Feeder };
 
-const BAY_TEMPLATES: { bay_type: BayType; label: string; namePrefix: string }[] = [
+const BAY_TEMPLATES: {
+  bay_type: BayType;
+  label: string;
+  namePrefix: string;
+}[] = [
   { bay_type: "incomer", label: "+ Incomer Bay", namePrefix: "Incomer" },
   { bay_type: "outgoing", label: "+ Outgoing Bay", namePrefix: "Outgoing" },
   { bay_type: "riser", label: "+ Cable Spreader", namePrefix: "Riser" },
-  { bay_type: "bus_coupler", label: "+ Bus Coupler", namePrefix: "Bus Coupler" },
+  {
+    bay_type: "bus_coupler",
+    label: "+ Bus Coupler",
+    namePrefix: "Bus Coupler",
+  },
   { bay_type: "bay", label: "+ Add Bay", namePrefix: "Bay" },
-  { bay_type: "cable_alley", label: "+ Cable Alley", namePrefix: "Cable Alley" },
-  { bay_type: "busbar_alley", label: "+ Busbar Alley", namePrefix: "Busbar Alley" },
+  {
+    bay_type: "cable_alley",
+    label: "+ Cable Alley",
+    namePrefix: "Cable Alley",
+  },
+  {
+    bay_type: "busbar_alley",
+    label: "+ Busbar Alley",
+    namePrefix: "Busbar Alley",
+  },
 ];
 
 const PLINTH_OPTIONS = [75, 100, 150, 200];
@@ -96,32 +134,69 @@ const SUMMARY_TABLE_MIN_PX = 240;
 
 function computePxPerMm(totalHeightMm: number): number {
   if (totalHeightMm <= 0) return MIN_PX_PER_MM;
-  return Math.min(MAX_PX_PER_MM, Math.max(MIN_PX_PER_MM, DRAWING_TARGET_HEIGHT_PX / totalHeightMm));
+  return Math.min(
+    MAX_PX_PER_MM,
+    Math.max(MIN_PX_PER_MM, DRAWING_TARGET_HEIGHT_PX / totalHeightMm),
+  );
 }
 
 // Smallest of a set of "nice" mm steps whose on-screen spacing stays
 // readable at the current scale.
 function niceTickStepMm(pxPerMm: number): number {
   const candidates = [25, 50, 100, 200, 250, 500, 1000, 2000];
-  return candidates.find((step) => step * pxPerMm >= 28) ?? candidates[candidates.length - 1];
+  return (
+    candidates.find((step) => step * pxPerMm >= 28) ??
+    candidates[candidates.length - 1]
+  );
 }
 
-type HoverExtent = { topMm: number; heightMm: number; bayLeftMm: number; bayWidthMm: number; label: string } | null;
+type HoverExtent = {
+  topMm: number;
+  heightMm: number;
+  bayLeftMm: number;
+  bayWidthMm: number;
+  label: string;
+} | null;
 
 // Plain-language explanation of why THIS bay currently has the
 // width/depth it has -- read directly off the same ArTuK sizing lookups
 // Auto-generate GA uses, so it stays accurate for auto-generated bays and
 // still useful (naming what a manual bay is missing) for hand-built ones.
 function explainBay(v: VerticalWithFeeders): string[] {
-  const alleyMin = (v.width_mm ?? 0) < ALLEY_MIN_WIDTH_MM ? [`Narrower than the ${ALLEY_MIN_WIDTH_MM}mm minimum (300mm opening + 60mm each side) — widen it.`] : [];
-  if (v.bay_type === "cable_alley") return ["Cable Alley — structural bay for cable routing; width/depth set by hand, minimum " + ALLEY_MIN_WIDTH_MM + "mm (60mm each side, like every bay).", ...alleyMin];
-  if (v.bay_type === "busbar_alley") return ["Busbar Alley — structural bay for the busbar run; width/depth set by hand, minimum " + ALLEY_MIN_WIDTH_MM + "mm (60mm each side, like every bay).", ...alleyMin];
-  if (v.placed.length === 0) return ["No feeders placed yet — width/depth set by hand."];
+  const alleyMin =
+    (v.width_mm ?? 0) < ALLEY_MIN_WIDTH_MM
+      ? [
+          `Narrower than the ${ALLEY_MIN_WIDTH_MM}mm minimum (300mm opening + 60mm each side) — widen it.`,
+        ]
+      : [];
+  if (v.bay_type === "cable_alley")
+    return [
+      "Cable Alley — structural bay for cable routing; width/depth set by hand, minimum " +
+        ALLEY_MIN_WIDTH_MM +
+        "mm (60mm each side, like every bay).",
+      ...alleyMin,
+    ];
+  if (v.bay_type === "busbar_alley")
+    return [
+      "Busbar Alley — structural bay for the busbar run; width/depth set by hand, minimum " +
+        ALLEY_MIN_WIDTH_MM +
+        "mm (60mm each side, like every bay).",
+      ...alleyMin,
+    ];
+  if (v.placed.length === 0)
+    return ["No feeders placed yet — width/depth set by hand."];
 
   const lines: string[] = [];
   const acbUnits = v.placed.filter((p) => p.feeder.device_type === "ACB");
-  const otherClassified = v.placed.filter((p) => p.feeder.device_type && p.feeder.device_type !== "ACB" && p.feeder.device_type !== "OTHER");
-  const unclassified = v.placed.filter((p) => !p.feeder.device_type || p.feeder.device_type === "OTHER");
+  const otherClassified = v.placed.filter(
+    (p) =>
+      p.feeder.device_type &&
+      p.feeder.device_type !== "ACB" &&
+      p.feeder.device_type !== "OTHER",
+  );
+  const unclassified = v.placed.filter(
+    (p) => !p.feeder.device_type || p.feeder.device_type === "OTHER",
+  );
 
   if (acbUnits.length > 0) {
     const p = acbUnits[0];
@@ -130,33 +205,59 @@ function explainBay(v: VerticalWithFeeders): string[] {
       const fn = bayFunctionOf(p.feeder) ?? "outgoing";
       const spec = lookupAcbBaySpec(frame, fn);
       if (spec) {
-        lines.push(`ACB ${p.feeder.rated_current}A → frame ${frame}, ${fn.replace("_", " ")} → ArTuK spec: ${spec.widthMm}×${spec.heightMm}×${spec.depthMm}mm (IP${spec.ipRating}, Form ${spec.form}).`);
-        const expected = sharedBreakerBay(v) ? nextBayWidth(spec.widthMm) : spec.widthMm;
-        if (v.width_mm !== expected) lines.push(`Current width ${v.width_mm ?? "—"}mm differs from the ${expected}mm standard — likely adjusted by hand.`);
+        lines.push(
+          `ACB ${p.feeder.rated_current}A → frame ${frame}, ${fn.replace("_", " ")} → ArTuK spec: ${spec.widthMm}×${spec.heightMm}×${spec.depthMm}mm (IP${spec.ipRating}, Form ${spec.form}).`,
+        );
+        const expected = sharedBreakerBay(v)
+          ? nextBayWidth(spec.widthMm)
+          : spec.widthMm;
+        if (v.width_mm !== expected)
+          lines.push(
+            `Current width ${v.width_mm ?? "—"}mm differs from the ${expected}mm standard — likely adjusted by hand.`,
+          );
       } else {
-        lines.push(`ACB ${p.feeder.rated_current}A → frame ${frame}, ${fn.replace("_", " ")} → no ArTuK bay-spec row for this combination; generic device dimensions used, 1037mm depth assumed.`);
+        lines.push(
+          `ACB ${p.feeder.rated_current}A → frame ${frame}, ${fn.replace("_", " ")} → no ArTuK bay-spec row for this combination; generic device dimensions used, 1037mm depth assumed.`,
+        );
       }
     } else {
-      lines.push("ACB with no rated current set — width/depth set by hand; give it a rating in BOM Builder for a real ArTuK size.");
+      lines.push(
+        "ACB with no rated current set — width/depth set by hand; give it a rating in BOM Builder for a real ArTuK size.",
+      );
     }
     if (sharedBreakerBay(v)) {
-      const spec = p.feeder.rated_current != null ? lookupAcbBaySpec(suggestAcbFrame(p.feeder.rated_current), bayFunctionOf(p.feeder) ?? "outgoing") : null;
+      const spec =
+        p.feeder.rated_current != null
+          ? lookupAcbBaySpec(
+              suggestAcbFrame(p.feeder.rated_current),
+              bayFunctionOf(p.feeder) ?? "outgoing",
+            )
+          : null;
       lines.push(
-        `${otherClassified.some((o) => o.feeder.device_type === "MCCB") && acbUnits.reduce((s, u) => s + (u.qty || 1), 0) < 2 ? "An ACB and an MCCB" : "Several ACBs"} share this bay — their busbars from the main busbar can't take the same route, so the bay is one standard width up${spec ? ` (${spec.widthMm} → ${nextBayWidth(spec.widthMm)}mm)` : ""}. Type another width to override.`
+        `${otherClassified.some((o) => o.feeder.device_type === "MCCB") && acbUnits.reduce((s, u) => s + (u.qty || 1), 0) < 2 ? "An ACB and an MCCB" : "Several ACBs"} share this bay — their busbars from the main busbar can't take the same route, so the bay is one standard width up${spec ? ` (${spec.widthMm} → ${nextBayWidth(spec.widthMm)}mm)` : ""}. Type another width to override.`,
       );
     }
   }
 
   if (otherClassified.length > 0) {
-    const types = Array.from(new Set(otherClassified.map((p) => DEVICE_TYPE_LABELS[p.feeder.device_type!])));
-    lines.push(
-      `${otherClassified.length} feeder(s) (${types.join(", ")}) pack into ArTuK's standard ${OUTGOING_MCC_BAY.widthMm}×${OUTGOING_MCC_BAY.depthMm}mm outgoing module, stacked by each feeder's rated height (see How it works → Dimensions).`
+    const types = Array.from(
+      new Set(
+        otherClassified.map((p) => DEVICE_TYPE_LABELS[p.feeder.device_type!]),
+      ),
     );
-    if (v.width_mm !== OUTGOING_MCC_BAY.widthMm) lines.push(`Current width ${v.width_mm ?? "—"}mm differs from the ${OUTGOING_MCC_BAY.widthMm}mm standard — likely adjusted by hand.`);
+    lines.push(
+      `${otherClassified.length} feeder(s) (${types.join(", ")}) pack into ArTuK's standard ${OUTGOING_MCC_BAY.widthMm}×${OUTGOING_MCC_BAY.depthMm}mm outgoing module, stacked by each feeder's rated height (see How it works → Dimensions).`,
+    );
+    if (v.width_mm !== OUTGOING_MCC_BAY.widthMm)
+      lines.push(
+        `Current width ${v.width_mm ?? "—"}mm differs from the ${OUTGOING_MCC_BAY.widthMm}mm standard — likely adjusted by hand.`,
+      );
   }
 
   if (unclassified.length > 0) {
-    lines.push(`${unclassified.length} feeder(s) with no Device Type set — sized at a default ${DEFAULT_COMPARTMENT_HEIGHT_MM}mm — adjust the unit height here, or set Device Type + rating in BOM Builder for a real ArTuK height.`);
+    lines.push(
+      `${unclassified.length} feeder(s) with no Device Type set — sized at a default ${DEFAULT_COMPARTMENT_HEIGHT_MM}mm — adjust the unit height here, or set Device Type + rating in BOM Builder for a real ArTuK height.`,
+    );
   }
 
   return lines;
@@ -166,8 +267,15 @@ function newId() {
   return `new-${crypto.randomUUID()}`;
 }
 
-async function loadGaData(supabase: ReturnType<typeof createClient>, switchboardId: string) {
-  const { data: switchboard } = await supabase.from("switchboards").select("*").eq("id", switchboardId).single();
+async function loadGaData(
+  supabase: ReturnType<typeof createClient>,
+  switchboardId: string,
+) {
+  const { data: switchboard } = await supabase
+    .from("switchboards")
+    .select("*")
+    .eq("id", switchboardId)
+    .single();
   if (!switchboard) return null;
 
   const { data: verticals } = await supabase
@@ -178,29 +286,59 @@ async function loadGaData(supabase: ReturnType<typeof createClient>, switchboard
 
   const verticalIds = (verticals ?? []).map((v) => v.id);
   const { data: placed } = verticalIds.length
-    ? await supabase.from("placed_feeders").select("*, feeder:feeders(*, feeder_items(item:item_master(category, frame)))").in("vertical_id", verticalIds).order("sort_order")
+    ? await supabase
+        .from("placed_feeders")
+        .select(
+          "*, feeder:feeders(*, feeder_items(item:item_master(category, frame)))",
+        )
+        .in("vertical_id", verticalIds)
+        .order("sort_order")
     : { data: [] };
 
-  const verticalsWithFeeders: VerticalWithFeeders[] = (verticals ?? []).map((v) => ({
-    ...v,
-    placed: ((placed ?? []) as unknown as (PlacedFeeder & { feeder: Feeder; vertical_id: string })[]).filter(
-      (p) => p.vertical_id === v.id
-    ),
-  }));
+  const verticalsWithFeeders: VerticalWithFeeders[] = (verticals ?? []).map(
+    (v) => ({
+      ...v,
+      placed: (
+        (placed ?? []) as unknown as (PlacedFeeder & {
+          feeder: Feeder;
+          vertical_id: string;
+        })[]
+      ).filter((p) => p.vertical_id === v.id),
+    }),
+  );
 
-  const { data: revision } = await supabase.from("revisions").select("project_id").eq("id", switchboard.revision_id).single();
+  const { data: revision } = await supabase
+    .from("revisions")
+    .select("project_id")
+    .eq("id", switchboard.revision_id)
+    .single();
   const { data: project } = revision
-    ? await supabase.from("projects").select("busbar_density_cu, busbar_density_al").eq("id", (revision as { project_id: string }).project_id).single()
+    ? await supabase
+        .from("projects")
+        .select("busbar_density_cu, busbar_density_al")
+        .eq("id", (revision as { project_id: string }).project_id)
+        .single()
     : { data: null };
-  const { data: overrideRows } = await supabase.from("busbar_overrides").select("*").eq("switchboard_id", switchboardId);
+  const { data: overrideRows } = await supabase
+    .from("busbar_overrides")
+    .select("*")
+    .eq("switchboard_id", switchboardId);
 
-  const overrides = overridesFromRows((overrideRows ?? []) as BusbarOverrideRow[]);
+  const overrides = overridesFromRows(
+    (overrideRows ?? []) as BusbarOverrideRow[],
+  );
 
-  const densityRow = project as { busbar_density_cu: number; busbar_density_al: number } | null;
+  const densityRow = project as {
+    busbar_density_cu: number;
+    busbar_density_al: number;
+  } | null;
   return {
     switchboard: switchboard as Switchboard,
     verticals: verticalsWithFeeders,
-    densities: { Cu: Number(densityRow?.busbar_density_cu ?? 1.6), Al: Number(densityRow?.busbar_density_al ?? 1.0) },
+    densities: {
+      Cu: Number(densityRow?.busbar_density_cu ?? 1.6),
+      Al: Number(densityRow?.busbar_density_al ?? 1.0),
+    },
     overrides,
   };
 }
@@ -231,7 +369,10 @@ function makeSpareFeeder(name: string): Feeder {
 // with nothing added from BOM Builder or GA) -- create a draft-only
 // placeholder for it (a temp id, only ever inserted on Save) instead of
 // hitting Supabase, since every GA mutation is draft-only until Save runs.
-function withUnassigned(verts: VerticalWithFeeders[], switchboardId: string): { unassigned: VerticalWithFeeders; verts: VerticalWithFeeders[] } {
+function withUnassigned(
+  verts: VerticalWithFeeders[],
+  switchboardId: string,
+): { unassigned: VerticalWithFeeders; verts: VerticalWithFeeders[] } {
   const existing = verts.find((v) => v.bay_type === "unassigned");
   if (existing) return { unassigned: existing, verts };
   const created: VerticalWithFeeders = {
@@ -259,7 +400,10 @@ function withUnassigned(verts: VerticalWithFeeders[], switchboardId: string): { 
 // instead of one feeder at its real qty.
 // A bay whose contents changed takes the width of its widest feeder plus
 // the side gaps (alleys and bays left empty keep their width).
-function withAutoWidths(verts: VerticalWithFeeders[], ids: string[]): VerticalWithFeeders[] {
+function withAutoWidths(
+  verts: VerticalWithFeeders[],
+  ids: string[],
+): VerticalWithFeeders[] {
   return verts.map((v) => {
     if (!ids.includes(v.id)) return v;
     const w = bayWidthFor(v);
@@ -268,7 +412,9 @@ function withAutoWidths(verts: VerticalWithFeeders[], ids: string[]): VerticalWi
 }
 
 // Per-unit heights of a row as a full-length array (null = standard).
-function unitHeightsOf(p: Pick<PlacedWithFeeder, "qty" | "unit_heights">): (number | null)[] {
+function unitHeightsOf(
+  p: Pick<PlacedWithFeeder, "qty" | "unit_heights">,
+): (number | null)[] {
   return Array.from({ length: p.qty }, (_, i) => p.unit_heights?.[i] ?? null);
 }
 // Stored form: null when every unit is at its standard height.
@@ -283,7 +429,7 @@ function mergeQtyInto(
   feederId: string,
   feeder: Feeder,
   qty: number,
-  heights: (number | null)[] = []
+  heights: (number | null)[] = [],
 ): VerticalWithFeeders[] {
   const incoming = Array.from({ length: qty }, (_, i) => heights[i] ?? null);
   return verts.map((v) => {
@@ -293,7 +439,13 @@ function mergeQtyInto(
       return {
         ...v,
         placed: v.placed.map((p) =>
-          p.id === existing.id ? { ...p, qty: p.qty + qty, unit_heights: packHeights([...unitHeightsOf(p), ...incoming]) } : p
+          p.id === existing.id
+            ? {
+                ...p,
+                qty: p.qty + qty,
+                unit_heights: packHeights([...unitHeightsOf(p), ...incoming]),
+              }
+            : p,
         ),
       };
     const newRow: PlacedWithFeeder = {
@@ -315,15 +467,28 @@ function mergeQtyInto(
 // The inverse of mergeQtyInto for a single unit: takes exactly one unit's worth off the
 // matching row in a vertical, dropping the row once it reaches zero.
 // Takes unit `unitIndex` out of a row (dropping its height entry too).
-function takeUnit(verts: VerticalWithFeeders[], verticalId: string, placedId: string, unitIndex: number): VerticalWithFeeders[] {
+function takeUnit(
+  verts: VerticalWithFeeders[],
+  verticalId: string,
+  placedId: string,
+  unitIndex: number,
+): VerticalWithFeeders[] {
   return verts.map((v) => {
     if (v.id !== verticalId) return v;
     const row = v.placed.find((p) => p.id === placedId);
     if (!row) return v;
-    if (row.qty <= 1) return { ...v, placed: v.placed.filter((p) => p.id !== placedId) };
+    if (row.qty <= 1)
+      return { ...v, placed: v.placed.filter((p) => p.id !== placedId) };
     const h = unitHeightsOf(row);
     h.splice(Math.min(Math.max(unitIndex, 0), row.qty - 1), 1);
-    return { ...v, placed: v.placed.map((p) => (p.id === placedId ? { ...p, qty: p.qty - 1, unit_heights: packHeights(h) } : p)) };
+    return {
+      ...v,
+      placed: v.placed.map((p) =>
+        p.id === placedId
+          ? { ...p, qty: p.qty - 1, unit_heights: packHeights(h) }
+          : p,
+      ),
+    };
   });
 }
 
@@ -333,7 +498,7 @@ function makeVertical(
   bayType: BayType,
   widthMm: number,
   depthMm: number | null,
-  sortOrder: number
+  sortOrder: number,
 ): VerticalWithFeeders {
   return {
     id: newId(),
@@ -382,15 +547,21 @@ export function GaCanvas({
   // only these draft values; nothing reaches Supabase until Save (or
   // Ctrl+S) runs and diffs the draft against the `saved*` snapshot.
   const [verticals, setVerticals] = useState<VerticalWithFeeders[]>([]);
-  const [savedVerticals, setSavedVerticals] = useState<VerticalWithFeeders[]>([]);
+  const [savedVerticals, setSavedVerticals] = useState<VerticalWithFeeders[]>(
+    [],
+  );
   const [plinthHeight, setPlinthHeight] = useState(100);
   const [savedPlinthHeight, setSavedPlinthHeight] = useState(100);
   // side of the panel cables come in/out from (Front / Rear) -- shown with
   // cable entry/exit in the summary table, e.g. "CABLE ENTRY – REAR TOP"
-  const [cableAccess, setCableAccess] = useState<Switchboard["cable_access"]>(null);
-  const [savedCableAccess, setSavedCableAccess] = useState<Switchboard["cable_access"]>(null);
-  const [arrangement, setArrangement] = useState<Switchboard["arrangement"]>("single_front");
-  const [savedArrangement, setSavedArrangement] = useState<Switchboard["arrangement"]>("single_front");
+  const [cableAccess, setCableAccess] =
+    useState<Switchboard["cable_access"]>(null);
+  const [savedCableAccess, setSavedCableAccess] =
+    useState<Switchboard["cable_access"]>(null);
+  const [arrangement, setArrangement] =
+    useState<Switchboard["arrangement"]>("single_front");
+  const [savedArrangement, setSavedArrangement] =
+    useState<Switchboard["arrangement"]>("single_front");
   const [internalArc, setInternalArc] = useState(false);
   const [savedInternalArc, setSavedInternalArc] = useState(false);
   const [hasBusduct, setHasBusduct] = useState(false);
@@ -398,7 +569,9 @@ export function GaCanvas({
   const [panelHeightSetting, setPanelHeight] = useState(2100);
   const [savedPanelHeight, setSavedPanelHeight] = useState(2100);
   const [busbarHeight, setBusbarHeight] = useState(BUSBAR_CHAMBER_HEIGHT_MM);
-  const [savedBusbarHeight, setSavedBusbarHeight] = useState(BUSBAR_CHAMBER_HEIGHT_MM);
+  const [savedBusbarHeight, setSavedBusbarHeight] = useState(
+    BUSBAR_CHAMBER_HEIGHT_MM,
+  );
   // ArTuK: whether the chamber height follows ABB's height for the main bar
   // (off once it's typed by hand; on for the old default or an ABB height)
   const [chamberAuto, setChamberAuto] = useState(false);
@@ -406,19 +579,32 @@ export function GaCanvas({
   // baseframe, baseframe NOT included); the feeders get whatever's left after
   // the 31mm strip, the two 50mm levels and the busbar chamber.
   const [artukHeight, setArtukHeight] = useState(DEFAULT_ARTUK_HEIGHT_MM);
-  const [savedArtukHeight, setSavedArtukHeight] = useState(DEFAULT_ARTUK_HEIGHT_MM);
+  const [savedArtukHeight, setSavedArtukHeight] = useState(
+    DEFAULT_ARTUK_HEIGHT_MM,
+  );
   const isArtuk = sb?.std === "ArTuK";
   // feeder area: ArTuK -- the ArTuK height less strip, levels and chamber;
   // otherwise the panel height (full height without base) less the chamber
-  const panelHeight = isArtuk ? artukHeight - ARTUK_FIXED_MM - busbarHeight : panelHeightSetting - busbarHeight;
-  const [busbarOverrides, setBusbarOverrides] = useState<Record<string, BusbarOverride>>({});
-  const [savedBusbarOverrides, setSavedBusbarOverrides] = useState<Record<string, BusbarOverride>>({});
-  const [densities, setDensities] = useState<{ Cu: number; Al: number }>({ Cu: 1.6, Al: 1.0 });
+  const panelHeight = isArtuk
+    ? artukHeight - ARTUK_FIXED_MM - busbarHeight
+    : panelHeightSetting - busbarHeight;
+  const [busbarOverrides, setBusbarOverrides] = useState<
+    Record<string, BusbarOverride>
+  >({});
+  const [savedBusbarOverrides, setSavedBusbarOverrides] = useState<
+    Record<string, BusbarOverride>
+  >({});
+  const [densities, setDensities] = useState<{ Cu: number; Al: number }>({
+    Cu: 1.6,
+    Al: 1.0,
+  });
   const [showBusbars, setShowBusbars] = useState(true);
   // pink busbar-support markers on the front view (drawing only -- the BOM
   // still counts them)
   const [showSupports, setShowSupports] = useState(true);
-  const [selectedSegmentKey, setSelectedSegmentKey] = useState<string | null>(null);
+  const [selectedSegmentKey, setSelectedSegmentKey] = useState<string | null>(
+    null,
+  );
   const [saving, setSaving] = useState(false);
   const [resetKey, setResetKey] = useState(0);
 
@@ -427,6 +613,7 @@ export function GaCanvas({
   const [draggingFeeder, setDraggingFeeder] = useState<Feeder | null>(null);
   const [hover, setHover] = useState<HoverExtent>(null);
   const [selectedBayId, setSelectedBayId] = useState<string | null>(null);
+  const [configBayId, setConfigBayId] = useState<string | null>(null);
   const [selectedPlacedId, setSelectedPlacedId] = useState<string | null>(null);
   // which unit of a multi-qty row is selected (a row of 4 MCCBs is 4 units)
   const [selectedUnitIndex, setSelectedUnitIndex] = useState(0);
@@ -448,10 +635,17 @@ export function GaCanvas({
   // Hover tooltip with dimensions: anything in the drawing carrying a
   // data-ga-tip shows it after a short pause (faster than the browser's
   // own title tooltip, and it doesn't show up in exports).
-  const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
+  const [tooltip, setTooltip] = useState<{
+    text: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const tipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   function onCanvasMouseMove(e: React.MouseEvent) {
-    const text = (e.target as Element).closest("[data-ga-tip]")?.getAttribute("data-ga-tip") ?? null;
+    const text =
+      (e.target as Element)
+        .closest("[data-ga-tip]")
+        ?.getAttribute("data-ga-tip") ?? null;
     const { clientX: x, clientY: y } = e;
     if (tipTimer.current) clearTimeout(tipTimer.current);
     if (!text) {
@@ -482,7 +676,8 @@ export function GaCanvas({
       setIsFullscreen(document.fullscreenElement === fullscreenRef.current);
     }
     document.addEventListener("fullscreenchange", onFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+    return () =>
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, []);
 
   function toggleFullscreen() {
@@ -515,7 +710,10 @@ export function GaCanvas({
       width,
       height,
       windowWidth: Math.max(width + 64, document.documentElement.clientWidth),
-      windowHeight: Math.max(height + 64, document.documentElement.clientHeight),
+      windowHeight: Math.max(
+        height + 64,
+        document.documentElement.clientHeight,
+      ),
       scrollX: 0,
       scrollY: 0,
       onclone: (_doc, clone) => {
@@ -544,7 +742,9 @@ export function GaCanvas({
       link.href = canvas.toDataURL("image/png");
       link.click();
     } catch (e) {
-      alert(`Could not export the GA drawing as PNG.${e instanceof Error ? ` (${e.message})` : ""}`);
+      alert(
+        `Could not export the GA drawing as PNG.${e instanceof Error ? ` (${e.message})` : ""}`,
+      );
     } finally {
       setExporting(false);
     }
@@ -554,14 +754,31 @@ export function GaCanvas({
     if (exporting) return;
     setExporting(true);
     try {
-      const [canvas, { jsPDF }] = await Promise.all([captureDrawing(), import("jspdf")]);
+      const [canvas, { jsPDF }] = await Promise.all([
+        captureDrawing(),
+        import("jspdf"),
+      ]);
       if (!canvas) return;
-      const orientation = canvas.width >= canvas.height ? "landscape" : "portrait";
-      const pdf = new jsPDF({ orientation, unit: "pt", format: [canvas.width, canvas.height] });
-      pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, canvas.width, canvas.height);
+      const orientation =
+        canvas.width >= canvas.height ? "landscape" : "portrait";
+      const pdf = new jsPDF({
+        orientation,
+        unit: "pt",
+        format: [canvas.width, canvas.height],
+      });
+      pdf.addImage(
+        canvas.toDataURL("image/png"),
+        "PNG",
+        0,
+        0,
+        canvas.width,
+        canvas.height,
+      );
       pdf.save(downloadFileName("pdf"));
     } catch (e) {
-      alert(`Could not export the GA drawing as PDF.${e instanceof Error ? ` (${e.message})` : ""}`);
+      alert(
+        `Could not export the GA drawing as PDF.${e instanceof Error ? ` (${e.message})` : ""}`,
+      );
     } finally {
       setExporting(false);
     }
@@ -575,7 +792,8 @@ export function GaCanvas({
     setSavedVerticals(data.verticals);
     const plinth = data.switchboard.plinth_height_mm ?? 100;
     const panel = data.switchboard.panel_height_mm ?? 2100;
-    const busbar = data.switchboard.busbar_chamber_height_mm ?? BUSBAR_CHAMBER_HEIGHT_MM;
+    const busbar =
+      data.switchboard.busbar_chamber_height_mm ?? BUSBAR_CHAMBER_HEIGHT_MM;
     setPlinthHeight(plinth);
     setSavedPlinthHeight(plinth);
     setCableAccess(data.switchboard.cable_access ?? null);
@@ -589,10 +807,15 @@ export function GaCanvas({
     setPanelHeight(panel);
     setSavedPanelHeight(panel);
     setArtukHeight(artukHeightOf(data.switchboard.panel_height_mm, busbar));
-    setSavedArtukHeight(artukHeightOf(data.switchboard.panel_height_mm, busbar));
+    setSavedArtukHeight(
+      artukHeightOf(data.switchboard.panel_height_mm, busbar),
+    );
     setBusbarHeight(busbar);
     setSavedBusbarHeight(busbar);
-    setChamberAuto(busbar === BUSBAR_CHAMBER_HEIGHT_MM || ARTUK_CHAMBER_HEIGHTS_MM.includes(busbar));
+    setChamberAuto(
+      busbar === BUSBAR_CHAMBER_HEIGHT_MM ||
+        ARTUK_CHAMBER_HEIGHTS_MM.includes(busbar),
+    );
     setDensities(data.densities);
     setBusbarOverrides(data.overrides);
     setSavedBusbarOverrides(data.overrides);
@@ -609,7 +832,8 @@ export function GaCanvas({
       setSavedVerticals(data.verticals);
       const plinth = data.switchboard.plinth_height_mm ?? 100;
       const panel = data.switchboard.panel_height_mm ?? 2100;
-      const busbar = data.switchboard.busbar_chamber_height_mm ?? BUSBAR_CHAMBER_HEIGHT_MM;
+      const busbar =
+        data.switchboard.busbar_chamber_height_mm ?? BUSBAR_CHAMBER_HEIGHT_MM;
       setPlinthHeight(plinth);
       setSavedPlinthHeight(plinth);
       setCableAccess(data.switchboard.cable_access ?? null);
@@ -623,10 +847,15 @@ export function GaCanvas({
       setPanelHeight(panel);
       setSavedPanelHeight(panel);
       setArtukHeight(artukHeightOf(data.switchboard.panel_height_mm, busbar));
-      setSavedArtukHeight(artukHeightOf(data.switchboard.panel_height_mm, busbar));
+      setSavedArtukHeight(
+        artukHeightOf(data.switchboard.panel_height_mm, busbar),
+      );
       setBusbarHeight(busbar);
       setSavedBusbarHeight(busbar);
-      setChamberAuto(busbar === BUSBAR_CHAMBER_HEIGHT_MM || ARTUK_CHAMBER_HEIGHTS_MM.includes(busbar));
+      setChamberAuto(
+        busbar === BUSBAR_CHAMBER_HEIGHT_MM ||
+          ARTUK_CHAMBER_HEIGHTS_MM.includes(busbar),
+      );
       setDensities(data.densities);
       setBusbarOverrides(data.overrides);
       setSavedBusbarOverrides(data.overrides);
@@ -637,7 +866,10 @@ export function GaCanvas({
     };
   }, [supabase, switchboardId]);
 
-  const readOnly = !sb || revisionArchived || (sb.locked_by !== null && sb.locked_by !== currentUserId);
+  const readOnly =
+    !sb ||
+    revisionArchived ||
+    (sb.locked_by !== null && sb.locked_by !== currentUserId);
 
   const dirty =
     JSON.stringify(verticals) !== JSON.stringify(savedVerticals) ||
@@ -646,14 +878,19 @@ export function GaCanvas({
     arrangement !== savedArrangement ||
     internalArc !== savedInternalArc ||
     hasBusduct !== savedHasBusduct ||
-    (isArtuk ? artukHeight !== savedArtukHeight : panelHeightSetting !== savedPanelHeight) ||
+    (isArtuk
+      ? artukHeight !== savedArtukHeight
+      : panelHeightSetting !== savedPanelHeight) ||
     busbarHeight !== savedBusbarHeight ||
     JSON.stringify(busbarOverrides) !== JSON.stringify(savedBusbarOverrides);
   useWarnOnUnload(dirty);
 
-  const bays = verticals.filter((v) => v.bay_type !== "unassigned").sort((a, b) => a.sort_order - b.sort_order);
+  const bays = verticals
+    .filter((v) => v.bay_type !== "unassigned")
+    .sort((a, b) => a.sort_order - b.sort_order);
   const busductTotal = bays.reduce((s, v) => s + (v.busduct_entries ?? 0), 0);
-  const unallocated = verticals.find((v) => v.bay_type === "unassigned") ?? null;
+  const unallocated =
+    verticals.find((v) => v.bay_type === "unassigned") ?? null;
   const totalWidth = bays.reduce((s, v) => s + (v.width_mm ?? 0), 0);
 
   // Left-edge cumulative offset (mm) of each bay, for the horizontal ruler
@@ -687,8 +924,11 @@ export function GaCanvas({
   // drawing never understates how far the enclosure projects); a single
   // bay chosen for the side view uses its own depth.
   const sideBay = bays.find((v) => v.id === sideBayId) ?? null;
-  const deepestBayMm = Math.max(0, ...bays.map((v) => v.depth_mm ?? 0)) || DEFAULT_BAY_DEPTH_MM;
-  const sideViewDepthMm = sideBay ? (sideBay.depth_mm ?? deepestBayMm) : deepestBayMm;
+  const deepestBayMm =
+    Math.max(0, ...bays.map((v) => v.depth_mm ?? 0)) || DEFAULT_BAY_DEPTH_MM;
+  const sideViewDepthMm = sideBay
+    ? (sideBay.depth_mm ?? deepestBayMm)
+    : deepestBayMm;
   // "Fit width": the scale at which front view + side view (+ the fixed-size
   // rulers, dimension columns, gap and padding) fill the canvas width. The
   // side column is never narrower than the summary table under it.
@@ -696,7 +936,8 @@ export function GaCanvas({
   if (zoomMode === "fit" && canvasWidthPx > 0 && totalWidth > 0) {
     const fixedPx = RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX + 40 + 32 + 8;
     let fit = (canvasWidthPx - fixedPx) / (totalWidth + sideViewDepthMm);
-    if (sideViewDepthMm * fit < SUMMARY_TABLE_MIN_PX) fit = (canvasWidthPx - fixedPx - SUMMARY_TABLE_MIN_PX) / totalWidth;
+    if (sideViewDepthMm * fit < SUMMARY_TABLE_MIN_PX)
+      fit = (canvasWidthPx - fixedPx - SUMMARY_TABLE_MIN_PX) / totalWidth;
     pxPerMm = Math.max(0.02, Math.min(standardPxPerMm, fit));
   }
   const sideViewWidthPx = Math.max(sideViewDepthMm * pxPerMm, 1);
@@ -723,33 +964,59 @@ export function GaCanvas({
         chamberHeightMm: busbarHeight,
       })
     : null;
-  const selectedSegment = busbarPlan?.segments.find((seg) => seg.key === selectedSegmentKey) ?? null;
+  const selectedSegment =
+    busbarPlan?.segments.find((seg) => seg.key === selectedSegmentKey) ?? null;
 
   // ArTuK: the busbar chamber height follows the main bar size (ABB). It
   // follows automatically while the saved height is the old default or an
   // ABB height and hasn't been changed by hand this session; a custom
   // height is kept, with the ABB height offered in the chamber panel.
-  const mainBar = busbarPlan?.segments.find((seg) => seg.kind === "main")?.bar ?? null;
+  const mainBar =
+    busbarPlan?.segments.find((seg) => seg.kind === "main")?.bar ?? null;
 
   // ArTuK busbar supports (ABB spans / per-bay counts), drawn pink in the
   // front view and counted in the BOM's enclosure parts
   const busbarSupports = isArtuk
     ? planBusbarSupports({
         plan: busbarPlan,
-        bays: bays.map((v, i) => ({ id: v.id, name: v.name, leftMm: bayOffsets[i], widthMm: v.width_mm ?? 0, depthMm: panelDepthOf(bays) ?? v.depth_mm })),
+        bays: bays.map((v, i) => ({
+          id: v.id,
+          name: v.name,
+          leftMm: bayOffsets[i],
+          widthMm: v.width_mm ?? 0,
+          depthMm: panelDepthOf(bays) ?? v.depth_mm,
+        })),
         material: busbarMaterial,
         ka: sb?.ka ?? null,
-        mccbBoard: !bays.some((v) => v.placed.some((p) => p.feeder.device_type === "ACB")),
+        mccbBoard: !bays.some((v) =>
+          v.placed.some((p) => p.feeder.device_type === "ACB"),
+        ),
         internalArc,
         poles: sb?.poles ?? 4,
       })
     : null;
   const abbChamberMm = isArtuk ? artukChamberHeightFor(mainBar) : null;
-  if (chamberAuto && !readOnly && abbChamberMm != null && busbarHeight !== abbChamberMm) setBusbarHeight(abbChamberMm);
+  if (
+    chamberAuto &&
+    !readOnly &&
+    abbChamberMm != null &&
+    busbarHeight !== abbChamberMm
+  )
+    setBusbarHeight(abbChamberMm);
 
   function patchSegmentOverrides(
     segs: BusbarSegment[],
-    patch: Partial<Pick<BusbarOverride, "barWidthMm" | "barThicknessMm" | "runsPerPhase" | "lengthMm" | "startExtMm" | "endExtMm">>
+    patch: Partial<
+      Pick<
+        BusbarOverride,
+        | "barWidthMm"
+        | "barThicknessMm"
+        | "runsPerPhase"
+        | "lengthMm"
+        | "startExtMm"
+        | "endExtMm"
+      >
+    >,
   ) {
     setBusbarOverrides((prev) => {
       const next = { ...prev };
@@ -812,14 +1079,20 @@ export function GaCanvas({
     }
   }
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+  );
 
   const availableUnits: AvailableUnit[] = useMemo(() => {
     if (!unallocated) return [];
     const units: AvailableUnit[] = [];
     for (const p of unallocated.placed) {
       for (let i = 0; i < p.qty; i++) {
-        units.push({ unitId: `${p.id}::${i}`, placedId: p.id, feeder: p.feeder });
+        units.push({
+          unitId: `${p.id}::${i}`,
+          placedId: p.id,
+          feeder: p.feeder,
+        });
       }
     }
     return units;
@@ -828,19 +1101,24 @@ export function GaCanvas({
   const filteredUnits = availableUnits.filter(
     (u) =>
       u.feeder.name.toLowerCase().includes(search.toLowerCase()) ||
-      (u.feeder.category ?? "").toLowerCase().includes(search.toLowerCase())
+      (u.feeder.category ?? "").toLowerCase().includes(search.toLowerCase()),
   );
 
   function addBay(template: (typeof BAY_TEMPLATES)[number]) {
     if (!sb) return;
-    const count = bays.filter((b) => b.bay_type === template.bay_type).length + 1;
+    const count =
+      bays.filter((b) => b.bay_type === template.bay_type).length + 1;
     const created: VerticalWithFeeders = {
       id: newId(),
       switchboard_id: sb.id,
       name: `${template.namePrefix} ${count}`,
       bay_type: template.bay_type,
       // a 600mm feeder + 60mm each side; alleys a 300mm opening + 60mm each side
-      width_mm: template.bay_type === "cable_alley" || template.bay_type === "busbar_alley" ? ALLEY_MIN_WIDTH_MM : 600 + 2 * FEEDER_SIDE_GAP_MM,
+      width_mm:
+        template.bay_type === "cable_alley" ||
+        template.bay_type === "busbar_alley"
+          ? ALLEY_MIN_WIDTH_MM
+          : 600 + 2 * FEEDER_SIDE_GAP_MM,
       depth_mm: null,
       sort_order: bays.length,
       created_at: new Date().toISOString(),
@@ -856,28 +1134,46 @@ export function GaCanvas({
   }
 
   function renameBay(id: string, newName: string) {
-    setVerticals(verticals.map((v) => (v.id === id ? { ...v, name: newName } : v)));
+    setVerticals(
+      verticals.map((v) => (v.id === id ? { ...v, name: newName } : v)),
+    );
   }
 
-  function setBayDim(id: string, field: "width_mm" | "depth_mm", value: string) {
+  function setBayDim(
+    id: string,
+    field: "width_mm" | "depth_mm",
+    value: string,
+  ) {
     const num = value ? Number(value) : null;
     // the whole panel has one depth -- a depth typed on any bay applies to all
     if (field === "depth_mm") {
-      setVerticals(verticals.map((v) => (v.bay_type === "unassigned" ? v : { ...v, depth_mm: num })));
+      setVerticals(
+        verticals.map((v) =>
+          v.bay_type === "unassigned" ? v : { ...v, depth_mm: num },
+        ),
+      );
       return;
     }
     setVerticals(
       verticals.map((v) => {
         if (v.id !== id) return v;
         // alleys keep the 60mm side gaps: never narrower than 420mm
-        const val = field === "width_mm" && num != null && isAlley(v.bay_type) ? Math.max(num, ALLEY_MIN_WIDTH_MM) : num;
+        const val =
+          field === "width_mm" && num != null && isAlley(v.bay_type)
+            ? Math.max(num, ALLEY_MIN_WIDTH_MM)
+            : num;
         return { ...v, [field]: val };
-      })
+      }),
     );
   }
 
   function deleteBay(id: string) {
-    if (!confirm("Delete this bay? Anything placed in it goes back to the available feeders list.")) return;
+    if (
+      !confirm(
+        "Delete this bay? Anything placed in it goes back to the available feeders list.",
+      )
+    )
+      return;
     if (!sb) return;
     const vertical = verticals.find((v) => v.id === id);
     if (!vertical) return;
@@ -889,14 +1185,24 @@ export function GaCanvas({
     const { unassigned, verts } = withUnassigned(verticals, sb.id);
     let next = verts;
     for (const p of vertical.placed) {
-      next = mergeQtyInto(next, unassigned.id, p.feeder_id, p.feeder, p.qty, unitHeightsOf(p));
+      next = mergeQtyInto(
+        next,
+        unassigned.id,
+        p.feeder_id,
+        p.feeder,
+        p.qty,
+        unitHeightsOf(p),
+      );
     }
     setVerticals(next.filter((v) => v.id !== id));
   }
 
   function addSpare() {
     if (!sb || readOnly) return;
-    const name = window.prompt('Name this spare feeder (e.g. "Spare", "Future Outgoing")', "Spare");
+    const name = window.prompt(
+      'Name this spare feeder (e.g. "Spare", "Future Outgoing")',
+      "Spare",
+    );
     if (name === null) return;
     const trimmedName = name.trim() || "Spare";
     const qtyInput = window.prompt("How many spare units?", "1");
@@ -915,7 +1221,11 @@ export function GaCanvas({
       created_at: new Date().toISOString(),
       feeder,
     };
-    setVerticals(verts.map((v) => (v.id === unassigned.id ? { ...v, placed: [...v.placed, newRow] } : v)));
+    setVerticals(
+      verts.map((v) =>
+        v.id === unassigned.id ? { ...v, placed: [...v.placed, newRow] } : v,
+      ),
+    );
   }
 
   // Manual alternates to what Auto-generate GA picks by default (see
@@ -923,15 +1233,43 @@ export function GaCanvas({
   // feeders into by hand, same as any other bay template.
   function addMccFrontAccessPair() {
     if (!sb || readOnly) return;
-    const primary = makeVertical(sb.id, "MCC Front Access", "outgoing", MCC_FRONT_ACCESS_PAIR.primary.widthMm, MCC_FRONT_ACCESS_PAIR.primary.depthMm, nextBaySortOrder());
-    const paired = makeVertical(sb.id, "MCC Front Access", "outgoing", MCC_FRONT_ACCESS_PAIR.paired.widthMm, MCC_FRONT_ACCESS_PAIR.paired.depthMm, nextBaySortOrder() + 1);
+    const primary = makeVertical(
+      sb.id,
+      "MCC Front Access",
+      "outgoing",
+      MCC_FRONT_ACCESS_PAIR.primary.widthMm,
+      MCC_FRONT_ACCESS_PAIR.primary.depthMm,
+      nextBaySortOrder(),
+    );
+    const paired = makeVertical(
+      sb.id,
+      "MCC Front Access",
+      "outgoing",
+      MCC_FRONT_ACCESS_PAIR.paired.widthMm,
+      MCC_FRONT_ACCESS_PAIR.paired.depthMm,
+      nextBaySortOrder() + 1,
+    );
     setVerticals([...verticals, primary, paired]);
   }
 
   function add2TierOutgoingE12() {
     if (!sb || readOnly) return;
-    const primary = makeVertical(sb.id, "Outgoing (E1.2 2-Tier)", "outgoing", ACB_2TIER_OUTGOING_E12.primary.widthMm, ACB_2TIER_OUTGOING_E12.primary.depthMm, nextBaySortOrder());
-    const paired = makeVertical(sb.id, "Outgoing (E1.2 2-Tier)", "outgoing", ACB_2TIER_OUTGOING_E12.paired.widthMm, ACB_2TIER_OUTGOING_E12.paired.depthMm, nextBaySortOrder() + 1);
+    const primary = makeVertical(
+      sb.id,
+      "Outgoing (E1.2 2-Tier)",
+      "outgoing",
+      ACB_2TIER_OUTGOING_E12.primary.widthMm,
+      ACB_2TIER_OUTGOING_E12.primary.depthMm,
+      nextBaySortOrder(),
+    );
+    const paired = makeVertical(
+      sb.id,
+      "Outgoing (E1.2 2-Tier)",
+      "outgoing",
+      ACB_2TIER_OUTGOING_E12.paired.widthMm,
+      ACB_2TIER_OUTGOING_E12.paired.depthMm,
+      nextBaySortOrder() + 1,
+    );
     setVerticals([...verticals, primary, paired]);
   }
 
@@ -947,22 +1285,99 @@ export function GaCanvas({
   function autoGenerateGa() {
     if (!sb || readOnly) return;
     setVerticals(
-      verticals.map((v) => {
-        const size = artukBaySize(v, {
-          arrangement,
-          frontAccess: cableAccess === "Front",
-          amps: sb.amps,
-          mainRuns: busbarPlan?.segments.find((s) => s.kind === "main")?.runs ?? 1,
-        });
-        return size ? { ...v, width_mm: size.widthMm, depth_mm: size.depthMm } : v;
-      })
-      // one depth for the whole panel: the deepest bay's, alleys included
-    .map((v, _i, all) => (v.bay_type === "unassigned" ? v : { ...v, depth_mm: panelDepthOf(all) ?? v.depth_mm }))
+      verticals
+        .map((v) => {
+          const size = artukBaySize(v, {
+            arrangement,
+            frontAccess: cableAccess === "Front",
+            amps: sb.amps,
+            mainRuns:
+              busbarPlan?.segments.find((s) => s.kind === "main")?.runs ?? 1,
+          });
+          return size
+            ? { ...v, width_mm: size.widthMm, depth_mm: size.depthMm }
+            : v;
+        })
+        // one depth for the whole panel: the deepest bay's, alleys included
+        .map((v, _i, all) =>
+          v.bay_type === "unassigned"
+            ? v
+            : { ...v, depth_mm: panelDepthOf(all) ?? v.depth_mm },
+        ),
     );
     if (abbChamberMm != null) {
       setBusbarHeight(abbChamberMm);
       setChamberAuto(true);
     }
+  }
+
+  // Applies a standard ABB ArTu-K vertical (artuk-bay-configs.ts) to a bay:
+  // its width and depth, plus the config's partner bay right next to it
+  // (cable chamber / 2nd tier / 2nd MCC section). Switching away from a
+  // paired config drops the old partner if nothing was placed in it. The
+  // whole panel then takes the deepest bay's depth. Feeders never move;
+  // busbars, supports and enclosure parts follow from the new layout.
+  function applyBayConfig(bayId: string, c: ArtukBayConfig) {
+    if (!sb || readOnly) return;
+    const idx = bays.findIndex((b) => b.id === bayId);
+    if (idx === -1) return;
+    const bay = bays[idx];
+    const right = bays[idx + 1] ?? null;
+    const current = currentConfigOf(bay, right);
+    let next = verticals.map((v) =>
+      v.id === bayId ? { ...v, width_mm: c.widthMm, depth_mm: c.depthMm } : v,
+    );
+    const rightIsOldPartner = !!(
+      current?.partner &&
+      right &&
+      right.placed.length === 0 &&
+      right.width_mm === current.partner.widthMm &&
+      right.bay_type === current.partner.bayType
+    );
+    if (c.partner) {
+      if (rightIsOldPartner && right) {
+        // reuse the neighbouring empty partner bay
+        next = next.map((v) =>
+          v.id === right.id
+            ? {
+                ...v,
+                width_mm: c.partner!.widthMm,
+                bay_type: c.partner!.bayType,
+                name: c.partner!.name,
+                depth_mm: c.depthMm,
+              }
+            : v,
+        );
+      } else {
+        // open a slot right after the bay and insert the partner there
+        const order = bays.map((b) => b.id);
+        const partner = makeVertical(
+          sb.id,
+          c.partner.name,
+          c.partner.bayType,
+          c.partner.widthMm,
+          c.depthMm,
+          0,
+        );
+        order.splice(idx + 1, 0, partner.id);
+        const pos = new Map(order.map((id, i) => [id, i]));
+        next = [...next, partner].map((v) =>
+          pos.has(v.id) ? { ...v, sort_order: pos.get(v.id)! } : v,
+        );
+      }
+    } else if (rightIsOldPartner && right && current?.id !== c.id) {
+      next = next.filter((v) => v.id !== right.id);
+    }
+    // one depth for the whole panel: the deepest bay's
+    const depth = panelDepthOf(next);
+    setVerticals(
+      next.map((v) =>
+        v.bay_type === "unassigned"
+          ? v
+          : { ...v, depth_mm: depth ?? v.depth_mm },
+      ),
+    );
+    setConfigBayId(null);
   }
 
   // sort_order for a bay added at the right-hand end (gaps left by deleted
@@ -983,7 +1398,11 @@ export function GaCanvas({
     const order = bays.map((v) => v.id);
     [order[idx], order[swapIdx]] = [order[swapIdx], order[idx]];
     const position = new Map(order.map((id, i) => [id, i]));
-    setVerticals(verticals.map((v) => (position.has(v.id) ? { ...v, sort_order: position.get(v.id)! } : v)));
+    setVerticals(
+      verticals.map((v) =>
+        position.has(v.id) ? { ...v, sort_order: position.get(v.id)! } : v,
+      ),
+    );
   }
 
   // Swaps tier_number (and sort_order) with the feeder stacked above/below
@@ -998,7 +1417,12 @@ export function GaCanvas({
   // dummy's own unit index shifts along with whichever half of that pair
   // it's nested in, so it stays visually in the same place relative to the
   // units around it instead of jumping.
-  function moveFeeder(bayId: string, placedId: string, unitIndex: number, direction: "up" | "down") {
+  function moveFeeder(
+    bayId: string,
+    placedId: string,
+    unitIndex: number,
+    direction: "up" | "down",
+  ) {
     const bay = verticals.find((v) => v.id === bayId);
     if (!bay) return;
     const dummyId = `${bayId}::dummy`;
@@ -1008,15 +1432,27 @@ export function GaCanvas({
     // four merged MCCBs can leave the group -- then the rows are rebuilt:
     // runs of identical adjacent units merge back into one row, a split row
     // keeps its id on its first run and the rest get new rows.
-    const seq = computeCompartments(bay, panelHeight, blankFirst).map((c) => ({ isBlank: c.isBlank, placedId: c.placedId!, unitIndex: c.unitIndex ?? 0 }));
-    const pos = seq.findIndex((e) => (placedId === dummyId ? e.isBlank : !e.isBlank && e.placedId === placedId && e.unitIndex === unitIndex));
+    const seq = computeCompartments(bay, panelHeight, blankFirst).map((c) => ({
+      isBlank: c.isBlank,
+      placedId: c.placedId!,
+      unitIndex: c.unitIndex ?? 0,
+    }));
+    const pos = seq.findIndex((e) =>
+      placedId === dummyId
+        ? e.isBlank
+        : !e.isBlank && e.placedId === placedId && e.unitIndex === unitIndex,
+    );
     const target = direction === "up" ? pos - 1 : pos + 1;
     if (pos === -1 || target < 0 || target >= seq.length) return;
     [seq[pos], seq[target]] = [seq[target], seq[pos]];
 
     const rowsById = new Map(bay.placed.map((p) => [p.id, p]));
-    const groups: { row: PlacedWithFeeder; units: { placedId: string; unitIndex: number }[] }[] = [];
-    const heightOfUnit = (u: { placedId: string; unitIndex: number }) => rowsById.get(u.placedId)?.unit_heights?.[u.unitIndex] ?? null;
+    const groups: {
+      row: PlacedWithFeeder;
+      units: { placedId: string; unitIndex: number }[];
+    }[] = [];
+    const heightOfUnit = (u: { placedId: string; unitIndex: number }) =>
+      rowsById.get(u.placedId)?.unit_heights?.[u.unitIndex] ?? null;
     let dummySlot = bay.dummy_slot;
     let unitsSoFar = 0;
     for (const e of seq) {
@@ -1026,7 +1462,12 @@ export function GaCanvas({
       }
       const row = rowsById.get(e.placedId)!;
       const last = groups[groups.length - 1];
-      if (last && last.row.feeder_id === row.feeder_id && last.row.label_override === row.label_override) last.units.push(e);
+      if (
+        last &&
+        last.row.feeder_id === row.feeder_id &&
+        last.row.label_override === row.label_override
+      )
+        last.units.push(e);
       else groups.push({ row, units: [e] });
       unitsSoFar++;
     }
@@ -1034,16 +1475,30 @@ export function GaCanvas({
     const usedIds = new Set<string>();
     let selection = { placedId, unitIndex };
     const rebuilt = groups.map((g, i) => {
-      const preferred = g.units.map((u) => u.placedId).find((id) => !usedIds.has(id));
+      const preferred = g.units
+        .map((u) => u.placedId)
+        .find((id) => !usedIds.has(id));
       const id = preferred ?? newId();
       usedIds.add(id);
       g.units.forEach((u, k) => {
-        if (u.placedId === placedId && u.unitIndex === unitIndex) selection = { placedId: id, unitIndex: k };
+        if (u.placedId === placedId && u.unitIndex === unitIndex)
+          selection = { placedId: id, unitIndex: k };
       });
-      return { ...g.row, id, qty: g.units.length, tier_number: i + 1, sort_order: i, unit_heights: packHeights(g.units.map(heightOfUnit)) };
+      return {
+        ...g.row,
+        id,
+        qty: g.units.length,
+        tier_number: i + 1,
+        sort_order: i,
+        unit_heights: packHeights(g.units.map(heightOfUnit)),
+      };
     });
 
-    setVerticals(verticals.map((v) => (v.id === bayId ? { ...v, placed: rebuilt, dummy_slot: dummySlot } : v)));
+    setVerticals(
+      verticals.map((v) =>
+        v.id === bayId ? { ...v, placed: rebuilt, dummy_slot: dummySlot } : v,
+      ),
+    );
     if (placedId !== dummyId) {
       setSelectedPlacedId(selection.placedId);
       setSelectedUnitIndex(selection.unitIndex);
@@ -1056,13 +1511,34 @@ export function GaCanvas({
   // creating a second row for the same feeder in the same bay.
   // The dragged unit keeps its own height (one set earlier, before it was
   // sent back to the list).
-  function allocateUnit(placedId: string, unitIndex: number, toVerticalId: string) {
+  function allocateUnit(
+    placedId: string,
+    unitIndex: number,
+    toVerticalId: string,
+  ) {
     if (!unallocated) return;
     const placedRow = unallocated.placed.find((p) => p.id === placedId);
     if (!placedRow) return;
     const height = unitHeightsOf(placedRow)[unitIndex] ?? null;
-    const afterRemove = takeUnit(verticals, unallocated.id, placedId, unitIndex);
-    setVerticals(withAutoWidths(mergeQtyInto(afterRemove, toVerticalId, placedRow.feeder_id, placedRow.feeder, 1, [height]), [toVerticalId]));
+    const afterRemove = takeUnit(
+      verticals,
+      unallocated.id,
+      placedId,
+      unitIndex,
+    );
+    setVerticals(
+      withAutoWidths(
+        mergeQtyInto(
+          afterRemove,
+          toVerticalId,
+          placedRow.feeder_id,
+          placedRow.feeder,
+          1,
+          [height],
+        ),
+        [toVerticalId],
+      ),
+    );
   }
 
   // "Removing" a feeder from a bay sends its whole placement (however many
@@ -1074,7 +1550,11 @@ export function GaCanvas({
   // Sends ONE unit of a placed row back to the available-feeders list (a row
   // of 4 merged MCCBs keeps the other 3). The unit carries its own height,
   // so it comes back at that height when placed again.
-  function removeUnitFromBay(verticalId: string, placedId: string, unitIndex: number) {
+  function removeUnitFromBay(
+    verticalId: string,
+    placedId: string,
+    unitIndex: number,
+  ) {
     if (!sb) return;
     const vertical = verticals.find((v) => v.id === verticalId);
     const placedRow = vertical?.placed.find((p) => p.id === placedId);
@@ -1082,23 +1562,51 @@ export function GaCanvas({
     const height = unitHeightsOf(placedRow)[unitIndex] ?? null;
     const { unassigned, verts } = withUnassigned(verticals, sb.id);
     const shrunk = takeUnit(verts, verticalId, placedId, unitIndex);
-    setVerticals(withAutoWidths(mergeQtyInto(shrunk, unassigned.id, placedRow.feeder_id, placedRow.feeder, 1, [height]), [verticalId]));
+    setVerticals(
+      withAutoWidths(
+        mergeQtyInto(
+          shrunk,
+          unassigned.id,
+          placedRow.feeder_id,
+          placedRow.feeder,
+          1,
+          [height],
+        ),
+        [verticalId],
+      ),
+    );
     setSelectedPlacedId(null);
   }
 
   // Drag-and-drop between bays: one unit leaves its row (the rest stay) and
   // joins the target bay at the bottom, merging with a row of the same
   // feeder there; its height goes with it. It stays selected in its new bay.
-  function moveUnitToBay(fromVerticalId: string, placedId: string, unitIndex: number, toVerticalId: string) {
-    const row = verticals.find((v) => v.id === fromVerticalId)?.placed.find((p) => p.id === placedId);
+  function moveUnitToBay(
+    fromVerticalId: string,
+    placedId: string,
+    unitIndex: number,
+    toVerticalId: string,
+  ) {
+    const row = verticals
+      .find((v) => v.id === fromVerticalId)
+      ?.placed.find((p) => p.id === placedId);
     if (!row) return;
     const height = unitHeightsOf(row)[unitIndex] ?? null;
     const next = withAutoWidths(
-      mergeQtyInto(takeUnit(verticals, fromVerticalId, placedId, unitIndex), toVerticalId, row.feeder_id, row.feeder, 1, [height]),
-      [fromVerticalId, toVerticalId]
+      mergeQtyInto(
+        takeUnit(verticals, fromVerticalId, placedId, unitIndex),
+        toVerticalId,
+        row.feeder_id,
+        row.feeder,
+        1,
+        [height],
+      ),
+      [fromVerticalId, toVerticalId],
     );
     setVerticals(next);
-    const target = next.find((v) => v.id === toVerticalId)?.placed.find((p) => p.feeder_id === row.feeder_id);
+    const target = next
+      .find((v) => v.id === toVerticalId)
+      ?.placed.find((p) => p.feeder_id === row.feeder_id);
     if (target) {
       setSelectedBayId(toVerticalId);
       setSideBayId(toVerticalId);
@@ -1108,7 +1616,12 @@ export function GaCanvas({
   }
 
   // Height of one unit only -- other units of the same feeder keep theirs.
-  function setUnitHeight(verticalId: string, placedId: string, unitIndex: number, heightMm: number | null) {
+  function setUnitHeight(
+    verticalId: string,
+    placedId: string,
+    unitIndex: number,
+    heightMm: number | null,
+  ) {
     setVerticals(
       verticals.map((v) =>
         v.id !== verticalId
@@ -1121,13 +1634,17 @@ export function GaCanvas({
                 h[unitIndex] = heightMm;
                 return { ...p, unit_heights: packHeights(h) };
               }),
-            }
-      )
+            },
+      ),
     );
   }
 
   function setDummyHeight(verticalId: string, heightMm: number | null) {
-    setVerticals(verticals.map((v) => (v.id === verticalId ? { ...v, dummy_height_mm: heightMm } : v)));
+    setVerticals(
+      verticals.map((v) =>
+        v.id === verticalId ? { ...v, dummy_height_mm: heightMm } : v,
+      ),
+    );
   }
 
   function handleCancel() {
@@ -1149,10 +1666,15 @@ export function GaCanvas({
   async function handleSave() {
     // every bay is saved at the panel's one depth (its deepest bay's)
     const boardDepth = panelDepthOf(verticals);
-    const depthToSave = (v: VerticalWithFeeders) => (v.bay_type === "unassigned" || boardDepth == null ? v.depth_mm : boardDepth);
+    const depthToSave = (v: VerticalWithFeeders) =>
+      v.bay_type === "unassigned" || boardDepth == null
+        ? v.depth_mm
+        : boardDepth;
     if (!sb || readOnly) return;
     if (hasBusduct && busductTotal === 0) {
-      alert("Busduct entries is ticked for this panel — select a bay and add at least one busduct top entry before saving (or untick Busduct entries).");
+      alert(
+        "Busduct entries is ticked for this panel — select a bay and add at least one busduct top entry before saving (or untick Busduct entries).",
+      );
       return;
     }
     setSaving(true);
@@ -1178,7 +1700,8 @@ export function GaCanvas({
           })
           .select("id")
           .single();
-        if (error || !data) throw new Error(error?.message ?? "Could not create bay.");
+        if (error || !data)
+          throw new Error(error?.message ?? "Could not create bay.");
         tempVerticalIdMap.set(v.id, (data as { id: string }).id);
       }
 
@@ -1189,26 +1712,44 @@ export function GaCanvas({
         const fieldPatch: Partial<Vertical> = {};
         if (v.name !== prev.name) fieldPatch.name = v.name;
         if (v.width_mm !== prev.width_mm) fieldPatch.width_mm = v.width_mm;
-        if (depthToSave(v) !== prev.depth_mm) fieldPatch.depth_mm = depthToSave(v);
-        if (v.dummy_slot !== prev.dummy_slot) fieldPatch.dummy_slot = v.dummy_slot;
-        if (v.dummy_height_mm !== prev.dummy_height_mm) fieldPatch.dummy_height_mm = v.dummy_height_mm;
-        if ((v.busduct_entries ?? 0) !== (prev.busduct_entries ?? 0)) fieldPatch.busduct_entries = v.busduct_entries ?? 0;
+        if (depthToSave(v) !== prev.depth_mm)
+          fieldPatch.depth_mm = depthToSave(v);
+        if (v.dummy_slot !== prev.dummy_slot)
+          fieldPatch.dummy_slot = v.dummy_slot;
+        if (v.dummy_height_mm !== prev.dummy_height_mm)
+          fieldPatch.dummy_height_mm = v.dummy_height_mm;
+        if ((v.busduct_entries ?? 0) !== (prev.busduct_entries ?? 0))
+          fieldPatch.busduct_entries = v.busduct_entries ?? 0;
         if (Object.keys(fieldPatch).length === 0) continue;
-        const { error } = await supabase.from("verticals").update(fieldPatch).eq("id", v.id);
+        const { error } = await supabase
+          .from("verticals")
+          .update(fieldPatch)
+          .eq("id", v.id);
         if (error) throw new Error(error.message);
       }
 
       const seenTempFeeders = new Set<string>();
       for (const v of verticals) {
         for (const p of v.placed) {
-          if (!p.feeder_id.startsWith("new-") || seenTempFeeders.has(p.feeder_id)) continue;
+          if (
+            !p.feeder_id.startsWith("new-") ||
+            seenTempFeeders.has(p.feeder_id)
+          )
+            continue;
           seenTempFeeders.add(p.feeder_id);
           const { data, error } = await supabase
             .from("feeders")
-            .insert({ name: p.feeder.name, category: p.feeder.category, switchboard_id: sb.id, is_library: false, created_by: currentUserId })
+            .insert({
+              name: p.feeder.name,
+              category: p.feeder.category,
+              switchboard_id: sb.id,
+              is_library: false,
+              created_by: currentUserId,
+            })
             .select("id")
             .single();
-          if (error || !data) throw new Error(error?.message ?? "Could not create spare feeder.");
+          if (error || !data)
+            throw new Error(error?.message ?? "Could not create spare feeder.");
           tempFeederIdMap.set(p.feeder_id, (data as { id: string }).id);
         }
       }
@@ -1231,21 +1772,34 @@ export function GaCanvas({
               })
               .select("id")
               .single();
-            if (error || !data) throw new Error(error?.message ?? "Could not place feeder.");
+            if (error || !data)
+              throw new Error(error?.message ?? "Could not place feeder.");
             tempPlacedIdMap.set(p.id, (data as { id: string }).id);
             continue;
           }
           keptPlacedIds.add(p.id);
-          const prevVertical = savedVerticals.find((sv) => sv.placed.some((sp) => sp.id === p.id));
+          const prevVertical = savedVerticals.find((sv) =>
+            sv.placed.some((sp) => sp.id === p.id),
+          );
           const prev = prevVertical?.placed.find((sp) => sp.id === p.id);
           const fieldPatch: Partial<PlacedFeeder> = {};
-          if (!prevVertical || prevVertical.id !== v.id) fieldPatch.vertical_id = realVerticalId;
-          if (!prev || prev.sort_order !== p.sort_order) fieldPatch.sort_order = p.sort_order;
-          if (!prev || prev.tier_number !== p.tier_number) fieldPatch.tier_number = p.tier_number;
-          if (JSON.stringify(prev?.unit_heights ?? null) !== JSON.stringify(p.unit_heights ?? null)) fieldPatch.unit_heights = p.unit_heights ?? null;
+          if (!prevVertical || prevVertical.id !== v.id)
+            fieldPatch.vertical_id = realVerticalId;
+          if (!prev || prev.sort_order !== p.sort_order)
+            fieldPatch.sort_order = p.sort_order;
+          if (!prev || prev.tier_number !== p.tier_number)
+            fieldPatch.tier_number = p.tier_number;
+          if (
+            JSON.stringify(prev?.unit_heights ?? null) !==
+            JSON.stringify(p.unit_heights ?? null)
+          )
+            fieldPatch.unit_heights = p.unit_heights ?? null;
           if (!prev || prev.qty !== p.qty) fieldPatch.qty = p.qty;
           if (Object.keys(fieldPatch).length === 0) continue;
-          const { error } = await supabase.from("placed_feeders").update(fieldPatch).eq("id", p.id);
+          const { error } = await supabase
+            .from("placed_feeders")
+            .update(fieldPatch)
+            .eq("id", p.id);
           if (error) throw new Error(error.message);
         }
       }
@@ -1253,14 +1807,20 @@ export function GaCanvas({
       for (const sv of savedVerticals) {
         for (const sp of sv.placed) {
           if (keptPlacedIds.has(sp.id)) continue;
-          const { error } = await supabase.from("placed_feeders").delete().eq("id", sp.id);
+          const { error } = await supabase
+            .from("placed_feeders")
+            .delete()
+            .eq("id", sp.id);
           if (error) throw new Error(error.message);
         }
       }
 
       for (const sv of savedVerticals) {
         if (verticals.some((v) => v.id === sv.id)) continue;
-        const { error } = await supabase.from("verticals").delete().eq("id", sv.id);
+        const { error } = await supabase
+          .from("verticals")
+          .delete()
+          .eq("id", sv.id);
         if (error) throw new Error(error.message);
       }
 
@@ -1268,16 +1828,28 @@ export function GaCanvas({
       // there are only ever a handful per switchboard. Any pointing at a
       // bay/feeder removed in this draft are dropped (the DB would cascade
       // them away anyway); temp ids from this draft are mapped to real ones.
-      if (JSON.stringify(busbarOverrides) !== JSON.stringify(savedBusbarOverrides)) {
+      if (
+        JSON.stringify(busbarOverrides) !== JSON.stringify(savedBusbarOverrides)
+      ) {
         const liveVerticalIds = new Set(verticals.map((v) => v.id));
-        const livePlacedIds = new Set(verticals.flatMap((v) => v.placed.map((p) => p.id)));
+        const livePlacedIds = new Set(
+          verticals.flatMap((v) => v.placed.map((p) => p.id)),
+        );
         const rows = Object.values(busbarOverrides)
-          .filter((o) => (!o.verticalId || liveVerticalIds.has(o.verticalId)) && (!o.placedFeederId || livePlacedIds.has(o.placedFeederId)))
+          .filter(
+            (o) =>
+              (!o.verticalId || liveVerticalIds.has(o.verticalId)) &&
+              (!o.placedFeederId || livePlacedIds.has(o.placedFeederId)),
+          )
           .map((o) => ({
             switchboard_id: sb.id,
             kind: o.kind,
-            vertical_id: o.verticalId ? (tempVerticalIdMap.get(o.verticalId) ?? o.verticalId) : null,
-            placed_feeder_id: o.placedFeederId ? (tempPlacedIdMap.get(o.placedFeederId) ?? o.placedFeederId) : null,
+            vertical_id: o.verticalId
+              ? (tempVerticalIdMap.get(o.verticalId) ?? o.verticalId)
+              : null,
+            placed_feeder_id: o.placedFeederId
+              ? (tempPlacedIdMap.get(o.placedFeederId) ?? o.placedFeederId)
+              : null,
             unit_index: o.unitIndex,
             bar_width_mm: o.barWidthMm,
             bar_thickness_mm: o.barThicknessMm,
@@ -1287,27 +1859,41 @@ export function GaCanvas({
             end_ext_mm: o.endExtMm || null,
             updated_at: new Date().toISOString(),
           }));
-        const { error: delError } = await supabase.from("busbar_overrides").delete().eq("switchboard_id", sb.id);
+        const { error: delError } = await supabase
+          .from("busbar_overrides")
+          .delete()
+          .eq("switchboard_id", sb.id);
         if (delError) throw new Error(delError.message);
         if (rows.length > 0) {
-          const { error } = await supabase.from("busbar_overrides").insert(rows);
+          const { error } = await supabase
+            .from("busbar_overrides")
+            .insert(rows);
           if (error) throw new Error(error.message);
         }
       }
 
       const paramPatch: Partial<Switchboard> = {};
-      if (plinthHeight !== savedPlinthHeight) paramPatch.plinth_height_mm = plinthHeight;
-      if (cableAccess !== savedCableAccess) paramPatch.cable_access = cableAccess;
-      if (arrangement !== savedArrangement) paramPatch.arrangement = arrangement;
-      if (internalArc !== savedInternalArc) paramPatch.internal_arc = internalArc;
+      if (plinthHeight !== savedPlinthHeight)
+        paramPatch.plinth_height_mm = plinthHeight;
+      if (cableAccess !== savedCableAccess)
+        paramPatch.cable_access = cableAccess;
+      if (arrangement !== savedArrangement)
+        paramPatch.arrangement = arrangement;
+      if (internalArc !== savedInternalArc)
+        paramPatch.internal_arc = internalArc;
       if (hasBusduct !== savedHasBusduct) paramPatch.has_busduct = hasBusduct;
       // stored: ArTuK -- the feeder area (the ArTuK height is recovered from
       // it); otherwise the panel's full height without the base
       const storedPanel = isArtuk ? panelHeight : panelHeightSetting;
-      if (storedPanel !== savedPanelHeight) paramPatch.panel_height_mm = storedPanel;
-      if (busbarHeight !== savedBusbarHeight) paramPatch.busbar_chamber_height_mm = busbarHeight;
+      if (storedPanel !== savedPanelHeight)
+        paramPatch.panel_height_mm = storedPanel;
+      if (busbarHeight !== savedBusbarHeight)
+        paramPatch.busbar_chamber_height_mm = busbarHeight;
       if (Object.keys(paramPatch).length > 0) {
-        const { error } = await supabase.from("switchboards").update(paramPatch).eq("id", sb.id);
+        const { error } = await supabase
+          .from("switchboards")
+          .update(paramPatch)
+          .eq("id", sb.id);
         if (error) throw new Error(error.message);
       }
 
@@ -1325,7 +1911,12 @@ export function GaCanvas({
   // dependency -- that keeps the listener itself mounted once while always
   // calling the freshest save function instead of one captured from a
   // stale render.
-  const keyboardSaveRef = useRef({ readOnly, dirty, saving, handleSave: () => {} });
+  const keyboardSaveRef = useRef({
+    readOnly,
+    dirty,
+    saving,
+    handleSave: () => {},
+  });
   useEffect(() => {
     keyboardSaveRef.current = { readOnly, dirty, saving, handleSave };
   });
@@ -1346,17 +1937,46 @@ export function GaCanvas({
   // selected bay, Up/Down moves the selected feeder within its bay (same
   // action as the overlay arrow buttons on the drawing). Ignored while
   // typing in a text field, and while read-only.
-  const keyboardMoveRef = useRef({ readOnly, selectedBayId, selectedPlacedId, selectedUnitIndex, moveBay, moveFeeder, removeUnitFromBay });
+  const keyboardMoveRef = useRef({
+    readOnly,
+    selectedBayId,
+    selectedPlacedId,
+    selectedUnitIndex,
+    moveBay,
+    moveFeeder,
+    removeUnitFromBay,
+  });
   useEffect(() => {
-    keyboardMoveRef.current = { readOnly, selectedBayId, selectedPlacedId, selectedUnitIndex, moveBay, moveFeeder, removeUnitFromBay };
+    keyboardMoveRef.current = {
+      readOnly,
+      selectedBayId,
+      selectedPlacedId,
+      selectedUnitIndex,
+      moveBay,
+      moveFeeder,
+      removeUnitFromBay,
+    };
   });
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (!e.key.startsWith("Arrow") && e.key !== "Delete" && e.key !== "Backspace") return;
+      if (
+        !e.key.startsWith("Arrow") &&
+        e.key !== "Delete" &&
+        e.key !== "Backspace"
+      )
+        return;
       const tag = (document.activeElement?.tagName ?? "").toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select") return;
-      const { readOnly, selectedBayId, selectedPlacedId, selectedUnitIndex, moveBay, moveFeeder, removeUnitFromBay } = keyboardMoveRef.current;
+      const {
+        readOnly,
+        selectedBayId,
+        selectedPlacedId,
+        selectedUnitIndex,
+        moveBay,
+        moveFeeder,
+        removeUnitFromBay,
+      } = keyboardMoveRef.current;
       if (readOnly || !selectedBayId) return;
       // Delete / Backspace: send the selected feeder unit back to the available list
       if (e.key === "Delete" || e.key === "Backspace") {
@@ -1369,9 +1989,17 @@ export function GaCanvas({
       if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         e.preventDefault();
         moveBay(selectedBayId, e.key === "ArrowLeft" ? "left" : "right");
-      } else if (selectedPlacedId && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      } else if (
+        selectedPlacedId &&
+        (e.key === "ArrowUp" || e.key === "ArrowDown")
+      ) {
         e.preventDefault();
-        moveFeeder(selectedBayId, selectedPlacedId, selectedUnitIndex, e.key === "ArrowUp" ? "up" : "down");
+        moveFeeder(
+          selectedBayId,
+          selectedPlacedId,
+          selectedUnitIndex,
+          e.key === "ArrowUp" ? "up" : "down",
+        );
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -1384,7 +2012,12 @@ export function GaCanvas({
     function onKeyDown(e: KeyboardEvent) {
       const tag = (document.activeElement?.tagName ?? "").toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select") return;
-      if (e.key.toLowerCase() === "f" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (
+        e.key.toLowerCase() === "f" &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey
+      ) {
         e.preventDefault();
         toggleFullscreen();
       } else if (e.key === "Escape") {
@@ -1406,7 +2039,9 @@ export function GaCanvas({
     const id = String(event.active.id);
     if (id.startsWith("placed-")) {
       const [verticalId, placedId] = id.replace("placed-", "").split("::");
-      const placed = verticals.find((v) => v.id === verticalId)?.placed.find((p) => p.id === placedId);
+      const placed = verticals
+        .find((v) => v.id === verticalId)
+        ?.placed.find((p) => p.id === placedId);
       if (placed) setDraggingFeeder(placed.feeder);
       return;
     }
@@ -1429,7 +2064,9 @@ export function GaCanvas({
     // unit there (keeping its own height); onto the available-feeders list
     // sends it back
     if (activeId.startsWith("placed-")) {
-      const [fromVerticalId, placedId, unit] = activeId.replace("placed-", "").split("::");
+      const [fromVerticalId, placedId, unit] = activeId
+        .replace("placed-", "")
+        .split("::");
       const unitIndex = Number(unit) || 0;
       if (overId === "available-feeders") {
         removeUnitFromBay(fromVerticalId, placedId, unitIndex);
@@ -1437,7 +2074,8 @@ export function GaCanvas({
       }
       if (!overId.startsWith("bay-")) return;
       const toVerticalId = overId.replace("bay-", "");
-      if (toVerticalId !== fromVerticalId) moveUnitToBay(fromVerticalId, placedId, unitIndex, toVerticalId);
+      if (toVerticalId !== fromVerticalId)
+        moveUnitToBay(fromVerticalId, placedId, unitIndex, toVerticalId);
       return;
     }
 
@@ -1451,7 +2089,9 @@ export function GaCanvas({
   }
 
   if (loading || !sb) {
-    return <div className="p-8 text-sm text-on-surface-variant">Loading...</div>;
+    return (
+      <div className="p-8 text-sm text-on-surface-variant">Loading...</div>
+    );
   }
 
   // Same px heights the drawing actually renders (DrawingBar enforces a
@@ -1459,8 +2099,13 @@ export function GaCanvas({
   const chamberPx = Math.max(busbarHeight * pxPerMm, 16);
   const panelPx = Math.max(panelHeight * pxPerMm, 2);
   const busbarYPx = (mm: number) => {
-    if (busbarPosition === "top") return mm <= busbarHeight ? (mm / busbarHeight) * chamberPx : chamberPx + (mm - busbarHeight) * pxPerMm;
-    return mm <= panelHeight ? mm * pxPerMm : panelPx + ((mm - panelHeight) / busbarHeight) * chamberPx;
+    if (busbarPosition === "top")
+      return mm <= busbarHeight
+        ? (mm / busbarHeight) * chamberPx
+        : chamberPx + (mm - busbarHeight) * pxPerMm;
+    return mm <= panelHeight
+      ? mm * pxPerMm
+      : panelPx + ((mm - panelHeight) / busbarHeight) * chamberPx;
   };
 
   // left-hand height dimensions (px match what's drawn: DrawingBar has a
@@ -1474,12 +2119,35 @@ export function GaCanvas({
   const busbarLabel = `BUSBAR CHAMBER${sb.amps ? ` · ${sb.amps}A` : ""}${sb.ka ? ` · ${sb.ka}kA` : ""} · ${sb.busbar ?? "Cu"}`;
   // With the busbar layer on, the main bar's own label (size + rating)
   // replaces the chamber caption, which it would otherwise strike through.
-  const chamberCaption = showBusbars && busbarPlan && bays.length > 0 ? "" : busbarLabel;
+  const chamberCaption =
+    showBusbars && busbarPlan && bays.length > 0 ? "" : busbarLabel;
 
   return (
-    <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={collisionDetection}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
       <div className="flex h-full flex-col">
         <SavingOverlay show={saving} />
+        {configBayId &&
+          (() => {
+            const idx = bays.findIndex((b) => b.id === configBayId);
+            const bay = bays[idx];
+            if (!bay) return null;
+            return (
+              <ArtukBayConfigDialog
+                bayName={bay.name}
+                currentId={
+                  currentConfigOf(bay, bays[idx + 1] ?? null)?.id ?? null
+                }
+                misfitsFor={(c) => configMisfits(c, bay, cableAccess)}
+                onApply={(c) => applyBayConfig(bay.id, c)}
+                onClose={() => setConfigBayId(null)}
+              />
+            );
+          })()}
 
         {readOnly && (
           <div className="flex items-center gap-2 border-b border-amber-200/80 bg-amber-50/60 px-4 py-2 text-xs text-amber-800">
@@ -1491,7 +2159,9 @@ export function GaCanvas({
         )}
 
         <div className="flex flex-wrap items-end gap-4 border-b border-surface-container-high bg-surface-container-low/60 px-4 py-2.5 text-xs">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-secondary">Switchboard Master Parameters</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-secondary">
+            Switchboard Master Parameters
+          </p>
           <Field label="Plinth Height">
             <select
               disabled={readOnly}
@@ -1517,38 +2187,55 @@ export function GaCanvas({
                 >
                   {ARTUK_HEIGHTS_MM.map((v) => (
                     <option key={v} value={v}>
-                      {v + plinthHeight}mm ({v - ARTUK_STRIP_MM} uprights, {v}mm without base)
+                      {v + plinthHeight}mm ({v - ARTUK_STRIP_MM} uprights, {v}mm
+                      without base)
                     </option>
                   ))}
                 </select>
               </Field>
               <ReadOnlyField label="Feeders" value={`${panelHeight}mm`} />
-              <ReadOnlyField label="From floor" value={`${artukHeight + plinthHeight}mm`} />
+              <ReadOnlyField
+                label="From floor"
+                value={`${artukHeight + plinthHeight}mm`}
+              />
             </>
           ) : (
-          <Field label="Panel Height">
-            <select
-              disabled={readOnly}
-              value={panelHeightSetting}
-              onChange={(e) => setPanelHeight(Number(e.target.value))}
-              className="rounded border border-surface-container-high px-1.5 py-1"
-            >
-              {PANEL_HEIGHT_OPTIONS.map((v) => (
-                <option key={v} value={v}>
-                  {v}mm
-                </option>
-              ))}
-            </select>
-          </Field>
+            <Field label="Panel Height">
+              <select
+                disabled={readOnly}
+                value={panelHeightSetting}
+                onChange={(e) => setPanelHeight(Number(e.target.value))}
+                className="rounded border border-surface-container-high px-1.5 py-1"
+              >
+                {PANEL_HEIGHT_OPTIONS.map((v) => (
+                  <option key={v} value={v}>
+                    {v}mm
+                  </option>
+                ))}
+              </select>
+            </Field>
           )}
-          <ReadOnlyField label="Form of Separation" value={sb.form_of_separation} />
-          <ReadOnlyField label="Amps" value={sb.amps != null ? `${sb.amps}A` : null} />
-          <ReadOnlyField label="kA" value={sb.ka != null ? `${sb.ka}kA` : null} />
+          <ReadOnlyField
+            label="Form of Separation"
+            value={sb.form_of_separation}
+          />
+          <ReadOnlyField
+            label="Amps"
+            value={sb.amps != null ? `${sb.amps}A` : null}
+          />
+          <ReadOnlyField
+            label="kA"
+            value={sb.ka != null ? `${sb.ka}kA` : null}
+          />
           <Field label="Cable Access">
             <select
               disabled={readOnly}
               value={cableAccess ?? ""}
-              onChange={(e) => setCableAccess((e.target.value || null) as Switchboard["cable_access"])}
+              onChange={(e) =>
+                setCableAccess(
+                  (e.target.value || null) as Switchboard["cable_access"],
+                )
+              }
               className="rounded border border-surface-container-high px-1.5 py-1"
             >
               <option value="">—</option>
@@ -1561,7 +2248,9 @@ export function GaCanvas({
               <select
                 disabled={readOnly}
                 value={arrangement}
-                onChange={(e) => setArrangement(e.target.value as Switchboard["arrangement"])}
+                onChange={(e) =>
+                  setArrangement(e.target.value as Switchboard["arrangement"])
+                }
                 className="rounded border border-surface-container-high px-1.5 py-1"
               >
                 <option value="single_front">Single front</option>
@@ -1571,10 +2260,17 @@ export function GaCanvas({
           )}
           <Field label="Busduct Entries">
             <label className="flex items-center gap-1.5 py-1 text-xs">
-              <input type="checkbox" disabled={readOnly} checked={hasBusduct} onChange={(e) => setHasBusduct(e.target.checked)} />
+              <input
+                type="checkbox"
+                disabled={readOnly}
+                checked={hasBusduct}
+                onChange={(e) => setHasBusduct(e.target.checked)}
+              />
               Top busduct entry
               {hasBusduct && (
-                <span className={`ml-1 rounded px-1 text-[10px] font-semibold ${busductTotal ? "bg-violet-100 text-violet-700" : "bg-red-100 text-red-700"}`}>
+                <span
+                  className={`ml-1 rounded px-1 text-[10px] font-semibold ${busductTotal ? "bg-violet-100 text-violet-700" : "bg-red-100 text-red-700"}`}
+                >
                   {busductTotal ? `${busductTotal} in GA` : "add ≥1 in a bay"}
                 </span>
               )}
@@ -1583,7 +2279,12 @@ export function GaCanvas({
           {isArtuk && (
             <Field label="Internal Arc">
               <label className="flex items-center gap-1.5 py-1 text-xs">
-                <input type="checkbox" disabled={readOnly} checked={internalArc} onChange={(e) => setInternalArc(e.target.checked)} />
+                <input
+                  type="checkbox"
+                  disabled={readOnly}
+                  checked={internalArc}
+                  onChange={(e) => setInternalArc(e.target.checked)}
+                />
                 ABB internal arc design
               </label>
             </Field>
@@ -1592,7 +2293,10 @@ export function GaCanvas({
           <ReadOnlyField label="Cable Exit" value={sb.cable_exit} />
         </div>
 
-        <div ref={fullscreenRef} className="flex flex-1 gap-4 overflow-hidden bg-surface p-4">
+        <div
+          ref={fullscreenRef}
+          className="flex flex-1 gap-4 overflow-hidden bg-surface p-4"
+        >
           <aside
             className={`shrink-0 overflow-y-auto rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-xs transition-[width] ${
               sidebarCollapsed ? "w-11 p-2" : "w-72 p-3"
@@ -1600,12 +2304,19 @@ export function GaCanvas({
           >
             <button
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              title={sidebarCollapsed ? "Expand available feeders" : "Collapse available feeders"}
+              title={
+                sidebarCollapsed
+                  ? "Expand available feeders"
+                  : "Collapse available feeders"
+              }
               className={`mb-2 flex items-center justify-center rounded p-1 text-secondary hover:bg-surface-container-low ${
                 sidebarCollapsed ? "w-full" : ""
               }`}
             >
-              <Icon name={sidebarCollapsed ? "chevron_right" : "chevron_left"} size={16} />
+              <Icon
+                name={sidebarCollapsed ? "chevron_right" : "chevron_left"}
+                size={16}
+              />
             </button>
 
             {sidebarCollapsed ? (
@@ -1618,12 +2329,18 @@ export function GaCanvas({
               )
             ) : (
               <>
-                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-secondary">Available Feeders</p>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-secondary">
+                  Available Feeders
+                </p>
                 <p className="mb-2 text-[11px] text-on-surface-variant">
-                  Feeders come from BOM Builder. Use a spare to fill a gap in a bay.
+                  Feeders come from BOM Builder. Use a spare to fill a gap in a
+                  bay.
                 </p>
                 {!readOnly && (
-                  <button onClick={addSpare} className="btn btn-outline btn-sm mb-3 w-full">
+                  <button
+                    onClick={addSpare}
+                    className="btn btn-outline btn-sm mb-3 w-full"
+                  >
                     <Icon name="add_circle" size={14} /> Add Spare Feeder
                   </button>
                 )}
@@ -1634,19 +2351,27 @@ export function GaCanvas({
                   className="mb-3 w-full rounded-md border border-surface-container-high px-2 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
                 <p className="mb-2 text-xs text-on-surface-variant">
-                  {readOnly ? "Read only — lock this switchboard to edit." : "Drag a feeder onto a bay →"}
+                  {readOnly
+                    ? "Read only — lock this switchboard to edit."
+                    : "Drag a feeder onto a bay →"}
                 </p>
                 <AvailableDropZone disabled={readOnly}>
-                <div className="space-y-2">
-                  {filteredUnits.map((u) => (
-                    <AvailableFeederCard key={u.unitId} unit={u} disabled={readOnly} />
-                  ))}
-                  {filteredUnits.length === 0 && (
-                    <p className="text-sm text-on-surface-variant">
-                      {availableUnits.length === 0 ? "No feeders waiting to be placed. Add feeders in BOM Builder." : "No matches."}
-                    </p>
-                  )}
-                </div>
+                  <div className="space-y-2">
+                    {filteredUnits.map((u) => (
+                      <AvailableFeederCard
+                        key={u.unitId}
+                        unit={u}
+                        disabled={readOnly}
+                      />
+                    ))}
+                    {filteredUnits.length === 0 && (
+                      <p className="text-sm text-on-surface-variant">
+                        {availableUnits.length === 0
+                          ? "No feeders waiting to be placed. Add feeders in BOM Builder."
+                          : "No matches."}
+                      </p>
+                    )}
+                  </div>
                 </AvailableDropZone>
               </>
             )}
@@ -1659,12 +2384,18 @@ export function GaCanvas({
                 title={isFullscreen ? "Exit fullscreen" : "Fullscreen canvas"}
                 className="flex items-center gap-1 rounded-md border border-surface-container-high bg-surface-container-lowest px-2 py-1.5 text-on-surface-variant shadow-sm hover:bg-surface-container-low hover:text-on-surface"
               >
-                <Icon name={isFullscreen ? "fullscreen_exit" : "fullscreen"} size={16} />
+                <Icon
+                  name={isFullscreen ? "fullscreen_exit" : "fullscreen"}
+                  size={16}
+                />
               </button>
             </div>
             <div className="mb-1 flex flex-wrap items-center gap-2">
               {!readOnly && sb?.std === "ArTuK" && (
-                <button onClick={autoGenerateGa} className="btn btn-primary btn-sm">
+                <button
+                  onClick={autoGenerateGa}
+                  className="btn btn-primary btn-sm"
+                >
                   <Icon name="auto_awesome" size={14} /> Update GA
                 </button>
               )}
@@ -1674,7 +2405,8 @@ export function GaCanvas({
                 title="Export the GA drawing as a PNG image"
                 className="btn btn-outline btn-sm"
               >
-                <Icon name="download" size={14} /> {exporting ? "Exporting..." : "Export PNG"}
+                <Icon name="download" size={14} />{" "}
+                {exporting ? "Exporting..." : "Export PNG"}
               </button>
               <button
                 onClick={exportPdf}
@@ -1682,15 +2414,28 @@ export function GaCanvas({
                 title="Export the GA drawing as a PDF"
                 className="btn btn-outline btn-sm"
               >
-                <Icon name="download" size={14} /> {exporting ? "Exporting..." : "Export PDF"}
+                <Icon name="download" size={14} />{" "}
+                {exporting ? "Exporting..." : "Export PDF"}
               </button>
               <button
-                onClick={() => setZoomMode((z) => (z === "standard" ? "fit" : "standard"))}
+                onClick={() =>
+                  setZoomMode((z) => (z === "standard" ? "fit" : "standard"))
+                }
                 disabled={bays.length === 0}
-                title={zoomMode === "standard" ? "Zoom out to see the whole panel width" : "Back to the standard zoom"}
+                title={
+                  zoomMode === "standard"
+                    ? "Zoom out to see the whole panel width"
+                    : "Back to the standard zoom"
+                }
                 className="btn btn-outline btn-sm"
               >
-                <Icon name={zoomMode === "standard" ? "zoom_out" : "zoom_in"} size={14} /> {zoomMode === "standard" ? "Zoom out (fit width)" : "Zoom in (standard)"}
+                <Icon
+                  name={zoomMode === "standard" ? "zoom_out" : "zoom_in"}
+                  size={14}
+                />{" "}
+                {zoomMode === "standard"
+                  ? "Zoom out (fit width)"
+                  : "Zoom in (standard)"}
               </button>
               <button
                 onClick={() => {
@@ -1698,7 +2443,11 @@ export function GaCanvas({
                   setSelectedSegmentKey(null);
                 }}
                 disabled={bays.length === 0}
-                title={showBusbars ? "Hide the busbar layer" : "Show the planned busbar routing and sizes"}
+                title={
+                  showBusbars
+                    ? "Hide the busbar layer"
+                    : "Show the planned busbar routing and sizes"
+                }
                 className={`btn btn-sm ${showBusbars ? "btn-primary" : "btn-outline"}`}
               >
                 <Icon name="electric_bolt" size={14} /> Busbars
@@ -1706,8 +2455,14 @@ export function GaCanvas({
               {isArtuk && (
                 <button
                   onClick={() => setShowSupports((v) => !v)}
-                  disabled={bays.length === 0 || !busbarSupports?.supports.length}
-                  title={showSupports ? "Hide the busbar supports (still counted in the BOM)" : "Show the busbar supports"}
+                  disabled={
+                    bays.length === 0 || !busbarSupports?.supports.length
+                  }
+                  title={
+                    showSupports
+                      ? "Hide the busbar supports (still counted in the BOM)"
+                      : "Show the busbar supports"
+                  }
                   className={`btn btn-sm ${showSupports ? "btn-primary" : "btn-outline"}`}
                 >
                   <Icon name="push_pin" size={14} /> Supports
@@ -1715,25 +2470,43 @@ export function GaCanvas({
               )}
               {!readOnly && dirty && (
                 <>
-                  <button onClick={handleCancel} disabled={saving} className="btn btn-outline btn-sm">
+                  <button
+                    onClick={handleCancel}
+                    disabled={saving}
+                    className="btn btn-outline btn-sm"
+                  >
                     Cancel
                   </button>
-                  <button onClick={handleSave} disabled={saving} className="btn btn-primary btn-sm">
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="btn btn-primary btn-sm"
+                  >
                     <Icon name="save" size={14} />
                     {saving ? "Saving..." : "Save Changes"}
                   </button>
-                  <span className="font-body-sm text-body-sm text-amber-600">Unsaved changes</span>
+                  <span className="font-body-sm text-body-sm text-amber-600">
+                    Unsaved changes
+                  </span>
                 </>
               )}
             </div>
             {!readOnly && sb?.std === "ArTuK" && (
               <p className="mb-3 text-[11px] text-on-surface-variant">
-                Create your bays and drag feeders into them first (each feeder needs a Device Type and rating in BOM Builder), then click
-                Update GA to size every bay from what you&rsquo;ve placed, using ArTuK standard sizing -- see{" "}
-                <a href="/how-it-works#dimensions" target="_blank" rel="noopener noreferrer" className="text-primary underline hover:no-underline">
+                Create your bays and drag feeders into them first (each feeder
+                needs a Device Type and rating in BOM Builder), then click
+                Update GA to size every bay from what you&rsquo;ve placed, using
+                ArTuK standard sizing -- see{" "}
+                <a
+                  href="/how-it-works#dimensions"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary underline hover:no-underline"
+                >
                   How it works → Dimensions
                 </a>{" "}
-                for how sizes are worked out. It never creates, deletes, or moves bays or feeders.
+                for how sizes are worked out. It never creates, deletes, or
+                moves bays or feeders.
               </p>
             )}
             {!readOnly && (
@@ -1776,7 +2549,8 @@ export function GaCanvas({
               onClick={(e) => {
                 // a click on empty canvas (not on a bay, feeder, busbar, the
                 // busbar chamber or the busbar schedule) clears the selection
-                if ((e.target as Element).closest("[data-ga-selectable]")) return;
+                if ((e.target as Element).closest("[data-ga-selectable]"))
+                  return;
                 setSelectedBayId(null);
                 setSideBayId(null);
                 setSelectedPlacedId(null);
@@ -1797,10 +2571,17 @@ export function GaCanvas({
                   No bays yet — add one from the Modular Bay Templates above.
                 </p>
               ) : (
-                <div ref={drawingRef} className="flex w-max items-start gap-10 bg-white">
+                <div
+                  ref={drawingRef}
+                  className="flex w-max items-start gap-10 bg-white"
+                >
                   <div className="inline-block" data-ga-selectable="">
                     <div className="flex">
-                      <div style={{ width: RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX }} />
+                      <div
+                        style={{
+                          width: RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX,
+                        }}
+                      />
                       <div style={{ width: Math.max(totalWidth * pxPerMm, 1) }}>
                         <ViewLabel>Front View</ViewLabel>
                       </div>
@@ -1809,19 +2590,33 @@ export function GaCanvas({
                     {/* busduct top entries (violet), above each bay that has them */}
                     {hasBusduct && (
                       <div className="flex">
-                        <div style={{ width: RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX }} />
+                        <div
+                          style={{
+                            width: RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX,
+                          }}
+                        />
                         <div className="flex">
                           {bays.map((v) => (
-                            <div key={v.id} className="flex items-end justify-evenly" style={{ width: (v.width_mm ?? 0) * pxPerMm, height: 18 }}>
-                              {Array.from({ length: v.busduct_entries ?? 0 }, (_, k) => (
-                                <span
-                                  key={k}
-                                  data-ga-tip={`Busduct top entry ${k + 1} of ${v.busduct_entries} — ${v.name}`}
-                                  className="rounded-t bg-violet-600 px-1 font-mono text-[9px] font-bold leading-[14px] text-white"
-                                >
-                                  BD
-                                </span>
-                              ))}
+                            <div
+                              key={v.id}
+                              className="flex items-end justify-evenly"
+                              style={{
+                                width: (v.width_mm ?? 0) * pxPerMm,
+                                height: 18,
+                              }}
+                            >
+                              {Array.from(
+                                { length: v.busduct_entries ?? 0 },
+                                (_, k) => (
+                                  <span
+                                    key={k}
+                                    data-ga-tip={`Busduct top entry ${k + 1} of ${v.busduct_entries} — ${v.name}`}
+                                    className="rounded-t bg-violet-600 px-1 font-mono text-[9px] font-bold leading-[14px] text-white"
+                                  >
+                                    BD
+                                  </span>
+                                ),
+                              )}
                             </div>
                           ))}
                         </div>
@@ -1830,10 +2625,18 @@ export function GaCanvas({
 
                     {/* bay widths across the top */}
                     <div className="flex">
-                      <div style={{ width: RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX }} />
+                      <div
+                        style={{
+                          width: RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX,
+                        }}
+                      />
                       <div className="flex">
                         {bays.map((v) => (
-                          <HorizontalDimension key={v.id} widthPx={(v.width_mm ?? 0) * pxPerMm} label={`${v.width_mm ?? 0}`} />
+                          <HorizontalDimension
+                            key={v.id}
+                            widthPx={(v.width_mm ?? 0) * pxPerMm}
+                            label={`${v.width_mm ?? 0}`}
+                          />
                         ))}
                       </div>
                     </div>
@@ -1841,182 +2644,268 @@ export function GaCanvas({
                     {/* left: overall height from the floor, and height without the
                         baseframe, alongside [ArTuK strip / chamber / feeders / baseframe] */}
                     <div className="flex items-start">
-                      <VerticalDimension heightPx={frontStripPx + chamberPx + panelPx + plinthPx} label={`${heightNoBaseMm + plinthHeight}mm overall`} />
-                      <VerticalDimension heightPx={frontStripPx + chamberPx + panelPx} label={`${heightNoBaseMm}mm excl. base`} />
+                      <VerticalDimension
+                        heightPx={frontStripPx + chamberPx + panelPx + plinthPx}
+                        label={`${heightNoBaseMm + plinthHeight}mm overall`}
+                      />
+                      <VerticalDimension
+                        heightPx={frontStripPx + chamberPx + panelPx}
+                        label={`${heightNoBaseMm}mm excl. base`}
+                      />
                       <div>
-                    {sb.std === "ArTuK" && (
-                      <>
-                        <div className="flex">
-                          <div style={{ width: RULER_WIDTH_PX }} />
-                          <div className="flex bg-red-600" style={{ width: totalWidth * pxPerMm, height: ARTUK_STRIP_MM * pxPerMm }}>
-                            {bays.map((v) => (
-                              <ArtukStripSegment key={v.id} widthPx={(v.width_mm ?? 0) * pxPerMm} heightPx={ARTUK_STRIP_MM * pxPerMm} />
-                            ))}
-                          </div>
-                        </div>
-                        <div className="flex">
-                          <div style={{ width: RULER_WIDTH_PX }} />
-                          <ArtukLevelRow widths={bays.map((v) => (v.width_mm ?? 0) * pxPerMm)} heightPx={ARTUK_LEVEL_GAP_MM * pxPerMm} />
-                        </div>
-                      </>
-                    )}
+                        {sb.std === "ArTuK" && (
+                          <>
+                            <div className="flex">
+                              <div style={{ width: RULER_WIDTH_PX }} />
+                              <div
+                                className="flex bg-red-600"
+                                style={{
+                                  width: totalWidth * pxPerMm,
+                                  height: ARTUK_STRIP_MM * pxPerMm,
+                                }}
+                              >
+                                {bays.map((v) => (
+                                  <ArtukStripSegment
+                                    key={v.id}
+                                    widthPx={(v.width_mm ?? 0) * pxPerMm}
+                                    heightPx={ARTUK_STRIP_MM * pxPerMm}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                            <div className="flex">
+                              <div style={{ width: RULER_WIDTH_PX }} />
+                              <ArtukLevelRow
+                                widths={bays.map(
+                                  (v) => (v.width_mm ?? 0) * pxPerMm,
+                                )}
+                                heightPx={ARTUK_LEVEL_GAP_MM * pxPerMm}
+                              />
+                            </div>
+                          </>
+                        )}
 
-                    {/* An ArTuK bay's own height runs from just above the plinth to just
+                        {/* An ArTuK bay's own height runs from just above the plinth to just
                         below the red strip -- busbar chamber + panel, not the plinth (a
                         separate structural base). The vertical dimension line spans
                         exactly that, alongside just [busbar/bays/busbar], not the
                         title/ArTuK-strip rows above or the plinth row below. */}
-                    <div className="flex items-start">
-                      <div className="relative inline-block">
-                      {busbarPosition === "top" && (
-                        <div className="flex">
-                          <div style={{ width: RULER_WIDTH_PX }} />
-                          <DrawingBar
-                            label={chamberCaption}
-                            heightPx={busbarHeight * pxPerMm}
-                            widthPx={totalWidth * pxPerMm}
-                            tip={`Busbar chamber — ${totalWidth}mm W × ${busbarHeight}mm H`}
-                            isSelected={busbarSelected}
-                            onClick={
-                              readOnly
-                                ? undefined
-                                : () => {
-                                    setBusbarSelected(true);
-                                    setSelectedBayId(null);
-                                    setSideBayId(null);
-                                    setSelectedPlacedId(null);
-                                    setSelectedSegmentKey(null);
+                        <div className="flex items-start">
+                          <div className="relative inline-block">
+                            {busbarPosition === "top" && (
+                              <div className="flex">
+                                <div style={{ width: RULER_WIDTH_PX }} />
+                                <DrawingBar
+                                  label={chamberCaption}
+                                  heightPx={busbarHeight * pxPerMm}
+                                  widthPx={totalWidth * pxPerMm}
+                                  tip={`Busbar chamber — ${totalWidth}mm W × ${busbarHeight}mm H`}
+                                  isSelected={busbarSelected}
+                                  onClick={
+                                    readOnly
+                                      ? undefined
+                                      : () => {
+                                          setBusbarSelected(true);
+                                          setSelectedBayId(null);
+                                          setSideBayId(null);
+                                          setSelectedPlacedId(null);
+                                          setSelectedSegmentKey(null);
+                                        }
                                   }
-                            }
-                          />
-                        </div>
-                      )}
+                                />
+                              </div>
+                            )}
 
-                      <div className="flex">
-                        <VerticalRuler totalHeightMm={panelHeight} pxPerMm={pxPerMm} hover={hover} />
-                        <div className="flex transition-opacity" style={{ opacity: showBusbars && busbarPlan ? 0.55 : 1 }}>
-                          {bays.map((v, i) => (
-                            <BayColumn
-                              key={`${v.id}-${resetKey}`}
-                              vertical={v}
-                              bayNumber={bayNumbers.get(v.id) ?? null}
-                              readOnly={readOnly}
-                              pxPerMm={pxPerMm}
-                              panelHeightMm={panelHeight}
-                              blankFirst={blankFirst}
-                              bayLeftMm={bayOffsets[i]}
-                              isSelected={selectedBayId === v.id}
-                              selectedPlacedId={selectedBayId === v.id ? selectedPlacedId : null}
-                              selectedUnitIndex={selectedUnitIndex}
-                              cableEntry={sb.cable_entry}
-                              cableExit={sb.cable_exit}
-                              onSelectBay={() => {
-                                setSelectedBayId(v.id);
-                                setSideBayId(v.id);
-                                setSelectedPlacedId(null);
-                                setBusbarSelected(false);
-                                setSelectedSegmentKey(null);
-                              }}
-                              onSelectFeeder={(placedId, unitIndex) => {
-                                setSelectedBayId(v.id);
-                                setSideBayId(v.id);
-                                setSelectedPlacedId(placedId);
-                                setSelectedUnitIndex(unitIndex);
-                                setBusbarSelected(false);
-                                setSelectedSegmentKey(null);
-                              }}
-                              onMoveBay={(direction) => moveBay(v.id, direction)}
-                              onMoveFeeder={(placedId, unitIndex, direction) => moveFeeder(v.id, placedId, unitIndex, direction)}
-                              onHover={setHover}
-                              onHoverEnd={() => setHover(null)}
-                              onRemove={(placedId, unitIndex) => removeUnitFromBay(v.id, placedId, unitIndex)}
-                              tip={`${v.name} — ${v.width_mm ?? 0}mm W × ${heightNoBaseMm}mm H (excl. base)${v.depth_mm ? ` × ${v.depth_mm}mm D` : ""}`}
+                            <div className="flex">
+                              <VerticalRuler
+                                totalHeightMm={panelHeight}
+                                pxPerMm={pxPerMm}
+                                hover={hover}
+                              />
+                              <div
+                                className="flex transition-opacity"
+                                style={{
+                                  opacity: showBusbars && busbarPlan ? 0.55 : 1,
+                                }}
+                              >
+                                {bays.map((v, i) => (
+                                  <BayColumn
+                                    key={`${v.id}-${resetKey}`}
+                                    vertical={v}
+                                    bayNumber={bayNumbers.get(v.id) ?? null}
+                                    readOnly={readOnly}
+                                    pxPerMm={pxPerMm}
+                                    panelHeightMm={panelHeight}
+                                    blankFirst={blankFirst}
+                                    bayLeftMm={bayOffsets[i]}
+                                    isSelected={selectedBayId === v.id}
+                                    selectedPlacedId={
+                                      selectedBayId === v.id
+                                        ? selectedPlacedId
+                                        : null
+                                    }
+                                    selectedUnitIndex={selectedUnitIndex}
+                                    cableEntry={sb.cable_entry}
+                                    cableExit={sb.cable_exit}
+                                    onSelectBay={() => {
+                                      setSelectedBayId(v.id);
+                                      setSideBayId(v.id);
+                                      setSelectedPlacedId(null);
+                                      setBusbarSelected(false);
+                                      setSelectedSegmentKey(null);
+                                    }}
+                                    onSelectFeeder={(placedId, unitIndex) => {
+                                      setSelectedBayId(v.id);
+                                      setSideBayId(v.id);
+                                      setSelectedPlacedId(placedId);
+                                      setSelectedUnitIndex(unitIndex);
+                                      setBusbarSelected(false);
+                                      setSelectedSegmentKey(null);
+                                    }}
+                                    onMoveBay={(direction) =>
+                                      moveBay(v.id, direction)
+                                    }
+                                    onMoveFeeder={(
+                                      placedId,
+                                      unitIndex,
+                                      direction,
+                                    ) =>
+                                      moveFeeder(
+                                        v.id,
+                                        placedId,
+                                        unitIndex,
+                                        direction,
+                                      )
+                                    }
+                                    onHover={setHover}
+                                    onHoverEnd={() => setHover(null)}
+                                    onRemove={(placedId, unitIndex) =>
+                                      removeUnitFromBay(
+                                        v.id,
+                                        placedId,
+                                        unitIndex,
+                                      )
+                                    }
+                                    tip={`${v.name} — ${v.width_mm ?? 0}mm W × ${heightNoBaseMm}mm H (excl. base)${v.depth_mm ? ` × ${v.depth_mm}mm D` : ""}`}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+
+                            {busbarPosition === "bottom" && (
+                              <div className="flex">
+                                <div style={{ width: RULER_WIDTH_PX }} />
+                                <DrawingBar
+                                  label={chamberCaption}
+                                  heightPx={busbarHeight * pxPerMm}
+                                  widthPx={totalWidth * pxPerMm}
+                                  tip={`Busbar chamber — ${totalWidth}mm W × ${busbarHeight}mm H`}
+                                  isSelected={busbarSelected}
+                                  onClick={
+                                    readOnly
+                                      ? undefined
+                                      : () => {
+                                          setBusbarSelected(true);
+                                          setSelectedBayId(null);
+                                          setSideBayId(null);
+                                          setSelectedPlacedId(null);
+                                          setSelectedSegmentKey(null);
+                                        }
+                                  }
+                                />
+                              </div>
+                            )}
+
+                            {showSupports &&
+                              busbarSupports?.supports.map((sup) => (
+                                <div
+                                  key={sup.id}
+                                  data-ga-tip={`Busbar support ${sup.code}${sup.neutralCode ? ` + ${sup.neutralCode}` : ""} — ${sup.kind === "hbb" ? "main busbar" : "vertical busbar"}, span ≤${sup.spanMm}mm`}
+                                  className="absolute z-20 rounded-sm bg-pink-500"
+                                  style={
+                                    sup.kind === "hbb"
+                                      ? {
+                                          left:
+                                            RULER_WIDTH_PX +
+                                            sup.x * pxPerMm -
+                                            2,
+                                          top:
+                                            busbarYPx(sup.y) -
+                                            Math.max(chamberPx * 0.35, 5),
+                                          width: 4,
+                                          height: Math.max(chamberPx * 0.7, 10),
+                                        }
+                                      : {
+                                          left:
+                                            RULER_WIDTH_PX +
+                                            sup.x * pxPerMm -
+                                            7,
+                                          top: busbarYPx(sup.y) - 2,
+                                          width: 14,
+                                          height: 4,
+                                        }
+                                  }
+                                />
+                              ))}
+                            {showBusbars && busbarPlan && (
+                              <BusbarFrontOverlay
+                                plan={busbarPlan}
+                                leftPx={RULER_WIDTH_PX}
+                                widthPx={totalWidth * pxPerMm}
+                                heightPx={chamberPx + panelPx}
+                                xPx={(mm) => mm * pxPerMm}
+                                yPx={busbarYPx}
+                                material={busbarMaterial}
+                                selectedKey={selectedSegmentKey}
+                                onSelect={selectSegment}
+                                pxPerMm={pxPerMm}
+                                readOnly={readOnly}
+                                onStretch={stretchSegment}
+                              />
+                            )}
+                          </div>
+                        </div>
+
+                        {sb.std === "ArTuK" && (
+                          <div className="flex">
+                            <div style={{ width: RULER_WIDTH_PX }} />
+                            <ArtukLevelRow
+                              widths={bays.map(
+                                (v) => (v.width_mm ?? 0) * pxPerMm,
+                              )}
+                              heightPx={ARTUK_LEVEL_GAP_MM * pxPerMm}
                             />
-                          ))}
-                        </div>
-                      </div>
-
-                      {busbarPosition === "bottom" && (
+                          </div>
+                        )}
                         <div className="flex">
                           <div style={{ width: RULER_WIDTH_PX }} />
                           <DrawingBar
-                            label={chamberCaption}
-                            heightPx={busbarHeight * pxPerMm}
+                            label={`BASEFRAME · ${plinthHeight}mm`}
+                            heightPx={plinthHeight * pxPerMm}
                             widthPx={totalWidth * pxPerMm}
-                            tip={`Busbar chamber — ${totalWidth}mm W × ${busbarHeight}mm H`}
-                            isSelected={busbarSelected}
-                            onClick={
-                              readOnly
-                                ? undefined
-                                : () => {
-                                    setBusbarSelected(true);
-                                    setSelectedBayId(null);
-                                    setSideBayId(null);
-                                    setSelectedPlacedId(null);
-                                    setSelectedSegmentKey(null);
-                                  }
-                            }
+                            tip={`Baseframe — ${totalWidth}mm W × ${plinthHeight}mm H`}
                           />
                         </div>
-                      )}
-
-                      {showSupports && busbarSupports?.supports.map((sup) => (
-                        <div
-                          key={sup.id}
-                          data-ga-tip={`Busbar support ${sup.code}${sup.neutralCode ? ` + ${sup.neutralCode}` : ""} — ${sup.kind === "hbb" ? "main busbar" : "vertical busbar"}, span ≤${sup.spanMm}mm`}
-                          className="absolute z-20 rounded-sm bg-pink-500"
-                          style={
-                            sup.kind === "hbb"
-                              ? {
-                                  left: RULER_WIDTH_PX + sup.x * pxPerMm - 2,
-                                  top: busbarYPx(sup.y) - Math.max(chamberPx * 0.35, 5),
-                                  width: 4,
-                                  height: Math.max(chamberPx * 0.7, 10),
-                                }
-                              : { left: RULER_WIDTH_PX + sup.x * pxPerMm - 7, top: busbarYPx(sup.y) - 2, width: 14, height: 4 }
-                          }
-                        />
-                      ))}
-                      {showBusbars && busbarPlan && (
-                        <BusbarFrontOverlay
-                          plan={busbarPlan}
-                          leftPx={RULER_WIDTH_PX}
-                          widthPx={totalWidth * pxPerMm}
-                          heightPx={chamberPx + panelPx}
-                          xPx={(mm) => mm * pxPerMm}
-                          yPx={busbarYPx}
-                          material={busbarMaterial}
-                          selectedKey={selectedSegmentKey}
-                          onSelect={selectSegment}
-                          pxPerMm={pxPerMm}
-                          readOnly={readOnly}
-                          onStretch={stretchSegment}
-                        />
-                      )}
-
-                      </div>
-                    </div>
-
-                    {sb.std === "ArTuK" && (
-                      <div className="flex">
-                        <div style={{ width: RULER_WIDTH_PX }} />
-                        <ArtukLevelRow widths={bays.map((v) => (v.width_mm ?? 0) * pxPerMm)} heightPx={ARTUK_LEVEL_GAP_MM * pxPerMm} />
-                      </div>
-                    )}
-                    <div className="flex">
-                      <div style={{ width: RULER_WIDTH_PX }} />
-                      <DrawingBar label={`BASEFRAME · ${plinthHeight}mm`} heightPx={plinthHeight * pxPerMm} widthPx={totalWidth * pxPerMm} tip={`Baseframe — ${totalWidth}mm W × ${plinthHeight}mm H`} />
-                    </div>
                       </div>
                     </div>
 
                     {/* Vertical numbers (1F, 2F...) under each switchgear bay */}
                     <div className="flex">
-                      <div style={{ width: RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX }} />
+                      <div
+                        style={{
+                          width: RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX,
+                        }}
+                      />
                       <div className="flex">
                         {bays.map((v) => (
-                          <div key={v.id} className="py-0.5 text-center font-display text-sm font-bold text-black" style={{ width: (v.width_mm ?? 0) * pxPerMm }}>
-                            {bayNumbers.has(v.id) ? `${bayNumbers.get(v.id)}F` : ""}
+                          <div
+                            key={v.id}
+                            className="py-0.5 text-center font-display text-sm font-bold text-black"
+                            style={{ width: (v.width_mm ?? 0) * pxPerMm }}
+                          >
+                            {bayNumbers.has(v.id)
+                              ? `${bayNumbers.get(v.id)}F`
+                              : ""}
                           </div>
                         ))}
                       </div>
@@ -2025,41 +2914,100 @@ export function GaCanvas({
                     {/* Per-bay width dimensions, then one overall dimension beneath --
                         same nesting convention as a real elevation drawing. */}
                     <div className="flex">
-                      <div style={{ width: RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX }} />
+                      <div
+                        style={{
+                          width: RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX,
+                        }}
+                      />
                       <div className="flex">
                         {bays.map((v) => {
                           const w = v.width_mm ?? 0;
-                          const gap = w <= 2 * FEEDER_SIDE_GAP_MM ? 0 : FEEDER_SIDE_GAP_MM;
+                          const gap =
+                            w <= 2 * FEEDER_SIDE_GAP_MM
+                              ? 0
+                              : FEEDER_SIDE_GAP_MM;
                           return (
-                            <div key={v.id} className="shrink-0" style={{ width: w * pxPerMm, paddingLeft: gap * pxPerMm, paddingRight: gap * pxPerMm }}>
-                              <HorizontalDimension widthPx={(w - 2 * gap) * pxPerMm} label={`${w - 2 * gap}`} />
+                            <div
+                              key={v.id}
+                              className="shrink-0"
+                              style={{
+                                width: w * pxPerMm,
+                                paddingLeft: gap * pxPerMm,
+                                paddingRight: gap * pxPerMm,
+                              }}
+                            >
+                              <HorizontalDimension
+                                widthPx={(w - 2 * gap) * pxPerMm}
+                                label={`${w - 2 * gap}`}
+                              />
                             </div>
                           );
                         })}
                       </div>
                     </div>
                     <div className="flex">
-                      <div style={{ width: RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX }} />
-                      <HorizontalDimension widthPx={totalWidth * pxPerMm} label={`${totalWidth}mm`} />
+                      <div
+                        style={{
+                          width: RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX,
+                        }}
+                      />
+                      <HorizontalDimension
+                        widthPx={totalWidth * pxPerMm}
+                        label={`${totalWidth}mm`}
+                      />
                     </div>
                   </div>
 
                   <div className="inline-block" data-ga-selectable="">
-                    <ViewLabel>Side View{sideBay ? ` — ${sideBay.name}` : ""}</ViewLabel>
+                    <ViewLabel>
+                      Side View{sideBay ? ` — ${sideBay.name}` : ""}
+                    </ViewLabel>
                     {/* same height as the front view's bay-width row, so both views line up */}
                     <div className="invisible" aria-hidden>
-                      <HorizontalDimension widthPx={sideViewWidthPx} label="0" />
+                      <HorizontalDimension
+                        widthPx={sideViewWidthPx}
+                        label="0"
+                      />
                     </div>
                     {sb.std === "ArTuK" && (
                       <>
-                        <div className="bg-red-600" style={{ width: sideViewWidthPx, height: ARTUK_STRIP_MM * pxPerMm }} />
-                        <ArtukLevelRow widths={[sideViewWidthPx]} heightPx={ARTUK_LEVEL_GAP_MM * pxPerMm} />
+                        <div
+                          className="bg-red-600"
+                          style={{
+                            width: sideViewWidthPx,
+                            height: ARTUK_STRIP_MM * pxPerMm,
+                          }}
+                        />
+                        <ArtukLevelRow
+                          widths={[sideViewWidthPx]}
+                          heightPx={ARTUK_LEVEL_GAP_MM * pxPerMm}
+                        />
                       </>
                     )}
                     <div className="relative">
-                      {busbarPosition === "top" && <DrawingBar label={chamberCaption} heightPx={busbarHeight * pxPerMm} widthPx={sideViewWidthPx} tip={`Busbar chamber — ${sideViewDepthMm}mm D × ${busbarHeight}mm H`} />}
-                      <div className="border border-black/70 bg-white" style={{ width: sideViewWidthPx, height: Math.max(panelHeight * pxPerMm, 2) }} />
-                      {busbarPosition === "bottom" && <DrawingBar label={chamberCaption} heightPx={busbarHeight * pxPerMm} widthPx={sideViewWidthPx} tip={`Busbar chamber — ${sideViewDepthMm}mm D × ${busbarHeight}mm H`} />}
+                      {busbarPosition === "top" && (
+                        <DrawingBar
+                          label={chamberCaption}
+                          heightPx={busbarHeight * pxPerMm}
+                          widthPx={sideViewWidthPx}
+                          tip={`Busbar chamber — ${sideViewDepthMm}mm D × ${busbarHeight}mm H`}
+                        />
+                      )}
+                      <div
+                        className="border border-black/70 bg-white"
+                        style={{
+                          width: sideViewWidthPx,
+                          height: Math.max(panelHeight * pxPerMm, 2),
+                        }}
+                      />
+                      {busbarPosition === "bottom" && (
+                        <DrawingBar
+                          label={chamberCaption}
+                          heightPx={busbarHeight * pxPerMm}
+                          widthPx={sideViewWidthPx}
+                          tip={`Busbar chamber — ${sideViewDepthMm}mm D × ${busbarHeight}mm H`}
+                        />
+                      )}
                       {sideBay && (
                         <BusbarSideOverlay
                           plan={busbarPlan}
@@ -2077,11 +3025,23 @@ export function GaCanvas({
                               ? {
                                   id: sideBay.id,
                                   name: sideBay.name,
-                                  compartments: computeCompartments(sideBay, panelHeight, blankFirst).map((c) => {
-                                    const f = sideBay.placed.find((p) => p.id === c.placedId)?.feeder;
-                                    return { ...c, deviceDepthMm: f ? deviceDepthFor(f) : undefined };
+                                  compartments: computeCompartments(
+                                    sideBay,
+                                    panelHeight,
+                                    blankFirst,
+                                  ).map((c) => {
+                                    const f = sideBay.placed.find(
+                                      (p) => p.id === c.placedId,
+                                    )?.feeder;
+                                    return {
+                                      ...c,
+                                      deviceDepthMm: f
+                                        ? deviceDepthFor(f)
+                                        : undefined,
+                                    };
                                   }),
-                                  panelTopMm: busbarPosition === "top" ? busbarHeight : 0,
+                                  panelTopMm:
+                                    busbarPosition === "top" ? busbarHeight : 0,
                                 }
                               : null
                           }
@@ -2090,12 +3050,28 @@ export function GaCanvas({
                         />
                       )}
                     </div>
-                    {sb.std === "ArTuK" && <ArtukLevelRow widths={[sideViewWidthPx]} heightPx={ARTUK_LEVEL_GAP_MM * pxPerMm} />}
-                    <DrawingBar label={`PLINTH · ${plinthHeight}mm`} heightPx={plinthHeight * pxPerMm} widthPx={sideViewWidthPx} />
-                    <HorizontalDimension widthPx={sideViewWidthPx} label={`${sideViewDepthMm}mm`} />
+                    {sb.std === "ArTuK" && (
+                      <ArtukLevelRow
+                        widths={[sideViewWidthPx]}
+                        heightPx={ARTUK_LEVEL_GAP_MM * pxPerMm}
+                      />
+                    )}
+                    <DrawingBar
+                      label={`PLINTH · ${plinthHeight}mm`}
+                      heightPx={plinthHeight * pxPerMm}
+                      widthPx={sideViewWidthPx}
+                    />
+                    <HorizontalDimension
+                      widthPx={sideViewWidthPx}
+                      label={`${sideViewDepthMm}mm`}
+                    />
                     <PanelSummaryTable
                       widthMm={totalWidth}
-                      depthMm={bays.some((v) => v.depth_mm != null) ? deepestBayMm : null}
+                      depthMm={
+                        bays.some((v) => v.depth_mm != null)
+                          ? deepestBayMm
+                          : null
+                      }
                       heightMm={plinthHeight + heightNoBaseMm}
                       cableAccess={cableAccess}
                       cableEntry={sb.cable_entry}
@@ -2109,20 +3085,24 @@ export function GaCanvas({
               )}
               {showBusbars && busbarPlan && bays.length > 0 && (
                 <div data-ga-selectable="">
-                <BusbarSchedule
-                  plan={busbarPlan}
-                  material={busbarMaterial}
-                  density={densities[busbarMaterial]}
-                  poles={sb.poles ?? 4}
-                  neutralPct={sb.neutral_size_pct ?? 100}
-                  readOnly={readOnly}
-                  selectedKey={selectedSegmentKey}
-                  onSelect={selectSegment}
-                  onApplySize={(segs, bar, runs) =>
-                    patchSegmentOverrides(segs, { barWidthMm: bar.widthMm, barThicknessMm: bar.thicknessMm, runsPerPhase: runs })
-                  }
-                  onReset={resetSegmentOverrides}
-                />
+                  <BusbarSchedule
+                    plan={busbarPlan}
+                    material={busbarMaterial}
+                    density={densities[busbarMaterial]}
+                    poles={sb.poles ?? 4}
+                    neutralPct={sb.neutral_size_pct ?? 100}
+                    readOnly={readOnly}
+                    selectedKey={selectedSegmentKey}
+                    onSelect={selectSegment}
+                    onApplySize={(segs, bar, runs) =>
+                      patchSegmentOverrides(segs, {
+                        barWidthMm: bar.widthMm,
+                        barThicknessMm: bar.thicknessMm,
+                        runsPerPhase: runs,
+                      })
+                    }
+                    onReset={resetSegmentOverrides}
+                  />
                 </div>
               )}
             </div>
@@ -2135,12 +3115,19 @@ export function GaCanvas({
           >
             <button
               onClick={() => setRightSidebarCollapsed(!rightSidebarCollapsed)}
-              title={rightSidebarCollapsed ? "Expand bay details" : "Collapse bay details"}
+              title={
+                rightSidebarCollapsed
+                  ? "Expand bay details"
+                  : "Collapse bay details"
+              }
               className={`mb-2 flex items-center justify-center rounded p-1 text-secondary hover:bg-surface-container-low ${
                 rightSidebarCollapsed ? "w-full" : ""
               }`}
             >
-              <Icon name={rightSidebarCollapsed ? "chevron_left" : "chevron_right"} size={16} />
+              <Icon
+                name={rightSidebarCollapsed ? "chevron_left" : "chevron_right"}
+                size={16}
+              />
             </button>
 
             {!rightSidebarCollapsed && (
@@ -2154,7 +3141,9 @@ export function GaCanvas({
                     neutralPct={sb.neutral_size_pct ?? 100}
                     hasNeutral={(sb.poles ?? 4) >= 4}
                     readOnly={readOnly}
-                    onPatch={(patch) => patchSegmentOverrides([selectedSegment], patch)}
+                    onPatch={(patch) =>
+                      patchSegmentOverrides([selectedSegment], patch)
+                    }
                     onReset={() => resetSegmentOverrides([selectedSegment.key])}
                     onClose={() => setSelectedSegmentKey(null)}
                   />
@@ -2163,7 +3152,11 @@ export function GaCanvas({
                     key={`busbar-${resetKey}`}
                     height={busbarHeight}
                     abbHeight={abbChamberMm}
-                    mainBarLabel={mainBar ? `${mainBar.widthMm}×${mainBar.thicknessMm}` : null}
+                    mainBarLabel={
+                      mainBar
+                        ? `${mainBar.widthMm}×${mainBar.thicknessMm}`
+                        : null
+                    }
                     readOnly={readOnly}
                     onHeightChange={(h) => {
                       setBusbarHeight(h);
@@ -2173,46 +3166,86 @@ export function GaCanvas({
                   />
                 ) : (
                   <>
-                  {/* a clicked feeder / blank space gets its own panel; the
+                    {/* a clicked feeder / blank space gets its own panel; the
                       bay's own details (name, width, depth) stay below it */}
-                  {selectedBay && selectedPlacedId && (
-                  <PlacedItemPanel
-                    key={`${selectedPlacedId}-${selectedUnitIndex}-${resetKey}`}
-                    bay={selectedBay}
-                    placedId={selectedPlacedId}
-                    unitIndex={selectedUnitIndex}
-                    panelHeightMm={panelHeight}
-                    blankFirst={blankFirst}
-                    readOnly={readOnly}
-                    onUnitHeight={(h) => setUnitHeight(selectedBay.id, selectedPlacedId, selectedUnitIndex, h)}
-                    onDummyHeight={(h) => setDummyHeight(selectedBay.id, h)}
-                    onRemove={() => removeUnitFromBay(selectedBay.id, selectedPlacedId, selectedUnitIndex)}
-                    onClose={() => setSelectedPlacedId(null)}
-                  />
-                  )}
-                  <BayDetailsPanel
-                    key={selectedBay?.id ?? "none"}
-                    vertical={selectedBay}
-                    readOnly={readOnly}
-                    onRename={(name) => selectedBay && renameBay(selectedBay.id, name)}
-                    onDimChange={(field, val) => selectedBay && setBayDim(selectedBay.id, field, val)}
-                    busductEntries={hasBusduct && selectedBay ? (selectedBay.busduct_entries ?? 0) : null}
-                    onBusductChange={(n) =>
-                      selectedBay && setVerticals(verticals.map((v) => (v.id === selectedBay.id ? { ...v, busduct_entries: Math.max(0, n) } : v)))
-                    }
-                    onDelete={() => {
-                      if (!selectedBay) return;
-                      deleteBay(selectedBay.id);
-                      setSelectedBayId(null);
-                      setSideBayId(null);
-                      setSelectedPlacedId(null);
-                    }}
-                    onClose={() => {
-                      setSelectedBayId(null);
-                      setSideBayId(null);
-                      setSelectedPlacedId(null);
-                    }}
-                  />
+                    {selectedBay && selectedPlacedId && (
+                      <PlacedItemPanel
+                        key={`${selectedPlacedId}-${selectedUnitIndex}-${resetKey}`}
+                        bay={selectedBay}
+                        placedId={selectedPlacedId}
+                        unitIndex={selectedUnitIndex}
+                        panelHeightMm={panelHeight}
+                        blankFirst={blankFirst}
+                        readOnly={readOnly}
+                        onUnitHeight={(h) =>
+                          setUnitHeight(
+                            selectedBay.id,
+                            selectedPlacedId,
+                            selectedUnitIndex,
+                            h,
+                          )
+                        }
+                        onDummyHeight={(h) => setDummyHeight(selectedBay.id, h)}
+                        onRemove={() =>
+                          removeUnitFromBay(
+                            selectedBay.id,
+                            selectedPlacedId,
+                            selectedUnitIndex,
+                          )
+                        }
+                        onClose={() => setSelectedPlacedId(null)}
+                      />
+                    )}
+                    <BayDetailsPanel
+                      key={
+                        selectedBay
+                          ? `${selectedBay.id}-${selectedBay.width_mm}-${selectedBay.depth_mm}`
+                          : "none"
+                      }
+                      vertical={selectedBay}
+                      readOnly={readOnly}
+                      onChooseConfig={
+                        isArtuk &&
+                        selectedBay &&
+                        !isAlley(selectedBay.bay_type) &&
+                        !readOnly
+                          ? () => setConfigBayId(selectedBay.id)
+                          : undefined
+                      }
+                      onRename={(name) =>
+                        selectedBay && renameBay(selectedBay.id, name)
+                      }
+                      onDimChange={(field, val) =>
+                        selectedBay && setBayDim(selectedBay.id, field, val)
+                      }
+                      busductEntries={
+                        hasBusduct && selectedBay
+                          ? (selectedBay.busduct_entries ?? 0)
+                          : null
+                      }
+                      onBusductChange={(n) =>
+                        selectedBay &&
+                        setVerticals(
+                          verticals.map((v) =>
+                            v.id === selectedBay.id
+                              ? { ...v, busduct_entries: Math.max(0, n) }
+                              : v,
+                          ),
+                        )
+                      }
+                      onDelete={() => {
+                        if (!selectedBay) return;
+                        deleteBay(selectedBay.id);
+                        setSelectedBayId(null);
+                        setSideBayId(null);
+                        setSelectedPlacedId(null);
+                      }}
+                      onClose={() => {
+                        setSelectedBayId(null);
+                        setSideBayId(null);
+                        setSelectedPlacedId(null);
+                      }}
+                    />
                   </>
                 )}
 
@@ -2222,20 +3255,36 @@ export function GaCanvas({
                     className="flex w-full items-center justify-between text-left font-label-sm text-label-sm uppercase tracking-wide text-secondary"
                   >
                     Sizing Logic
-                    <Icon name={sizingLogicOpen ? "expand_less" : "expand_more"} size={16} />
+                    <Icon
+                      name={sizingLogicOpen ? "expand_less" : "expand_more"}
+                      size={16}
+                    />
                   </button>
                   {sizingLogicOpen && (
                     <div className="mt-2 space-y-2">
                       <p className="font-body-sm text-[11px] leading-snug text-on-surface-variant">
-                        How each bay&rsquo;s width and height were worked out, based on its placed feeders. See How it works → Dimensions for the
-                        underlying ArTuK data.
+                        How each bay&rsquo;s width and height were worked out,
+                        based on its placed feeders. See How it works →
+                        Dimensions for the underlying ArTuK data.
                       </p>
-                      {bays.length === 0 && <p className="font-body-sm text-body-sm text-on-surface-variant">No bays yet.</p>}
+                      {bays.length === 0 && (
+                        <p className="font-body-sm text-body-sm text-on-surface-variant">
+                          No bays yet.
+                        </p>
+                      )}
                       {bays.map((v) => (
-                        <div key={v.id} className="rounded border border-surface-container-high p-2">
-                          <p className="font-body-sm text-body-sm font-semibold text-on-surface">{v.name}</p>
+                        <div
+                          key={v.id}
+                          className="rounded border border-surface-container-high p-2"
+                        >
+                          <p className="font-body-sm text-body-sm font-semibold text-on-surface">
+                            {v.name}
+                          </p>
                           {explainBay(v).map((line, i) => (
-                            <p key={i} className="mt-1 text-[11px] leading-snug text-on-surface-variant">
+                            <p
+                              key={i}
+                              className="mt-1 text-[11px] leading-snug text-on-surface-variant"
+                            >
                               {line}
                             </p>
                           ))}
@@ -2254,7 +3303,9 @@ export function GaCanvas({
         {draggingFeeder && (
           <div className="w-56 rounded-md border border-surface-container-high bg-surface-container-lowest px-3 py-2 text-sm shadow-lg">
             <p className="font-medium text-on-surface">{draggingFeeder.name}</p>
-            <p className="text-xs text-on-surface-variant">{draggingFeeder.category || "—"}</p>
+            <p className="text-xs text-on-surface-variant">
+              {draggingFeeder.category || "—"}
+            </p>
           </div>
         )}
       </DragOverlay>
@@ -2262,7 +3313,13 @@ export function GaCanvas({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="flex items-center gap-1.5 text-secondary">
       {label}
@@ -2271,7 +3328,13 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function ReadOnlyField({ label, value }: { label: string; value: string | null }) {
+function ReadOnlyField({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | null;
+}) {
   return (
     <span className="flex items-center gap-1.5 text-secondary">
       <span>{label}</span>
@@ -2291,8 +3354,16 @@ function DraggableCell({
   className,
   children,
   ...rest
-}: { dragId: string; disabled: boolean; className: string; children: React.ReactNode } & Omit<React.HTMLAttributes<HTMLDivElement>, "className">) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: dragId, disabled });
+}: {
+  dragId: string;
+  disabled: boolean;
+  className: string;
+  children: React.ReactNode;
+} & Omit<React.HTMLAttributes<HTMLDivElement>, "className">) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: dragId,
+    disabled,
+  });
   return (
     <div
       ref={setNodeRef}
@@ -2308,22 +3379,43 @@ function DraggableCell({
 
 // The available-feeders list doubles as a drop target: a unit dragged out
 // of a bay and dropped here goes back to the list.
-function AvailableDropZone({ disabled, children }: { disabled: boolean; children: React.ReactNode }) {
-  const { setNodeRef, isOver } = useDroppable({ id: "available-feeders", disabled });
+function AvailableDropZone({
+  disabled,
+  children,
+}: {
+  disabled: boolean;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: "available-feeders",
+    disabled,
+  });
   return (
-    <div ref={setNodeRef} className={`min-h-16 rounded-lg ${isOver ? "bg-primary/5 ring-2 ring-primary/40" : ""}`}>
+    <div
+      ref={setNodeRef}
+      className={`min-h-16 rounded-lg ${isOver ? "bg-primary/5 ring-2 ring-primary/40" : ""}`}
+    >
       {children}
     </div>
   );
 }
 
-function AvailableFeederCard({ unit, disabled = false }: { unit: AvailableUnit; disabled?: boolean }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `unit-${unit.unitId}`,
-    disabled,
-  });
+function AvailableFeederCard({
+  unit,
+  disabled = false,
+}: {
+  unit: AvailableUnit;
+  disabled?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } =
+    useDraggable({
+      id: `unit-${unit.unitId}`,
+      disabled,
+    });
 
-  const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
+  const style = transform
+    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
+    : undefined;
 
   return (
     <div
@@ -2332,11 +3424,15 @@ function AvailableFeederCard({ unit, disabled = false }: { unit: AvailableUnit; 
       {...listeners}
       {...attributes}
       className={`rounded-lg border border-surface-container-high px-3 py-2 text-sm ${
-        disabled ? "opacity-60" : `cursor-grab active:cursor-grabbing ${isDragging ? "opacity-40" : "hover:border-primary/40"}`
+        disabled
+          ? "opacity-60"
+          : `cursor-grab active:cursor-grabbing ${isDragging ? "opacity-40" : "hover:border-primary/40"}`
       }`}
     >
       <p className="truncate font-medium text-on-surface">{unit.feeder.name}</p>
-      <p className="text-xs text-on-surface-variant">{unit.feeder.category || "—"}</p>
+      <p className="text-xs text-on-surface-variant">
+        {unit.feeder.category || "—"}
+      </p>
     </div>
   );
 }
@@ -2378,7 +3474,11 @@ function DrawingBar({
 // Bold, underlined view caption ("FRONT VIEW" / "SIDE VIEW"), matching
 // the reference AutoCAD drawing's title style above each projection.
 function ViewLabel({ children }: { children: React.ReactNode }) {
-  return <p className="mb-1 text-center font-telemetry-md text-[11px] font-bold uppercase tracking-wide text-black underline">{children}</p>;
+  return (
+    <p className="mb-1 text-center font-telemetry-md text-[11px] font-bold uppercase tracking-wide text-black underline">
+      {children}
+    </p>
+  );
 }
 
 // Small solid CSS-triangle arrowhead for dimension lines -- plain line art
@@ -2386,12 +3486,28 @@ function ViewLabel({ children }: { children: React.ReactNode }) {
 function ArrowHead({ dir }: { dir: "left" | "right" | "up" | "down" }) {
   const style: React.CSSProperties =
     dir === "left"
-      ? { borderTop: "3px solid transparent", borderBottom: "3px solid transparent", borderRight: "5px solid black" }
+      ? {
+          borderTop: "3px solid transparent",
+          borderBottom: "3px solid transparent",
+          borderRight: "5px solid black",
+        }
       : dir === "right"
-        ? { borderTop: "3px solid transparent", borderBottom: "3px solid transparent", borderLeft: "5px solid black" }
+        ? {
+            borderTop: "3px solid transparent",
+            borderBottom: "3px solid transparent",
+            borderLeft: "5px solid black",
+          }
         : dir === "up"
-          ? { borderLeft: "3px solid transparent", borderRight: "3px solid transparent", borderBottom: "5px solid black" }
-          : { borderLeft: "3px solid transparent", borderRight: "3px solid transparent", borderTop: "5px solid black" };
+          ? {
+              borderLeft: "3px solid transparent",
+              borderRight: "3px solid transparent",
+              borderBottom: "5px solid black",
+            }
+          : {
+              borderLeft: "3px solid transparent",
+              borderRight: "3px solid transparent",
+              borderTop: "5px solid black",
+            };
   return <span className="block h-0 w-0 shrink-0" style={style} />;
 }
 
@@ -2399,13 +3515,22 @@ function ArrowHead({ dir }: { dir: "left" | "right" | "up" | "down" }) {
 // line spanning between them, and the mm value centered above -- used to
 // call out a bay's width, the switchboard's total width, and the side
 // view's depth (the reference image's "920" dimension under FRONT VIEW).
-function HorizontalDimension({ widthPx, label }: { widthPx: number; label: string }) {
+function HorizontalDimension({
+  widthPx,
+  label,
+}: {
+  widthPx: number;
+  label: string;
+}) {
   const w = Math.max(widthPx, 1);
   return (
     <div className="relative shrink-0" style={{ width: w, height: 20 }}>
       <span className="absolute left-0 top-0 h-2 w-px bg-black/70" />
       <span className="absolute right-0 top-0 h-2 w-px bg-black/70" />
-      <div className="absolute left-0 top-1.5 flex items-center" style={{ width: w }}>
+      <div
+        className="absolute left-0 top-1.5 flex items-center"
+        style={{ width: w }}
+      >
         <ArrowHead dir="left" />
         <span className="h-px flex-1 bg-black/70" />
         <ArrowHead dir="right" />
@@ -2419,13 +3544,25 @@ function HorizontalDimension({ widthPx, label }: { widthPx: number; label: strin
 
 // Vertical counterpart of HorizontalDimension -- used for the switchboard's
 // total height, run alongside the existing mm-scale VerticalRuler.
-function VerticalDimension({ heightPx, label }: { heightPx: number; label: string }) {
+function VerticalDimension({
+  heightPx,
+  label,
+}: {
+  heightPx: number;
+  label: string;
+}) {
   const h = Math.max(heightPx, 1);
   return (
-    <div className="relative shrink-0" style={{ width: VERTICAL_DIM_WIDTH_PX, height: h }}>
+    <div
+      className="relative shrink-0"
+      style={{ width: VERTICAL_DIM_WIDTH_PX, height: h }}
+    >
       <span className="absolute left-1 top-0 h-px w-2 bg-black/70" />
       <span className="absolute bottom-0 left-1 h-px w-2 bg-black/70" />
-      <div className="absolute left-2 top-0 flex flex-col items-center" style={{ height: h }}>
+      <div
+        className="absolute left-2 top-0 flex flex-col items-center"
+        style={{ height: h }}
+      >
         <ArrowHead dir="up" />
         <span className="w-px flex-1 bg-black/70" />
         <ArrowHead dir="down" />
@@ -2442,23 +3579,43 @@ function VerticalDimension({ heightPx, label }: { heightPx: number; label: strin
 
 // Left-edge mm scale for the bays' shared panel height, measured bottom-up
 // (0 at the base of the bays) to match a real elevation drawing.
-function VerticalRuler({ totalHeightMm, pxPerMm, hover }: { totalHeightMm: number; pxPerMm: number; hover: HoverExtent }) {
+function VerticalRuler({
+  totalHeightMm,
+  pxPerMm,
+  hover,
+}: {
+  totalHeightMm: number;
+  pxPerMm: number;
+  hover: HoverExtent;
+}) {
   const heightPx = totalHeightMm * pxPerMm;
   const step = niceTickStepMm(pxPerMm);
   const ticks: number[] = [];
   for (let mm = 0; mm <= totalHeightMm; mm += step) ticks.push(mm);
 
   return (
-    <div className="relative shrink-0 border-r border-black/40" style={{ width: RULER_WIDTH_PX, height: heightPx }}>
+    <div
+      className="relative shrink-0 border-r border-black/40"
+      style={{ width: RULER_WIDTH_PX, height: heightPx }}
+    >
       {hover && (
         <div
           className="absolute right-0 w-full bg-amber-300/50"
-          style={{ bottom: (totalHeightMm - hover.topMm - hover.heightMm) * pxPerMm, height: Math.max(hover.heightMm * pxPerMm, 1) }}
+          style={{
+            bottom: (totalHeightMm - hover.topMm - hover.heightMm) * pxPerMm,
+            height: Math.max(hover.heightMm * pxPerMm, 1),
+          }}
         />
       )}
       {ticks.map((mm) => (
-        <div key={mm} className="absolute right-0 flex items-center gap-1" style={{ bottom: mm * pxPerMm - 0.5 }}>
-          <span className="font-mono text-[8px] leading-none text-on-surface-variant">{mm}</span>
+        <div
+          key={mm}
+          className="absolute right-0 flex items-center gap-1"
+          style={{ bottom: mm * pxPerMm - 0.5 }}
+        >
+          <span className="font-mono text-[8px] leading-none text-on-surface-variant">
+            {mm}
+          </span>
           <span className="h-px w-2 bg-black/50" />
         </div>
       ))}
@@ -2475,24 +3632,48 @@ function VerticalRuler({ totalHeightMm, pxPerMm, hover }: { totalHeightMm: numbe
 // cables come from, and form of separation + standard.
 // One bay's slice of the ArTuK red strip: "ABB" in a white box at the left
 // corner and "ArTu" at the right.
-function ArtukStripSegment({ widthPx, heightPx }: { widthPx: number; heightPx: number }) {
+function ArtukStripSegment({
+  widthPx,
+  heightPx,
+}: {
+  widthPx: number;
+  heightPx: number;
+}) {
   const fontSize = Math.max(4, heightPx * 0.6);
-  const box = "flex items-center bg-white px-0.5 font-bold leading-none text-red-600";
+  const box =
+    "flex items-center bg-white px-0.5 font-bold leading-none text-red-600";
   return (
-    <div className="flex items-center justify-between overflow-hidden border-r border-red-800/40 px-0.5" style={{ width: widthPx, height: heightPx }}>
-      <span className={box} style={{ fontSize, height: heightPx * 0.8 }}>ABB</span>
-      <span className={box} style={{ fontSize, height: heightPx * 0.8 }}>ArTu</span>
+    <div
+      className="flex items-center justify-between overflow-hidden border-r border-red-800/40 px-0.5"
+      style={{ width: widthPx, height: heightPx }}
+    >
+      <span className={box} style={{ fontSize, height: heightPx * 0.8 }}>
+        ABB
+      </span>
+      <span className={box} style={{ fontSize, height: heightPx * 0.8 }}>
+        ArTu
+      </span>
     </div>
   );
 }
 
 // The 60mm ArTuK level (empty space) above the topmost and below the
 // bottommost feeder, one bordered cell per bay.
-function ArtukLevelRow({ widths, heightPx }: { widths: number[]; heightPx: number }) {
+function ArtukLevelRow({
+  widths,
+  heightPx,
+}: {
+  widths: number[];
+  heightPx: number;
+}) {
   return (
     <div className="flex">
       {widths.map((w, i) => (
-        <div key={i} className="border-x border-black/70 bg-neutral-100" style={{ width: w, height: heightPx }} />
+        <div
+          key={i}
+          className="border-x border-black/70 bg-neutral-100"
+          style={{ width: w, height: heightPx }}
+        />
       ))}
     </div>
   );
@@ -2519,12 +3700,17 @@ function PanelSummaryTable({
   form: string | null;
   std: Switchboard["std"];
 }) {
-  const route = (dir: "Top" | "Bottom" | null) => (dir ? [cableAccess, dir].filter(Boolean).join(" ").toUpperCase() : "—");
+  const route = (dir: "Top" | "Bottom" | null) =>
+    dir ? [cableAccess, dir].filter(Boolean).join(" ").toUpperCase() : "—";
   const formText = form ? form.replace(/^form\s*/i, "").toUpperCase() : null;
-  const stdText = std === "ArTuK" ? "ARTU-K, IEC 61439" : std ? `IEC ${std}` : null;
+  const stdText =
+    std === "ArTuK" ? "ARTU-K, IEC 61439" : std ? `IEC ${std}` : null;
   const cell = "border border-black/70 px-2 py-1";
   return (
-    <table className="mt-4 border-collapse font-mono text-[11px] text-black" style={{ minWidth: 220 }}>
+    <table
+      className="mt-4 border-collapse font-mono text-[11px] text-black"
+      style={{ minWidth: 220 }}
+    >
       <tbody>
         <tr>
           <td colSpan={3} className={`${cell} text-center tracking-wider`}>
@@ -2538,31 +3724,39 @@ function PanelSummaryTable({
         </tr>
         <tr>
           <td className={`${cell} text-center`}>{widthMm || "—"}</td>
-          <td className={`${cell} text-center`} title={depthMm == null ? "No bay depth set yet" : undefined}>
+          <td
+            className={`${cell} text-center`}
+            title={depthMm == null ? "No bay depth set yet" : undefined}
+          >
             {depthMm ?? "—"}
           </td>
           <td className={`${cell} text-center`}>{heightMm}</td>
         </tr>
         <tr>
           <td colSpan={3} className={cell}>
-            CABLE ENTRY – <span className="text-red-600">{route(cableEntry)}</span>
+            CABLE ENTRY –{" "}
+            <span className="text-red-600">{route(cableEntry)}</span>
           </td>
         </tr>
         <tr>
           <td colSpan={3} className={cell}>
-            CABLE EXIT – <span className="text-red-600">{route(cableExit)}</span>
+            CABLE EXIT –{" "}
+            <span className="text-red-600">{route(cableExit)}</span>
           </td>
         </tr>
         {busductEntries != null && (
           <tr>
             <td colSpan={3} className={cell}>
-              BUSDUCT ENTRY – <span className="text-violet-700">TOP × {busductEntries}</span>
+              BUSDUCT ENTRY –{" "}
+              <span className="text-violet-700">TOP × {busductEntries}</span>
             </td>
           </tr>
         )}
         <tr>
           <td colSpan={3} className={cell}>
-            {[formText ? `FORM ${formText}` : null, stdText].filter(Boolean).join(", ") || "—"}
+            {[formText ? `FORM ${formText}` : null, stdText]
+              .filter(Boolean)
+              .join(", ") || "—"}
           </td>
         </tr>
       </tbody>
@@ -2607,21 +3801,32 @@ function BayColumn({
   onSelectBay: () => void;
   onSelectFeeder: (placedId: string, unitIndex: number) => void;
   onMoveBay: (direction: "left" | "right") => void;
-  onMoveFeeder: (placedId: string, unitIndex: number, direction: "up" | "down") => void;
+  onMoveFeeder: (
+    placedId: string,
+    unitIndex: number,
+    direction: "up" | "down",
+  ) => void;
   onHover: (extent: HoverExtent) => void;
   onHoverEnd: () => void;
   onRemove: (placedId: string, unitIndex: number) => void;
   tip?: string;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `bay-${vertical.id}`, disabled: readOnly });
+  const { setNodeRef, isOver } = useDroppable({
+    id: `bay-${vertical.id}`,
+    disabled: readOnly,
+  });
 
   const widthMm = vertical.width_mm ?? 0;
   const widthPx = widthMm * pxPerMm;
   const heightPx = panelHeightMm * pxPerMm;
   const compartments = computeCompartments(vertical, panelHeightMm, blankFirst);
   // the 60mm side gaps -- every bay, cable/busbar alleys included
-  const gapPx = widthMm <= 2 * FEEDER_SIDE_GAP_MM ? 0 : FEEDER_SIDE_GAP_MM * pxPerMm;
-  const feederWidthMm = widthMm <= 2 * FEEDER_SIDE_GAP_MM ? widthMm : widthMm - 2 * FEEDER_SIDE_GAP_MM;
+  const gapPx =
+    widthMm <= 2 * FEEDER_SIDE_GAP_MM ? 0 : FEEDER_SIDE_GAP_MM * pxPerMm;
+  const feederWidthMm =
+    widthMm <= 2 * FEEDER_SIDE_GAP_MM
+      ? widthMm
+      : widthMm - 2 * FEEDER_SIDE_GAP_MM;
 
   return (
     <div
@@ -2659,79 +3864,102 @@ function BayColumn({
       {/* feeders sit 60mm in from each side of the bay; their left/right
           edges are the dotted lines */}
       <div
-        className={gapPx > 0 ? "h-full border-x border-dashed border-black/50 bg-white" : "h-full bg-white"}
-        style={gapPx > 0 ? { marginLeft: gapPx, marginRight: gapPx } : undefined}
+        className={
+          gapPx > 0
+            ? "h-full border-x border-dashed border-black/50 bg-white"
+            : "h-full bg-white"
+        }
+        style={
+          gapPx > 0 ? { marginLeft: gapPx, marginRight: gapPx } : undefined
+        }
       >
-      {compartments.map((c, ci) => {
-        // compartment tag as on a GA drawing: <bay>F<n> top to bottom
-        // (blank/dummy spaces included), with its height in modules (1M = 100mm)
-        const tag = bayNumber != null ? `${bayNumber}F${ci + 1}` : null;
-        const modules = c.heightMm % 100 === 0 ? `${c.heightMm / 100}M` : `${c.heightMm}mm`;
-        // one unit at a time: a row of 4 merged MCCBs is 4 separate units
-        const isFeederSelected = c.placedId === selectedPlacedId && (c.isBlank || (c.unitIndex ?? 0) === selectedUnitIndex);
-        return (
-          <DraggableCell
-            key={c.id}
-            dragId={`placed-${vertical.id}::${c.placedId}::${c.unitIndex ?? 0}`}
-            disabled={readOnly || c.isBlank}
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectFeeder(c.placedId!, c.unitIndex ?? 0);
-            }}
-            onMouseEnter={() => onHover({ topMm: c.topMm, heightMm: c.heightMm, bayLeftMm, bayWidthMm: widthMm, label: c.label })}
-            onMouseLeave={onHoverEnd}
-            data-ga-tip={`${c.label} — ${feederWidthMm}mm W × ${c.heightMm}mm H`}
-            className={`group relative flex items-center justify-center border-b px-1 text-center last:border-b-0 ${
-              isFeederSelected ? "border-2 border-primary" : "border-black/40"
-            } ${c.isBlank ? "bg-surface-container-low/50" : "bg-white hover:bg-amber-50"}`}
-            style={{ height: Math.max(c.heightMm * pxPerMm, 1) }}
-          >
-            <span className="truncate font-telemetry-md text-[9px] uppercase tracking-wide text-black">{c.label}</span>
-            {tag && c.heightMm * pxPerMm >= 14 && (
-              <>
-                <span className="pointer-events-none absolute bottom-0 left-0.5 font-mono text-[8px] font-bold leading-none text-black">{tag}</span>
-                <span className="pointer-events-none absolute bottom-0 right-0.5 font-mono text-[8px] leading-none text-black/70">{modules}</span>
-              </>
-            )}
-            {!c.isBlank && !readOnly && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRemove(c.placedId!, c.unitIndex ?? 0);
-                }}
-                title="Move back to available feeders"
-                className="absolute right-0.5 top-0.5 text-error opacity-0 group-hover:opacity-100"
-              >
-                <Icon name="close" size={10} />
-              </button>
-            )}
-            {isFeederSelected && !readOnly && (
-              <>
+        {compartments.map((c, ci) => {
+          // compartment tag as on a GA drawing: <bay>F<n> top to bottom
+          // (blank/dummy spaces included), with its height in modules (1M = 100mm)
+          const tag = bayNumber != null ? `${bayNumber}F${ci + 1}` : null;
+          const modules =
+            c.heightMm % 100 === 0 ? `${c.heightMm / 100}M` : `${c.heightMm}mm`;
+          // one unit at a time: a row of 4 merged MCCBs is 4 separate units
+          const isFeederSelected =
+            c.placedId === selectedPlacedId &&
+            (c.isBlank || (c.unitIndex ?? 0) === selectedUnitIndex);
+          return (
+            <DraggableCell
+              key={c.id}
+              dragId={`placed-${vertical.id}::${c.placedId}::${c.unitIndex ?? 0}`}
+              disabled={readOnly || c.isBlank}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectFeeder(c.placedId!, c.unitIndex ?? 0);
+              }}
+              onMouseEnter={() =>
+                onHover({
+                  topMm: c.topMm,
+                  heightMm: c.heightMm,
+                  bayLeftMm,
+                  bayWidthMm: widthMm,
+                  label: c.label,
+                })
+              }
+              onMouseLeave={onHoverEnd}
+              data-ga-tip={`${c.label} — ${feederWidthMm}mm W × ${c.heightMm}mm H`}
+              className={`group relative flex items-center justify-center border-b px-1 text-center last:border-b-0 ${
+                isFeederSelected ? "border-2 border-primary" : "border-black/40"
+              } ${c.isBlank ? "bg-surface-container-low/50" : "bg-white hover:bg-amber-50"}`}
+              style={{ height: Math.max(c.heightMm * pxPerMm, 1) }}
+            >
+              <span className="truncate font-telemetry-md text-[9px] uppercase tracking-wide text-black">
+                {c.label}
+              </span>
+              {tag && c.heightMm * pxPerMm >= 14 && (
+                <>
+                  <span className="pointer-events-none absolute bottom-0 left-0.5 font-mono text-[8px] font-bold leading-none text-black">
+                    {tag}
+                  </span>
+                  <span className="pointer-events-none absolute bottom-0 right-0.5 font-mono text-[8px] leading-none text-black/70">
+                    {modules}
+                  </span>
+                </>
+              )}
+              {!c.isBlank && !readOnly && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    onMoveFeeder(c.placedId!, c.unitIndex ?? 0, "up");
+                    onRemove(c.placedId!, c.unitIndex ?? 0);
                   }}
-                  title="Move feeder up"
-                  className="absolute -top-3 left-1/2 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-primary bg-surface-container-lowest text-primary shadow-sm hover:bg-primary/10"
+                  title="Move back to available feeders"
+                  className="absolute right-0.5 top-0.5 text-error opacity-0 group-hover:opacity-100"
                 >
-                  <Icon name="keyboard_arrow_up" size={16} />
+                  <Icon name="close" size={10} />
                 </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onMoveFeeder(c.placedId!, c.unitIndex ?? 0, "down");
-                  }}
-                  title="Move feeder down"
-                  className="absolute -bottom-3 left-1/2 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-primary bg-surface-container-lowest text-primary shadow-sm hover:bg-primary/10"
-                >
-                  <Icon name="keyboard_arrow_down" size={16} />
-                </button>
-              </>
-            )}
-          </DraggableCell>
-        );
-      })}
+              )}
+              {isFeederSelected && !readOnly && (
+                <>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMoveFeeder(c.placedId!, c.unitIndex ?? 0, "up");
+                    }}
+                    title="Move feeder up"
+                    className="absolute -top-3 left-1/2 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-primary bg-surface-container-lowest text-primary shadow-sm hover:bg-primary/10"
+                  >
+                    <Icon name="keyboard_arrow_up" size={16} />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMoveFeeder(c.placedId!, c.unitIndex ?? 0, "down");
+                    }}
+                    title="Move feeder down"
+                    className="absolute -bottom-3 left-1/2 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-primary bg-surface-container-lowest text-primary shadow-sm hover:bg-primary/10"
+                  >
+                    <Icon name="keyboard_arrow_down" size={16} />
+                  </button>
+                </>
+              )}
+            </DraggableCell>
+          );
+        })}
       </div>
       {vertical.bay_type === "incomer" && cableEntry && (
         <div
@@ -2773,13 +4001,21 @@ function BusbarDetailsPanel({
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
-        <p className="font-label-sm text-label-sm uppercase tracking-wide text-secondary">Busbar Chamber</p>
-        <button onClick={onClose} title="Deselect" className="text-secondary hover:text-on-surface">
+        <p className="font-label-sm text-label-sm uppercase tracking-wide text-secondary">
+          Busbar Chamber
+        </p>
+        <button
+          onClick={onClose}
+          title="Deselect"
+          className="text-secondary hover:text-on-surface"
+        >
           <Icon name="close" size={14} />
         </button>
       </div>
       <label className="mb-2 block">
-        <span className="mb-1 block text-[10px] font-medium text-on-surface-variant">Height</span>
+        <span className="mb-1 block text-[10px] font-medium text-on-surface-variant">
+          Height
+        </span>
         <div className="flex items-end gap-2">
           <input
             type="text"
@@ -2799,11 +4035,15 @@ function BusbarDetailsPanel({
         </div>
       </label>
       <p className="text-[11px] leading-snug text-on-surface-variant">
-        Height of the main horizontal busbar chamber, spanning the full width of the switchboard.
+        Height of the main horizontal busbar chamber, spanning the full width of
+        the switchboard.
       </p>
       {abbHeight != null && (
-        <p className={`mt-2 text-[11px] leading-snug ${abbHeight === height ? "text-on-surface-variant" : "text-amber-700"}`}>
-          ABB ArTuK: {abbHeight}mm for a {mainBarLabel} main bar (up to 80×10 → 200, 100–160 → 300, 200×10 → 400).
+        <p
+          className={`mt-2 text-[11px] leading-snug ${abbHeight === height ? "text-on-surface-variant" : "text-amber-700"}`}
+        >
+          ABB ArTuK: {abbHeight}mm for a {mainBarLabel} main bar (up to 80×10 →
+          200, 100–160 → 300, 200×10 → 400).
           {abbHeight !== height && !readOnly && (
             <button
               onClick={() => {
@@ -2852,8 +4092,14 @@ function PlacedItemPanel({
   const isDummy = placedId.endsWith("::dummy");
   const row = bay.placed.find((p) => p.id === placedId) ?? null;
   const compartments = computeCompartments(bay, panelHeightMm, blankFirst);
-  const current = compartments.find((c) => (isDummy ? c.isBlank : c.placedId === placedId && (c.unitIndex ?? 0) === unitIndex));
-  const custom = isDummy ? bay.dummy_height_mm : (row?.unit_heights?.[unitIndex] ?? null);
+  const current = compartments.find((c) =>
+    isDummy
+      ? c.isBlank
+      : c.placedId === placedId && (c.unitIndex ?? 0) === unitIndex,
+  );
+  const custom = isDummy
+    ? bay.dummy_height_mm
+    : (row?.unit_heights?.[unitIndex] ?? null);
   const standard = row ? compartmentHeightFor(row.feeder) : null;
   const [local, setLocal] = useState(custom != null ? String(custom) : "");
   const usedMm = compartments.reduce((s, c) => s + c.heightMm, 0);
@@ -2870,26 +4116,40 @@ function PlacedItemPanel({
   return (
     <div className="mb-4 border-b border-surface-container-high pb-4">
       <div className="mb-2 flex items-center justify-between">
-        <p className="font-label-sm text-label-sm uppercase tracking-wide text-secondary">{isDummy ? "Blank space" : "Feeder"}</p>
-        <button onClick={onClose} title="Deselect" className="text-secondary hover:text-on-surface">
+        <p className="font-label-sm text-label-sm uppercase tracking-wide text-secondary">
+          {isDummy ? "Blank space" : "Feeder"}
+        </p>
+        <button
+          onClick={onClose}
+          title="Deselect"
+          className="text-secondary hover:text-on-surface"
+        >
           <Icon name="close" size={14} />
         </button>
       </div>
-      <p className="text-sm font-semibold text-on-surface">{isDummy ? blankCompartmentLabel(bay.bay_type) : row!.feeder.name}</p>
+      <p className="text-sm font-semibold text-on-surface">
+        {isDummy ? blankCompartmentLabel(bay.bay_type) : row!.feeder.name}
+      </p>
       <p className="mb-3 text-[11px] text-on-surface-variant">
         {bay.name}
-        {!isDummy && row!.qty > 1 ? ` · unit ${unitIndex + 1} of ${row!.qty}` : ""}
+        {!isDummy && row!.qty > 1
+          ? ` · unit ${unitIndex + 1} of ${row!.qty}`
+          : ""}
         {current ? ` · ${current.heightMm}mm now` : ""}
       </p>
 
       <label className="mb-1 block">
-        <span className="mb-1 block text-[10px] font-medium text-on-surface-variant">Height (mm){custom != null ? " •" : ""}</span>
+        <span className="mb-1 block text-[10px] font-medium text-on-surface-variant">
+          Height (mm){custom != null ? " •" : ""}
+        </span>
         <input
           type="text"
           inputMode="decimal"
           value={local}
           disabled={readOnly}
-          placeholder={isDummy ? "fills the space left" : `${standard} (standard)`}
+          placeholder={
+            isDummy ? "fills the space left" : `${standard} (standard)`
+          }
           onChange={(e) => setLocal(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
@@ -2913,17 +4173,22 @@ function PlacedItemPanel({
           }}
           className="btn btn-outline btn-sm mb-2 w-full"
         >
-          <Icon name="restart_alt" size={14} /> {isDummy ? "Fill remaining height" : "Use standard height"}
+          <Icon name="restart_alt" size={14} />{" "}
+          {isDummy ? "Fill remaining height" : "Use standard height"}
         </button>
       )}
       {overflow > 0 && (
         <p className="mb-2 flex gap-1 text-[11px] leading-snug text-error">
           <Icon name="warning" size={12} className="mt-0.5" />
-          This bay&apos;s compartments add up to {usedMm}mm — {overflow}mm more than the {panelHeightMm}mm panel.
+          This bay&apos;s compartments add up to {usedMm}mm — {overflow}mm more
+          than the {panelHeightMm}mm panel.
         </p>
       )}
       {!isDummy && !readOnly && (
-        <button onClick={onRemove} className="btn btn-outline btn-sm w-full text-error">
+        <button
+          onClick={onRemove}
+          className="btn btn-outline btn-sm w-full text-error"
+        >
           <Icon name="undo" size={14} /> Remove from bay (back to feeder list)
         </button>
       )}
@@ -2934,6 +4199,7 @@ function PlacedItemPanel({
 function BayDetailsPanel({
   vertical,
   readOnly,
+  onChooseConfig,
   onRename,
   onDimChange,
   busductEntries,
@@ -2943,6 +4209,8 @@ function BayDetailsPanel({
 }: {
   vertical: VerticalWithFeeders | null;
   readOnly: boolean;
+  /** opens the ArTu-K standard bay picker (ArTuK panels only) */
+  onChooseConfig?: () => void;
   onRename: (name: string) => void;
   onDimChange: (field: "width_mm" | "depth_mm", value: string) => void;
   // busduct top entries in this bay; null when the panel has no busducts
@@ -2952,14 +4220,20 @@ function BayDetailsPanel({
   onClose: () => void;
 }) {
   const [localName, setLocalName] = useState(vertical?.name ?? "");
-  const [localWidth, setLocalWidth] = useState(vertical?.width_mm ? String(vertical.width_mm) : "");
-  const [localDepth, setLocalDepth] = useState(vertical?.depth_mm ? String(vertical.depth_mm) : "");
+  const [localWidth, setLocalWidth] = useState(
+    vertical?.width_mm ? String(vertical.width_mm) : "",
+  );
+  const [localDepth, setLocalDepth] = useState(
+    vertical?.depth_mm ? String(vertical.depth_mm) : "",
+  );
 
   if (!vertical) {
     return (
       <p className="font-body-sm text-body-sm text-on-surface-variant">
-        Click a bay in the drawing to edit its name, type, and dimensions here, and to reposition it (drag arrows appear on the bay, or use the
-        Left/Right arrow keys). Click a feeder within a bay to reorder it (Up/Down arrow keys).
+        Click a bay in the drawing to edit its name, type, and dimensions here,
+        and to reposition it (drag arrows appear on the bay, or use the
+        Left/Right arrow keys). Click a feeder within a bay to reorder it
+        (Up/Down arrow keys).
       </p>
     );
   }
@@ -2967,13 +4241,21 @@ function BayDetailsPanel({
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
-        <p className="font-label-sm text-label-sm uppercase tracking-wide text-secondary">Bay Details</p>
-        <button onClick={onClose} title="Deselect" className="text-secondary hover:text-on-surface">
+        <p className="font-label-sm text-label-sm uppercase tracking-wide text-secondary">
+          Bay Details
+        </p>
+        <button
+          onClick={onClose}
+          title="Deselect"
+          className="text-secondary hover:text-on-surface"
+        >
           <Icon name="close" size={14} />
         </button>
       </div>
       <label className="mb-2 block">
-        <span className="mb-1 block text-[10px] font-medium text-on-surface-variant">Name</span>
+        <span className="mb-1 block text-[10px] font-medium text-on-surface-variant">
+          Name
+        </span>
         <input
           value={localName}
           disabled={readOnly}
@@ -2989,7 +4271,9 @@ function BayDetailsPanel({
       )}
       <div className="mb-3 flex items-end gap-2">
         <label>
-          <span className="mb-1 block text-[10px] font-medium text-on-surface-variant">Width</span>
+          <span className="mb-1 block text-[10px] font-medium text-on-surface-variant">
+            Width
+          </span>
           <input
             type="text"
             inputMode="decimal"
@@ -3000,7 +4284,13 @@ function BayDetailsPanel({
             onBlur={() => {
               // alleys can't go below 420mm -- show the clamped value
               const n = Number(localWidth);
-              const v = localWidth && vertical && isAlley(vertical.bay_type) && n < ALLEY_MIN_WIDTH_MM ? String(ALLEY_MIN_WIDTH_MM) : localWidth;
+              const v =
+                localWidth &&
+                vertical &&
+                isAlley(vertical.bay_type) &&
+                n < ALLEY_MIN_WIDTH_MM
+                  ? String(ALLEY_MIN_WIDTH_MM)
+                  : localWidth;
               if (v !== localWidth) setLocalWidth(v);
               onDimChange("width_mm", v);
             }}
@@ -3008,7 +4298,9 @@ function BayDetailsPanel({
           />
         </label>
         <label>
-          <span className="mb-1 block text-[10px] font-medium text-on-surface-variant">Depth</span>
+          <span className="mb-1 block text-[10px] font-medium text-on-surface-variant">
+            Depth
+          </span>
           <input
             type="text"
             inputMode="decimal"
@@ -3022,9 +4314,19 @@ function BayDetailsPanel({
         </label>
         <span className="pb-1.5 text-xs text-on-surface-variant">mm</span>
       </div>
+      {onChooseConfig && (
+        <button
+          onClick={onChooseConfig}
+          className="btn btn-outline btn-sm mb-3 w-full"
+        >
+          Choose ArTu-K bay config…
+        </button>
+      )}
       {busductEntries != null && (
         <div className="mb-3">
-          <span className="mb-1 block text-[10px] font-medium text-on-surface-variant">Busduct top entries</span>
+          <span className="mb-1 block text-[10px] font-medium text-on-surface-variant">
+            Busduct top entries
+          </span>
           <div className="flex items-center gap-2">
             <button
               disabled={readOnly || busductEntries === 0}
@@ -3033,15 +4335,24 @@ function BayDetailsPanel({
             >
               −
             </button>
-            <span className="w-6 text-center text-sm font-semibold text-violet-700">{busductEntries}</span>
-            <button disabled={readOnly} onClick={() => onBusductChange(busductEntries + 1)} className="h-6 w-6 rounded border border-surface-container-high text-sm disabled:opacity-40">
+            <span className="w-6 text-center text-sm font-semibold text-violet-700">
+              {busductEntries}
+            </span>
+            <button
+              disabled={readOnly}
+              onClick={() => onBusductChange(busductEntries + 1)}
+              className="h-6 w-6 rounded border border-surface-container-high text-sm disabled:opacity-40"
+            >
               +
             </button>
           </div>
         </div>
       )}
       {!readOnly && (
-        <button onClick={onDelete} className="font-body-sm text-body-sm text-error hover:underline">
+        <button
+          onClick={onDelete}
+          className="font-body-sm text-body-sm text-error hover:underline"
+        >
           Delete bay
         </button>
       )}
