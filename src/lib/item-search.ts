@@ -20,6 +20,14 @@ function haystack(i: ItemMaster) {
     .toLowerCase();
 }
 
+/** how many of the phrases this item matches (0 = no match) */
+export function itemSearchScore(item: ItemMaster, phrases: string[]): number {
+  const h = haystack(item);
+  let score = 0;
+  for (const p of phrases) if (h.includes(p)) score++;
+  return score;
+}
+
 export function searchItems(
   items: ItemMaster[],
   query: string,
@@ -31,9 +39,7 @@ export function searchItems(
   const scored: { item: ItemMaster; score: number; idx: number }[] = [];
   items.forEach((item, idx) => {
     if (!keep(item)) return;
-    const h = haystack(item);
-    let score = 0;
-    for (const p of phrases) if (h.includes(p)) score++;
+    const score = itemSearchScore(item, phrases);
     if (score > 0) scored.push({ item, score, idx });
   });
   scored.sort((a, b) => b.score - a.score || a.idx - b.idx);

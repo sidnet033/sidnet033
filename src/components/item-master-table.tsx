@@ -1,5 +1,7 @@
 "use client";
 
+import { itemSearchScore, searchPhrases } from "@/lib/item-search";
+import { ItemSearchHelp } from "@/components/search-help";
 import { MrpLpInfo } from "@/components/mrp-lp-info";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ExcelJS from "exceljs";
@@ -533,15 +535,11 @@ export function ItemMasterTable({
     return dupIds;
   }, [items]);
 
+  // "a|b|c" matches items with ANY of the phrases (see lib/item-search)
+  const phrases = searchPhrases(search);
   function matchesBase(item: ItemMaster) {
-    const q = search.toLowerCase();
     const matchesSearch =
-      !q ||
-      (item.sku ?? "").toLowerCase().includes(q) ||
-      (item.vendor_cat ?? "").toLowerCase().includes(q) ||
-      item.description.toLowerCase().includes(q) ||
-      (item.make ?? "").toLowerCase().includes(q) ||
-      (item.category ?? "").toLowerCase().includes(q);
+      phrases.length === 0 || itemSearchScore(item, phrases) > 0;
     return (
       matchesSearch &&
       (!makeFilter || item.make === makeFilter) &&
@@ -566,6 +564,18 @@ export function ItemMasterTable({
       ? baseFiltered
       : baseFiltered.filter((i) => i.status === statusFilter);
 
+  // several phrases and no column sort: best matches first
+  const ranked =
+    !sortKey && phrases.length > 1
+      ? filtered
+          .map((item, idx) => ({
+            item,
+            idx,
+            score: itemSearchScore(item, phrases),
+          }))
+          .sort((a, b) => b.score - a.score || a.idx - b.idx)
+          .map((x) => x.item)
+      : filtered;
   const sorted = sortKey
     ? [...filtered].sort((a, b) => {
         const av = a[sortKey as keyof ItemMaster];
@@ -579,7 +589,7 @@ export function ItemMasterTable({
           ? String(av).localeCompare(String(bv))
           : String(bv).localeCompare(String(av));
       })
-    : filtered;
+    : ranked;
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / rowsPerPage));
   const currentPage = Math.min(page, totalPages);
@@ -1321,9 +1331,10 @@ export function ItemMasterTable({
               ref={searchRef}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by SKU, part code, description, or ratings..."
-              className="h-9 w-full rounded-[4px] bg-surface-container-low pl-8 pr-12 text-sm text-on-surface placeholder:text-secondary focus:outline-none focus:ring-1 focus:ring-primary"
+              placeholder="Search SKU, cat #, make, category, description — use | for several"
+              className="h-9 w-full rounded-[4px] bg-surface-container-low pl-8 pr-16 text-sm text-on-surface placeholder:text-secondary focus:outline-none focus:ring-1 focus:ring-primary"
             />
+            <ItemSearchHelp className="right-10 top-1/2 -translate-y-1/2" />
             <span className="absolute right-2 top-1/2 -translate-y-1/2 rounded bg-surface-container-highest px-1.5 py-0.5 text-[10px] font-semibold text-secondary">
               ⌘K
             </span>

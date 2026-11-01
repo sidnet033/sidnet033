@@ -3,9 +3,13 @@
 import { Icon } from "@/components/icon";
 
 // ⓘ next to an item search box: how multi-phrase search works.
-export function ItemSearchHelp() {
+export function ItemSearchHelp({
+  className = "right-2",
+}: {
+  className?: string;
+}) {
   return (
-    <span className="group absolute right-2 inline-flex">
+    <span className={`group absolute inline-flex ${className}`}>
       <button
         type="button"
         tabIndex={0}
