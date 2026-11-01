@@ -491,6 +491,20 @@ export function FeederMasterWorkspace({
             }
             return { lines, feeders: count };
           }}
+          currentFor={(itemId) => {
+            const seen = new Map<
+              string,
+              { lp: number | null; disc: number | null }
+            >();
+            for (const f of feeders)
+              for (const l of linesByFeeder[f.id] ?? [])
+                if (l.item_id === itemId) {
+                  const lp = l.list_price_override ?? l.item.list_price;
+                  const disc = l.discount_pct_override ?? l.item.discount_pct;
+                  seen.set(`${lp}|${disc}`, { lp, disc });
+                }
+            return [...seen.values()];
+          }}
           onApply={async (updates) => {
             const { data, error } = await supabase.rpc(
               "bulk_update_library_prices",

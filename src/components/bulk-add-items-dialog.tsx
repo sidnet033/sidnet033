@@ -21,12 +21,15 @@ export function BulkAddItemsDialog({
   feederName,
   allItems,
   existingItemIds,
+  existingQty,
   onAdd,
   onClose,
 }: {
   feederName: string;
   allItems: ItemMaster[];
   existingItemIds: Set<string>;
+  /** current qty of each item already in the feeder -- shown as old -> new */
+  existingQty?: Map<string, number>;
   onAdd: (entries: { item: ItemMaster; qty: number }[]) => void;
   onClose: () => void;
 }) {
@@ -43,10 +46,14 @@ export function BulkAddItemsDialog({
       Object.fromEntries(
         parsed.map((r) => [
           r.key,
-          // discontinued items start unticked so they aren't added by accident
+          // discontinued items start unticked so they aren't added by
+          // accident; so do items already in the feeder -- changing an
+          // existing line's qty needs the user's explicit approval (tick)
           {
             include:
-              r.matches.length > 0 && r.matches[0].status !== "discontinued",
+              r.matches.length > 0 &&
+              r.matches[0].status !== "discontinued" &&
+              !existingItemIds.has(r.matches[0].id),
             qty: r.qty,
             itemId: r.matches[0]?.id ?? null,
           },
@@ -292,8 +299,11 @@ export function BulkAddItemsDialog({
                           {item && existingItemIds.has(item.id) && (
                             <span className="flex items-center gap-1 font-medium text-amber-700">
                               <Icon name="warning" size={13} /> Already in this
-                              feeder — if added, its qty is added to the
-                              existing line. Untick to skip.
+                              feeder
+                              {existingQty?.has(item.id)
+                                ? ` — qty ${existingQty.get(item.id)} → ${(existingQty.get(item.id) ?? 0) + (Number(state[r.key]?.qty) || 0)}`
+                                : " — its qty is added to the existing line"}
+                              . Tick to approve.
                             </span>
                           )}
                         </td>

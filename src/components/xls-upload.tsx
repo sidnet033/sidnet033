@@ -187,7 +187,9 @@ export function XlsUpload({
     setErrorText(null);
   }
 
-  const open = stage !== "idle";
+  // one dialog at a time: while the user reviews changes to existing items,
+  // the progress dialog is hidden (it comes back once they decide)
+  const open = stage !== "idle" && !review;
   const pct =
     progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
 
@@ -240,7 +242,9 @@ export function XlsUpload({
                 <p className="text-xs text-on-surface-variant">
                   {stage === "reading"
                     ? "Reading file..."
-                    : `Importing row ${progress.done} of ${progress.total}...`}
+                    : progress.done === 0
+                      ? `Checking ${progress.total} rows against Item Master...`
+                      : `Importing row ${progress.done} of ${progress.total}...`}
                 </p>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-surface-container-high">
                   <div

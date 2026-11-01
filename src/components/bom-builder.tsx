@@ -2082,6 +2082,20 @@ export function BomBuilder({
             }
             return { lines, feeders };
           }}
+          currentFor={(itemId) => {
+            const seen = new Map<
+              string,
+              { lp: number | null; disc: number | null }
+            >();
+            for (const m of draft.modules)
+              for (const l of m.lines)
+                if (l.item_id === itemId) {
+                  const lp = l.list_price_override ?? l.item.list_price;
+                  const disc = l.discount_pct_override ?? l.item.discount_pct;
+                  seen.set(`${lp}|${disc}`, { lp, disc });
+                }
+            return [...seen.values()];
+          }}
           onApply={(updates) => {
             const byItem = new Map(updates.map((u) => [u.item.id, u]));
             setDraft((d) =>
@@ -2894,6 +2908,7 @@ function FeederModuleCard({
               feederName={mod.feeder.name}
               allItems={allItems}
               existingItemIds={new Set(mod.lines.map((l) => l.item_id))}
+              existingQty={new Map(mod.lines.map((l) => [l.item_id, l.qty]))}
               onAdd={(entries) => {
                 onAddLines(entries);
                 setBulkAddOpen(false);
