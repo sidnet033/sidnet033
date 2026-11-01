@@ -1,5 +1,6 @@
 "use client";
 
+import { ColorLegend } from "@/components/color-legend";
 import { FilterSelect, filterHit } from "@/components/multi-filter";
 import { itemSearchScore, searchPhrases } from "@/lib/item-search";
 import { ItemSearchHelp } from "@/components/search-help";
@@ -1290,7 +1291,10 @@ export function ItemMasterTable({
       <SavingOverlay show={saving} />
       <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
         <div>
-          <h1 className="text-[18px] font-bold text-on-surface">Item Master</h1>
+          <h1 className="flex items-center gap-2 text-[18px] font-bold text-on-surface">
+            Item Master{" "}
+            <ColorLegend parts={["items", "editing"]} align="left" />
+          </h1>
           <p className="text-sm text-secondary">
             Every component and its cost. Feeders in the Feeder Master are built
             from these items.

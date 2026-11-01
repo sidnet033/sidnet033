@@ -1,5 +1,6 @@
 "use client";
 
+import { ColorLegend } from "@/components/color-legend";
 import { PastePricesDialog } from "@/components/paste-prices-dialog";
 import { searchByPhrases, searchItems, searchPhrases } from "@/lib/item-search";
 import { ItemSearchHelp } from "@/components/search-help";
@@ -2172,6 +2173,7 @@ export function BomBuilder({
                 {visibleModules.length} of {draft.modules.length} feeders
               </span>
             )}
+            <ColorLegend parts={["items", "feeders"]} />
             <button
               onClick={() =>
                 setOpenIds(new Set(visibleModules.map((m) => m.feeder.id)))
@@ -2990,13 +2992,18 @@ function FeederModuleCard({
                 />
                 <ItemSearchHelp />
               </div>
-              {itemCategories.length > 0 && (
-                <CategoryFilter
-                  categories={itemCategories}
-                  selected={categoryChips}
-                  onChange={setCategoryChips}
-                />
-              )}
+              <div className="flex items-center justify-between gap-2">
+                {itemCategories.length > 0 ? (
+                  <CategoryFilter
+                    categories={itemCategories}
+                    selected={categoryChips}
+                    onChange={setCategoryChips}
+                  />
+                ) : (
+                  <span />
+                )}
+                <ColorLegend parts={["items"]} />
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-space-md pt-2">

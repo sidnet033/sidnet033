@@ -1,5 +1,6 @@
 "use client";
 
+import { ColorLegend } from "@/components/color-legend";
 import { searchItems } from "@/lib/item-search";
 import { ItemSearchHelp } from "@/components/search-help";
 import { useState } from "react";
@@ -132,7 +133,14 @@ export function AdHocFeederPanel({
   }
 
   return (
-    <Modal title="Create New Feeder" onClose={reset}>
+    <Modal
+      title={
+        <span className="flex items-center gap-2">
+          Create New Feeder <ColorLegend parts={["items"]} align="left" />
+        </span>
+      }
+      onClose={reset}
+    >
       <div className="space-y-2">
         <SavingOverlay show={saving} label="Creating feeder..." />
         <input

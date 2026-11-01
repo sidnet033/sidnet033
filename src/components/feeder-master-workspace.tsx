@@ -1,5 +1,6 @@
 "use client";
 
+import { ColorLegend } from "@/components/color-legend";
 import { FilterSelect, filterHit } from "@/components/multi-filter";
 import { PastePricesDialog } from "@/components/paste-prices-dialog";
 import { searchByPhrases, searchItems } from "@/lib/item-search";
@@ -604,6 +605,7 @@ export function FeederMasterWorkspace({
               <h2 className="font-headline-sm text-headline-sm text-on-surface">
                 Standard Feeder Library
               </h2>
+              <ColorLegend parts={["items"]} align="left" />
             </div>
             <div className="flex flex-wrap items-center gap-space-sm">
               <div className="relative flex w-72 items-center">
@@ -1153,6 +1155,9 @@ export function FeederMasterWorkspace({
                     selected={categoryChips}
                     onChange={setCategoryChips}
                   />
+                  <span className="ml-auto">
+                    <ColorLegend parts={["items"]} />
+                  </span>
                 </div>
               </div>
 

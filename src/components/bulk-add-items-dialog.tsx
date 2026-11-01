@@ -1,9 +1,14 @@
 "use client";
 
+import { ColorLegend } from "@/components/color-legend";
 import { useMemo, useState } from "react";
 import { Icon } from "@/components/icon";
 import { itemCode, itemRowClass } from "@/lib/item-display";
-import { buildItemIndex, parsePastedCodes, type PasteRow } from "@/lib/item-paste";
+import {
+  buildItemIndex,
+  parsePastedCodes,
+  type PasteRow,
+} from "@/lib/item-paste";
 import { numericKeyGuard } from "@/lib/numeric-input";
 import type { ItemMaster } from "@/types/database";
 
@@ -39,22 +44,40 @@ export function BulkAddItemsDialog({
         parsed.map((r) => [
           r.key,
           // discontinued items start unticked so they aren't added by accident
-          { include: r.matches.length > 0 && r.matches[0].status !== "discontinued", qty: r.qty, itemId: r.matches[0]?.id ?? null },
-        ])
-      )
+          {
+            include:
+              r.matches.length > 0 && r.matches[0].status !== "discontinued",
+            qty: r.qty,
+            itemId: r.matches[0]?.id ?? null,
+          },
+        ]),
+      ),
     );
   }
 
-  const byId = useMemo(() => new Map(allItems.map((i) => [i.id, i])), [allItems]);
+  const byId = useMemo(
+    () => new Map(allItems.map((i) => [i.id, i])),
+    [allItems],
+  );
   const found = rows?.filter((r) => r.matches.length > 0) ?? [];
   const missing = rows?.filter((r) => r.matches.length === 0) ?? [];
-  const chosen = (rows ?? []).filter((r) => state[r.key]?.include && state[r.key]?.itemId);
-  const alreadyIn = (rows ?? []).filter((r) => r.matches.length > 0 && state[r.key]?.itemId && existingItemIds.has(state[r.key].itemId!));
+  const chosen = (rows ?? []).filter(
+    (r) => state[r.key]?.include && state[r.key]?.itemId,
+  );
+  const alreadyIn = (rows ?? []).filter(
+    (r) =>
+      r.matches.length > 0 &&
+      state[r.key]?.itemId &&
+      existingItemIds.has(state[r.key].itemId!),
+  );
 
   // Codes not in Item Master, as "code<TAB>qty" lines -- pastes straight
   // into Excel (two columns) to create them in Item Master later.
   async function copyMissing() {
-    const text = ["code\tqty", ...missing.map((r) => `${r.code}\t${r.qty}`)].join("\n");
+    const text = [
+      "code\tqty",
+      ...missing.map((r) => `${r.code}\t${r.qty}`),
+    ].join("\n");
     try {
       await navigator.clipboard.writeText(text);
     } catch {
@@ -78,20 +101,39 @@ export function BulkAddItemsDialog({
     const totals = new Map<string, number>();
     for (const r of chosen) {
       const s = state[r.key];
-      totals.set(s.itemId!, (totals.get(s.itemId!) ?? 0) + (s.qty > 0 ? s.qty : 1));
+      totals.set(
+        s.itemId!,
+        (totals.get(s.itemId!) ?? 0) + (s.qty > 0 ? s.qty : 1),
+      );
     }
-    onAdd([...totals.entries()].map(([id, qty]) => ({ item: byId.get(id)!, qty })));
+    onAdd(
+      [...totals.entries()].map(([id, qty]) => ({ item: byId.get(id)!, qty })),
+    );
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse-surface/40 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-surface-container-lowest shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-inverse-surface/40 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-surface-container-lowest shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between border-b border-surface-container-high px-5 py-3">
           <div>
-            <h2 className="text-base font-semibold text-on-surface">Paste item codes</h2>
-            <p className="text-xs text-secondary">Add several items to “{feederName}” at once.</p>
+            <h2 className="flex items-center gap-2 text-base font-semibold text-on-surface">
+              Paste item codes <ColorLegend parts={["items"]} align="left" />
+            </h2>
+            <p className="text-xs text-secondary">
+              Add several items to “{feederName}” at once.
+            </p>
           </div>
-          <button onClick={onClose} className="text-secondary hover:text-on-surface" title="Close">
+          <button
+            onClick={onClose}
+            className="text-secondary hover:text-on-surface"
+            title="Close"
+          >
             <Icon name="close" size={18} />
           </button>
         </div>
@@ -99,7 +141,8 @@ export function BulkAddItemsDialog({
         <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
           <div>
             <label className="mb-1 block text-xs font-medium text-on-surface-variant">
-              Paste SKUs or catalogue numbers, one per line. A quantity in the next column (from Excel) is picked up too; otherwise it&apos;s 1.
+              Paste SKUs or catalogue numbers, one per line. A quantity in the
+              next column (from Excel) is picked up too; otherwise it&apos;s 1.
             </label>
             <textarea
               value={text}
@@ -112,7 +155,11 @@ export function BulkAddItemsDialog({
               className="w-full rounded border border-surface-container-high px-2 py-1.5 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
             />
             <div className="mt-1 flex justify-end">
-              <button onClick={check} disabled={!text.trim()} className="btn btn-secondary btn-sm">
+              <button
+                onClick={check}
+                disabled={!text.trim()}
+                className="btn btn-secondary btn-sm"
+              >
                 <Icon name="search" size={14} /> Check codes
               </button>
             </div>
@@ -121,19 +168,35 @@ export function BulkAddItemsDialog({
           {rows && (
             <>
               <div className="flex flex-wrap gap-2 text-xs">
-                <span className="rounded bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">{found.length} found</span>
-                {missing.length > 0 && <span className="rounded bg-red-50 px-2 py-0.5 font-medium text-red-700">{missing.length} not found</span>}
+                <span className="rounded bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">
+                  {found.length} found
+                </span>
+                {missing.length > 0 && (
+                  <span className="rounded bg-red-50 px-2 py-0.5 font-medium text-red-700">
+                    {missing.length} not found
+                  </span>
+                )}
                 {alreadyIn.length > 0 && (
-                  <span className="rounded bg-amber-50 px-2 py-0.5 font-medium text-amber-700">{alreadyIn.length} already in this feeder</span>
+                  <span className="rounded bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
+                    {alreadyIn.length} already in this feeder
+                  </span>
                 )}
                 {missing.length > 0 && (
-                  <button onClick={copyMissing} className="ml-auto flex items-center gap-1 rounded border border-red-200 px-2 py-0.5 font-medium text-red-700 hover:bg-red-50" title="Copy the codes not found (with qty) to paste into Excel">
-                    <Icon name={copied ? "check" : "content_copy"} size={13} /> {copied ? "Copied" : `Copy ${missing.length} missing code${missing.length === 1 ? "" : "s"}`}
+                  <button
+                    onClick={copyMissing}
+                    className="ml-auto flex items-center gap-1 rounded border border-red-200 px-2 py-0.5 font-medium text-red-700 hover:bg-red-50"
+                    title="Copy the codes not found (with qty) to paste into Excel"
+                  >
+                    <Icon name={copied ? "check" : "content_copy"} size={13} />{" "}
+                    {copied
+                      ? "Copied"
+                      : `Copy ${missing.length} missing code${missing.length === 1 ? "" : "s"}`}
                   </button>
                 )}
                 {rows.some((r) => r.matches.length > 1) && (
                   <span className="rounded bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
-                    {rows.filter((r) => r.matches.length > 1).length} with several matches — pick one
+                    {rows.filter((r) => r.matches.length > 1).length} with
+                    several matches — pick one
                   </span>
                 )}
               </div>
@@ -158,7 +221,14 @@ export function BulkAddItemsDialog({
                       >
                         <td className="px-1 py-1">
                           {r.matches.length > 0 && (
-                            <input type="checkbox" checked={s.include} onChange={() => patch(r.key, { include: !s.include })} aria-label={`Add ${r.code}`} />
+                            <input
+                              type="checkbox"
+                              checked={s.include}
+                              onChange={() =>
+                                patch(r.key, { include: !s.include })
+                              }
+                              aria-label={`Add ${r.code}`}
+                            />
                           )}
                         </td>
                         <td className="px-2 py-1 font-mono">{r.code}</td>
@@ -168,7 +238,11 @@ export function BulkAddItemsDialog({
                               type="text"
                               inputMode="decimal"
                               value={s.qty}
-                              onChange={(e) => patch(r.key, { qty: Number(e.target.value) || 0 })}
+                              onChange={(e) =>
+                                patch(r.key, {
+                                  qty: Number(e.target.value) || 0,
+                                })
+                              }
                               onKeyDown={numericKeyGuard()}
                               className="w-14 rounded border border-surface-container-high px-1 py-0.5 text-right"
                             />
@@ -178,33 +252,48 @@ export function BulkAddItemsDialog({
                         </td>
                         <td className="px-2 py-1">
                           {r.matches.length === 0 ? (
-                            <span className="text-red-700">Not found in Item Master</span>
+                            <span className="text-red-700">
+                              Not found in Item Master
+                            </span>
                           ) : r.matches.length === 1 ? (
                             <span className={itemRowClass(r.matches[0])}>
-                              <span className="font-mono">{itemCode(r.matches[0])}</span> — {r.matches[0].description}
-                              {r.matches[0].make ? ` (${r.matches[0].make})` : ""}
+                              <span className="font-mono">
+                                {itemCode(r.matches[0])}
+                              </span>{" "}
+                              — {r.matches[0].description}
+                              {r.matches[0].make
+                                ? ` (${r.matches[0].make})`
+                                : ""}
                             </span>
                           ) : (
                             <select
                               value={s.itemId ?? ""}
-                              onChange={(e) => patch(r.key, { itemId: e.target.value })}
+                              onChange={(e) =>
+                                patch(r.key, { itemId: e.target.value })
+                              }
                               className="w-full max-w-md rounded border border-amber-300 px-1 py-0.5"
                             >
                               {r.matches.map((m) => (
                                 <option key={m.id} value={m.id}>
                                   {itemCode(m)} — {m.description}
                                   {m.make ? ` (${m.make})` : ""}
-                                  {m.status === "discontinued" ? " — discontinued" : ""}
+                                  {m.status === "discontinued"
+                                    ? " — discontinued"
+                                    : ""}
                                 </option>
                               ))}
                             </select>
                           )}
                         </td>
                         <td className="px-2 py-1 text-[11px] text-secondary">
-                          {item?.status === "discontinued" && <span className="text-red-700">Discontinued. </span>}
+                          {item?.status === "discontinued" && (
+                            <span className="text-red-700">Discontinued. </span>
+                          )}
                           {item && existingItemIds.has(item.id) && (
                             <span className="flex items-center gap-1 font-medium text-amber-700">
-                              <Icon name="warning" size={13} /> Already in this feeder — if added, its qty is added to the existing line. Untick to skip.
+                              <Icon name="warning" size={13} /> Already in this
+                              feeder — if added, its qty is added to the
+                              existing line. Untick to skip.
                             </span>
                           )}
                         </td>
@@ -215,8 +304,9 @@ export function BulkAddItemsDialog({
               </table>
               {missing.length > 0 && (
                 <p className="text-[11px] text-secondary">
-                  Codes not found are skipped. Use <b>Copy missing codes</b> to paste them into Excel, add them to the Item Master (or use “Create
-                  New Item in Master &amp; Add”), then paste again.
+                  Codes not found are skipped. Use <b>Copy missing codes</b> to
+                  paste them into Excel, add them to the Item Master (or use
+                  “Create New Item in Master &amp; Add”), then paste again.
                 </p>
               )}
             </>
@@ -227,8 +317,13 @@ export function BulkAddItemsDialog({
           <button onClick={onClose} className="btn btn-outline btn-sm">
             Cancel
           </button>
-          <button onClick={add} disabled={!rows || chosen.length === 0} className="btn btn-primary btn-sm">
-            <Icon name="playlist_add" size={14} /> Add {chosen.length} item{chosen.length === 1 ? "" : "s"} to feeder
+          <button
+            onClick={add}
+            disabled={!rows || chosen.length === 0}
+            className="btn btn-primary btn-sm"
+          >
+            <Icon name="playlist_add" size={14} /> Add {chosen.length} item
+            {chosen.length === 1 ? "" : "s"} to feeder
           </button>
         </div>
       </div>
