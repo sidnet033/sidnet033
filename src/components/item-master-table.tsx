@@ -1,9 +1,15 @@
 "use client";
 
+import { MrpLpInfo } from "@/components/mrp-lp-info";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase/client";
-import { BREAKER_FRAME_SUGGESTIONS, fetchAllItemMaster, isFrameRequiredCategory, itemRowClass } from "@/lib/item-display";
+import {
+  BREAKER_FRAME_SUGGESTIONS,
+  fetchAllItemMaster,
+  isFrameRequiredCategory,
+  itemRowClass,
+} from "@/lib/item-display";
 import { effectiveNetRate } from "@/lib/feeder-cost";
 import type { ItemMaster, ItemStatus } from "@/types/database";
 import { XlsUpload } from "@/components/xls-upload";
@@ -182,12 +188,14 @@ const COLUMN_ALIGN: Record<ColumnKey, "left" | "right" | "center"> = {
 const CELL_CLASS: Record<ColumnKey, string> = {
   sku: "px-2 font-display font-semibold text-primary",
   vendor_cat: "px-2 font-display text-secondary",
-  description: "max-w-[420px] whitespace-normal break-words px-2 py-1.5 align-top text-on-surface",
+  description:
+    "max-w-[420px] whitespace-normal break-words px-2 py-1.5 align-top text-on-surface",
   category: "px-2",
   make: "px-2",
   source: "px-2",
   uom: "px-2 text-center font-display text-secondary",
-  unit_cost: "px-2 text-right font-display font-bold tabular-nums text-on-surface",
+  unit_cost:
+    "px-2 text-right font-display font-bold tabular-nums text-on-surface",
   list_price: "px-2 text-right font-display tabular-nums text-secondary",
   discount_pct: "px-2 text-center",
   amps: "px-2 text-right font-display font-semibold tabular-nums text-on-surface",
@@ -200,7 +208,8 @@ const CELL_CLASS: Record<ColumnKey, string> = {
   pricelisted: "px-2 text-center",
   mrp_or_lp: "px-2",
   hsn_code: "px-2 font-display text-secondary",
-  vendor_description: "max-w-[320px] whitespace-normal break-words px-2 py-1.5 align-top text-on-surface-variant",
+  vendor_description:
+    "max-w-[320px] whitespace-normal break-words px-2 py-1.5 align-top text-on-surface-variant",
 };
 
 const VIEW_STORAGE_KEY = "item-master-view";
@@ -234,7 +243,10 @@ function patchSavedView(patch: Partial<SavedView>) {
   if (typeof window === "undefined") return;
   try {
     const current = loadSavedView();
-    window.localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify({ ...current, ...patch }));
+    window.localStorage.setItem(
+      VIEW_STORAGE_KEY,
+      JSON.stringify({ ...current, ...patch }),
+    );
   } catch {
     // ignore
   }
@@ -246,7 +258,8 @@ function isColumnKey(v: string): v is ColumnKey {
 
 function makeColor(make: string) {
   let hash = 0;
-  for (let i = 0; i < make.length; i++) hash = (hash * 31 + make.charCodeAt(i)) >>> 0;
+  for (let i = 0; i < make.length; i++)
+    hash = (hash * 31 + make.charCodeAt(i)) >>> 0;
   return MAKE_COLORS[hash % MAKE_COLORS.length];
 }
 
@@ -274,7 +287,14 @@ function draftToRow(d: Draft) {
   // fallback for items with no vendor price list at all. This mirrors
   // effectiveNetRate, the same formula BOM Builder/Feeder Master use to
   // cost feeders, so the figure shown here matches what's actually costed.
-  const unit_cost = Math.round(effectiveNetRate({ unit_cost: Number(d.unit_cost) || 0, list_price, discount_pct }) * 100) / 100;
+  const unit_cost =
+    Math.round(
+      effectiveNetRate({
+        unit_cost: Number(d.unit_cost) || 0,
+        list_price,
+        discount_pct,
+      }) * 100,
+    ) / 100;
   return {
     sku: d.sku.trim() || null,
     vendor_cat: d.vendor_cat.trim() || null,
@@ -303,9 +323,11 @@ function draftToRow(d: Draft) {
 }
 
 function validateDraft(d: Draft): string | null {
-  if (!d.sku.trim() && !d.vendor_cat.trim()) return "Either SKU or Vendor Cat is required.";
+  if (!d.sku.trim() && !d.vendor_cat.trim())
+    return "Either SKU or Vendor Cat is required.";
   if (!d.description.trim()) return "Description is required.";
-  if (isFrameRequiredCategory(d.category) && !d.frame.trim()) return "Frame is required for ACB/MCCB items (e.g. E1.2, XT4).";
+  if (isFrameRequiredCategory(d.category) && !d.frame.trim())
+    return "Frame is required for ACB/MCCB items (e.g. E1.2, XT4).";
   return null;
 }
 
@@ -316,8 +338,11 @@ function csvEscape(v: unknown): string {
 
 function downloadCsv(filename: string, rows: ItemMaster[]) {
   const lines = [CSV_FIELDS.join(",")];
-  for (const item of rows) lines.push(CSV_FIELDS.map((f) => csvEscape(item[f])).join(","));
-  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  for (const item of rows)
+    lines.push(CSV_FIELDS.map((f) => csvEscape(item[f])).join(","));
+  const blob = new Blob([lines.join("\n")], {
+    type: "text/csv;charset=utf-8;",
+  });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -334,7 +359,9 @@ async function downloadXlsx(filename: string, rows: ItemMaster[]) {
     sheet.addRow(Object.fromEntries(CSV_FIELDS.map((f) => [f, item[f]])));
   }
   const buffer = await workbook.xlsx.writeBuffer();
-  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -355,20 +382,32 @@ export function ItemMasterTable({
   currentUserName: string;
 }) {
   const [items, setItems] = useState<ItemMaster[]>(initialItems);
-  const [search, setSearch] = useState(() => initialSearch || loadSavedView().search || "");
-  const [statusFilter, setStatusFilter] = useState<"all" | ItemStatus>(
-    () => (loadSavedView().statusFilter as "all" | ItemStatus) || "all"
+  const [search, setSearch] = useState(
+    () => initialSearch || loadSavedView().search || "",
   );
-  const [makeFilter, setMakeFilter] = useState(() => loadSavedView().makeFilter || "");
+  const [statusFilter, setStatusFilter] = useState<"all" | ItemStatus>(
+    () => (loadSavedView().statusFilter as "all" | ItemStatus) || "all",
+  );
+  const [makeFilter, setMakeFilter] = useState(
+    () => loadSavedView().makeFilter || "",
+  );
   // Always opens on "All categories" -- unlike the other filters, category
   // isn't restored from the saved view, since landing back on whatever
   // category was last picked (e.g. Spares) hides everything else by
   // surprise.
   const [categoryFilter, setCategoryFilter] = useState("");
-  const [ampsFilter, setAmpsFilter] = useState(() => loadSavedView().ampsFilter || "");
-  const [polesFilter, setPolesFilter] = useState(() => loadSavedView().polesFilter || "");
-  const [kaFilter, setKaFilter] = useState(() => loadSavedView().kaFilter || "");
-  const [rowsPerPage, setRowsPerPage] = useState(() => loadSavedView().rowsPerPage || 25);
+  const [ampsFilter, setAmpsFilter] = useState(
+    () => loadSavedView().ampsFilter || "",
+  );
+  const [polesFilter, setPolesFilter] = useState(
+    () => loadSavedView().polesFilter || "",
+  );
+  const [kaFilter, setKaFilter] = useState(
+    () => loadSavedView().kaFilter || "",
+  );
+  const [rowsPerPage, setRowsPerPage] = useState(
+    () => loadSavedView().rowsPerPage || 25,
+  );
   const [duplicatesOnly, setDuplicatesOnly] = useState(false);
   const [savedViewFlash, setSavedViewFlash] = useState(false);
 
@@ -387,7 +426,9 @@ export function ItemMasterTable({
     const saved = loadSavedView().sortKey;
     return saved && isColumnKey(saved) ? saved : null;
   });
-  const [sortDir, setSortDir] = useState<"asc" | "desc">(() => loadSavedView().sortDir ?? "asc");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(
+    () => loadSavedView().sortDir ?? "asc",
+  );
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDiscountOpen, setBulkDiscountOpen] = useState(false);
@@ -416,24 +457,41 @@ export function ItemMasterTable({
   }, []);
 
   const distinctMakes = useMemo(
-    () => Array.from(new Set(items.map((i) => i.make).filter((v): v is string => !!v))).sort(),
-    [items]
+    () =>
+      Array.from(
+        new Set(items.map((i) => i.make).filter((v): v is string => !!v)),
+      ).sort(),
+    [items],
   );
   const distinctCategories = useMemo(
-    () => Array.from(new Set(items.map((i) => i.category).filter((v): v is string => !!v))).sort(),
-    [items]
+    () =>
+      Array.from(
+        new Set(items.map((i) => i.category).filter((v): v is string => !!v)),
+      ).sort(),
+    [items],
   );
   const distinctAmps = useMemo(
-    () => Array.from(new Set(items.map((i) => i.amps).filter((v): v is number => v != null))).sort((a, b) => a - b),
-    [items]
+    () =>
+      Array.from(
+        new Set(items.map((i) => i.amps).filter((v): v is number => v != null)),
+      ).sort((a, b) => a - b),
+    [items],
   );
   const distinctPoles = useMemo(
-    () => Array.from(new Set(items.map((i) => i.poles).filter((v): v is number => v != null))).sort((a, b) => a - b),
-    [items]
+    () =>
+      Array.from(
+        new Set(
+          items.map((i) => i.poles).filter((v): v is number => v != null),
+        ),
+      ).sort((a, b) => a - b),
+    [items],
   );
   const distinctKa = useMemo(
-    () => Array.from(new Set(items.map((i) => i.ka).filter((v): v is number => v != null))).sort((a, b) => a - b),
-    [items]
+    () =>
+      Array.from(
+        new Set(items.map((i) => i.ka).filter((v): v is number => v != null)),
+      ).sort((a, b) => a - b),
+    [items],
   );
 
   // Items sharing a SKU or Vendor Cat with another item are duplicates
@@ -459,7 +517,11 @@ export function ItemMasterTable({
       }
       const dk = item.description.trim().toLowerCase();
       const mk = item.make?.trim().toLowerCase();
-      if (dk && mk) byDescriptionMake.set(`${dk}|${mk}`, [...(byDescriptionMake.get(`${dk}|${mk}`) ?? []), item.id]);
+      if (dk && mk)
+        byDescriptionMake.set(`${dk}|${mk}`, [
+          ...(byDescriptionMake.get(`${dk}|${mk}`) ?? []),
+          item.id,
+        ]);
     }
     const dupIds = new Set<string>();
     for (const map of [bySku, byVendorCat, byDescriptionMake]) {
@@ -495,9 +557,13 @@ export function ItemMasterTable({
     all: baseFiltered.length,
     active: baseFiltered.filter((i) => i.status === "active").length,
     inactive: baseFiltered.filter((i) => i.status === "inactive").length,
-    discontinued: baseFiltered.filter((i) => i.status === "discontinued").length,
+    discontinued: baseFiltered.filter((i) => i.status === "discontinued")
+      .length,
   };
-  const filtered = statusFilter === "all" ? baseFiltered : baseFiltered.filter((i) => i.status === statusFilter);
+  const filtered =
+    statusFilter === "all"
+      ? baseFiltered
+      : baseFiltered.filter((i) => i.status === statusFilter);
 
   const sorted = sortKey
     ? [...filtered].sort((a, b) => {
@@ -506,8 +572,11 @@ export function ItemMasterTable({
         if (av == null && bv == null) return 0;
         if (av == null) return 1;
         if (bv == null) return -1;
-        if (typeof av === "number" && typeof bv === "number") return sortDir === "asc" ? av - bv : bv - av;
-        return sortDir === "asc" ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+        if (typeof av === "number" && typeof bv === "number")
+          return sortDir === "asc" ? av - bv : bv - av;
+        return sortDir === "asc"
+          ? String(av).localeCompare(String(bv))
+          : String(bv).localeCompare(String(av));
       })
     : filtered;
 
@@ -662,7 +731,10 @@ export function ItemMasterTable({
     setSaving(true);
     const { error } = await supabase
       .from("item_master")
-      .update({ ...draftToRow(editDraft), updated_at: new Date().toISOString() })
+      .update({
+        ...draftToRow(editDraft),
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", id);
     if (error) {
       setError(error.message);
@@ -678,21 +750,48 @@ export function ItemMasterTable({
   // (potentially several-thousand-row) catalog, so the change is visible
   // immediately instead of after a multi-second full refetch.
   async function toggleArchive(item: ItemMaster) {
-    const nextStatus: ItemStatus = item.status === "discontinued" ? "active" : "discontinued";
+    const nextStatus: ItemStatus =
+      item.status === "discontinued" ? "active" : "discontinued";
     const updatedAt = new Date().toISOString();
-    setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: nextStatus, updated_at: updatedAt } : i)));
-    const { error } = await supabase.from("item_master").update({ status: nextStatus, updated_at: updatedAt }).eq("id", item.id);
+    setItems((prev) =>
+      prev.map((i) =>
+        i.id === item.id
+          ? { ...i, status: nextStatus, updated_at: updatedAt }
+          : i,
+      ),
+    );
+    const { error } = await supabase
+      .from("item_master")
+      .update({ status: nextStatus, updated_at: updatedAt })
+      .eq("id", item.id);
     if (error) {
       alert(error.message);
-      setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: item.status, updated_at: item.updated_at } : i)));
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === item.id
+            ? { ...i, status: item.status, updated_at: item.updated_at }
+            : i,
+        ),
+      );
     }
   }
 
   async function handleArchiveSelected() {
-    if (!confirm(`Archive ${selectedIds.size} item(s)? You can unarchive any of them later from the row's action button.`)) return;
+    if (
+      !confirm(
+        `Archive ${selectedIds.size} item(s)? You can unarchive any of them later from the row's action button.`,
+      )
+    )
+      return;
     const ids = Array.from(selectedIds);
     const updatedAt = new Date().toISOString();
-    setItems((prev) => prev.map((i) => (selectedIds.has(i.id) ? { ...i, status: "discontinued", updated_at: updatedAt } : i)));
+    setItems((prev) =>
+      prev.map((i) =>
+        selectedIds.has(i.id)
+          ? { ...i, status: "discontinued", updated_at: updatedAt }
+          : i,
+      ),
+    );
     const { error } = await supabase
       .from("item_master")
       .update({ status: "discontinued", updated_at: updatedAt })
@@ -719,11 +818,18 @@ export function ItemMasterTable({
           .from("item_master")
           .update({
             discount_pct: value,
-            unit_cost: Math.round(effectiveNetRate({ unit_cost: item.unit_cost, list_price: item.list_price, discount_pct: value }) * 100) / 100,
+            unit_cost:
+              Math.round(
+                effectiveNetRate({
+                  unit_cost: item.unit_cost,
+                  list_price: item.list_price,
+                  discount_pct: value,
+                }) * 100,
+              ) / 100,
             updated_at: updatedAt,
           })
-          .eq("id", item.id)
-      )
+          .eq("id", item.id),
+      ),
     );
     const firstError = results.find((r) => r.error)?.error;
     if (firstError) {
@@ -762,27 +868,41 @@ export function ItemMasterTable({
         return item.description;
       case "category":
         return item.category ? (
-          <span className="rounded bg-surface-container-high px-1.5 py-0.5 text-[10px] font-bold text-on-surface-variant">{item.category}</span>
+          <span className="rounded bg-surface-container-high px-1.5 py-0.5 text-[10px] font-bold text-on-surface-variant">
+            {item.category}
+          </span>
         ) : (
           <span className="text-outline-variant">—</span>
         );
       case "make":
         return item.make ? (
-          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${makeColor(item.make)}`}>{item.make}</span>
+          <span
+            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${makeColor(item.make)}`}
+          >
+            {item.make}
+          </span>
         ) : (
           <span className="text-outline-variant">—</span>
         );
       case "source":
-        return <span className="rounded bg-surface-container-high px-1.5 py-0.5 text-[10px] font-bold text-on-surface-variant">{item.source}</span>;
+        return (
+          <span className="rounded bg-surface-container-high px-1.5 py-0.5 text-[10px] font-bold text-on-surface-variant">
+            {item.source}
+          </span>
+        );
       case "uom":
         return item.uom;
       case "unit_cost":
         return `₹${item.unit_cost.toLocaleString("en-IN")}`;
       case "list_price":
-        return item.list_price != null ? `₹${item.list_price.toLocaleString("en-IN")}` : "";
+        return item.list_price != null
+          ? `₹${item.list_price.toLocaleString("en-IN")}`
+          : "";
       case "discount_pct":
         return item.discount_pct != null ? (
-          <span className="rounded bg-tertiary-fixed px-1.5 py-0.5 text-[11px] font-bold text-on-tertiary-fixed">-{item.discount_pct}%</span>
+          <span className="rounded bg-tertiary-fixed px-1.5 py-0.5 text-[11px] font-bold text-on-tertiary-fixed">
+            -{item.discount_pct}%
+          </span>
         ) : (
           <span className="text-outline-variant">—</span>
         );
@@ -808,78 +928,234 @@ export function ItemMasterTable({
         );
       case "mrp_or_lp":
         return item.mrp_or_lp ? (
-          <span className="rounded bg-surface-container-high px-1.5 py-0.5 text-[10px] font-bold text-on-surface-variant">{item.mrp_or_lp}</span>
+          <span className="rounded bg-surface-container-high px-1.5 py-0.5 text-[10px] font-bold text-on-surface-variant">
+            {item.mrp_or_lp}
+          </span>
         ) : (
           <span className="text-outline-variant">—</span>
         );
       case "hsn_code":
         return item.hsn_code || "—";
       case "vendor_description":
-        return item.vendor_description || <span className="text-outline-variant">—</span>;
+        return (
+          item.vendor_description || (
+            <span className="text-outline-variant">—</span>
+          )
+        );
     }
   }
 
   function renderEditCell(key: ColumnKey): React.ReactNode {
     switch (key) {
       case "sku":
-        return <input className="w-24 rounded border px-1 py-0.5" value={editDraft.sku} onChange={(e) => setEditDraft({ ...editDraft, sku: e.target.value })} />;
+        return (
+          <input
+            className="w-24 rounded border px-1 py-0.5"
+            value={editDraft.sku}
+            onChange={(e) =>
+              setEditDraft({ ...editDraft, sku: e.target.value })
+            }
+          />
+        );
       case "vendor_cat":
-        return <input className="w-24 rounded border px-1 py-0.5" value={editDraft.vendor_cat} onChange={(e) => setEditDraft({ ...editDraft, vendor_cat: e.target.value })} />;
+        return (
+          <input
+            className="w-24 rounded border px-1 py-0.5"
+            value={editDraft.vendor_cat}
+            onChange={(e) =>
+              setEditDraft({ ...editDraft, vendor_cat: e.target.value })
+            }
+          />
+        );
       case "description":
-        return <input className="w-full min-w-40 rounded border px-1 py-0.5" value={editDraft.description} onChange={(e) => setEditDraft({ ...editDraft, description: e.target.value })} />;
+        return (
+          <input
+            className="w-full min-w-40 rounded border px-1 py-0.5"
+            value={editDraft.description}
+            onChange={(e) =>
+              setEditDraft({ ...editDraft, description: e.target.value })
+            }
+          />
+        );
       case "category":
-        return <input className="w-24 rounded border px-1 py-0.5" value={editDraft.category} onChange={(e) => setEditDraft({ ...editDraft, category: e.target.value })} />;
+        return (
+          <input
+            className="w-24 rounded border px-1 py-0.5"
+            value={editDraft.category}
+            onChange={(e) =>
+              setEditDraft({ ...editDraft, category: e.target.value })
+            }
+          />
+        );
       case "make":
-        return <input className="w-24 rounded border px-1 py-0.5" value={editDraft.make} onChange={(e) => setEditDraft({ ...editDraft, make: e.target.value })} />;
+        return (
+          <input
+            className="w-24 rounded border px-1 py-0.5"
+            value={editDraft.make}
+            onChange={(e) =>
+              setEditDraft({ ...editDraft, make: e.target.value })
+            }
+          />
+        );
       case "source":
         return (
           <select
             className="rounded border px-1 py-0.5"
             value={editDraft.source}
-            onChange={(e) => setEditDraft({ ...editDraft, source: e.target.value as ItemSource })}
+            onChange={(e) =>
+              setEditDraft({
+                ...editDraft,
+                source: e.target.value as ItemSource,
+              })
+            }
           >
             <option value="Design">Design</option>
             <option value="Estimation">Estimation</option>
           </select>
         );
       case "uom":
-        return <input className="w-16 rounded border px-1 py-0.5" value={editDraft.uom} onChange={(e) => setEditDraft({ ...editDraft, uom: e.target.value })} />;
+        return (
+          <input
+            className="w-16 rounded border px-1 py-0.5"
+            value={editDraft.uom}
+            onChange={(e) =>
+              setEditDraft({ ...editDraft, uom: e.target.value })
+            }
+          />
+        );
       case "unit_cost":
-        return <input type="text" inputMode="decimal" onKeyDown={numericKeyGuard()} className="w-24 rounded border px-1 py-0.5 text-right" value={editDraft.unit_cost} onChange={(e) => setEditDraft({ ...editDraft, unit_cost: e.target.value })} />;
+        return (
+          <input
+            type="text"
+            inputMode="decimal"
+            onKeyDown={numericKeyGuard()}
+            className="w-24 rounded border px-1 py-0.5 text-right"
+            value={editDraft.unit_cost}
+            onChange={(e) =>
+              setEditDraft({ ...editDraft, unit_cost: e.target.value })
+            }
+          />
+        );
       case "list_price":
-        return <input type="text" inputMode="decimal" onKeyDown={numericKeyGuard()} className="w-24 rounded border px-1 py-0.5 text-right" value={editDraft.list_price} onChange={(e) => setEditDraft({ ...editDraft, list_price: e.target.value })} />;
+        return (
+          <input
+            type="text"
+            inputMode="decimal"
+            onKeyDown={numericKeyGuard()}
+            className="w-24 rounded border px-1 py-0.5 text-right"
+            value={editDraft.list_price}
+            onChange={(e) =>
+              setEditDraft({ ...editDraft, list_price: e.target.value })
+            }
+          />
+        );
       case "discount_pct":
-        return <input type="text" inputMode="decimal" onKeyDown={numericKeyGuard()} className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.discount_pct} onChange={(e) => setEditDraft({ ...editDraft, discount_pct: e.target.value })} />;
+        return (
+          <input
+            type="text"
+            inputMode="decimal"
+            onKeyDown={numericKeyGuard()}
+            className="w-16 rounded border px-1 py-0.5 text-right"
+            value={editDraft.discount_pct}
+            onChange={(e) =>
+              setEditDraft({ ...editDraft, discount_pct: e.target.value })
+            }
+          />
+        );
       case "amps":
-        return <input type="text" inputMode="decimal" onKeyDown={numericKeyGuard()} className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.amps} onChange={(e) => setEditDraft({ ...editDraft, amps: e.target.value })} />;
+        return (
+          <input
+            type="text"
+            inputMode="decimal"
+            onKeyDown={numericKeyGuard()}
+            className="w-16 rounded border px-1 py-0.5 text-right"
+            value={editDraft.amps}
+            onChange={(e) =>
+              setEditDraft({ ...editDraft, amps: e.target.value })
+            }
+          />
+        );
       case "frame":
         return (
           <input
             className={`w-20 rounded border px-1 py-0.5 text-center ${isFrameRequiredCategory(editDraft.category) && !editDraft.frame.trim() ? "border-error" : ""}`}
             value={editDraft.frame}
-            placeholder={isFrameRequiredCategory(editDraft.category) ? "Required" : ""}
+            placeholder={
+              isFrameRequiredCategory(editDraft.category) ? "Required" : ""
+            }
             list="item-frame-suggestions"
-            onChange={(e) => setEditDraft({ ...editDraft, frame: e.target.value })}
+            onChange={(e) =>
+              setEditDraft({ ...editDraft, frame: e.target.value })
+            }
           />
         );
       case "material":
         return (
-          <select className="rounded border px-1 py-0.5" value={editDraft.material} onChange={(e) => setEditDraft({ ...editDraft, material: e.target.value })}>
+          <select
+            className="rounded border px-1 py-0.5"
+            value={editDraft.material}
+            onChange={(e) =>
+              setEditDraft({ ...editDraft, material: e.target.value })
+            }
+          >
             <option value="">—</option>
             <option value="GI">GI</option>
             <option value="CRCA">CRCA</option>
-            {editDraft.material && !["GI", "CRCA"].includes(editDraft.material) && <option value={editDraft.material}>{editDraft.material}</option>}
+            {editDraft.material &&
+              !["GI", "CRCA"].includes(editDraft.material) && (
+                <option value={editDraft.material}>{editDraft.material}</option>
+              )}
           </select>
         );
       case "weight_kg":
-        return <input type="text" inputMode="decimal" onKeyDown={numericKeyGuard()} className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.weight_kg} onChange={(e) => setEditDraft({ ...editDraft, weight_kg: e.target.value })} />;
+        return (
+          <input
+            type="text"
+            inputMode="decimal"
+            onKeyDown={numericKeyGuard()}
+            className="w-16 rounded border px-1 py-0.5 text-right"
+            value={editDraft.weight_kg}
+            onChange={(e) =>
+              setEditDraft({ ...editDraft, weight_kg: e.target.value })
+            }
+          />
+        );
       case "poles":
-        return <input type="text" inputMode="numeric" onKeyDown={numericKeyGuard()} className="w-14 rounded border px-1 py-0.5 text-right" value={editDraft.poles} onChange={(e) => setEditDraft({ ...editDraft, poles: e.target.value })} />;
+        return (
+          <input
+            type="text"
+            inputMode="numeric"
+            onKeyDown={numericKeyGuard()}
+            className="w-14 rounded border px-1 py-0.5 text-right"
+            value={editDraft.poles}
+            onChange={(e) =>
+              setEditDraft({ ...editDraft, poles: e.target.value })
+            }
+          />
+        );
       case "ka":
-        return <input type="text" inputMode="decimal" onKeyDown={numericKeyGuard()} className="w-16 rounded border px-1 py-0.5 text-right" value={editDraft.ka} onChange={(e) => setEditDraft({ ...editDraft, ka: e.target.value })} />;
+        return (
+          <input
+            type="text"
+            inputMode="decimal"
+            onKeyDown={numericKeyGuard()}
+            className="w-16 rounded border px-1 py-0.5 text-right"
+            value={editDraft.ka}
+            onChange={(e) => setEditDraft({ ...editDraft, ka: e.target.value })}
+          />
+        );
       case "status":
         return (
-          <select className="rounded border px-1 py-0.5" value={editDraft.status} onChange={(e) => setEditDraft({ ...editDraft, status: e.target.value as ItemStatus })}>
+          <select
+            className="rounded border px-1 py-0.5"
+            value={editDraft.status}
+            onChange={(e) =>
+              setEditDraft({
+                ...editDraft,
+                status: e.target.value as ItemStatus,
+              })
+            }
+          >
             <option value="active">{STATUS_LABELS.active}</option>
             <option value="inactive">{STATUS_LABELS.inactive}</option>
             <option value="discontinued">{STATUS_LABELS.discontinued}</option>
@@ -890,7 +1166,9 @@ export function ItemMasterTable({
           <input
             type="checkbox"
             checked={editDraft.pricelisted}
-            onChange={(e) => setEditDraft({ ...editDraft, pricelisted: e.target.checked })}
+            onChange={(e) =>
+              setEditDraft({ ...editDraft, pricelisted: e.target.checked })
+            }
           />
         );
       case "mrp_or_lp":
@@ -898,7 +1176,12 @@ export function ItemMasterTable({
           <select
             className="rounded border px-1 py-0.5"
             value={editDraft.mrp_or_lp}
-            onChange={(e) => setEditDraft({ ...editDraft, mrp_or_lp: e.target.value as "" | "MRP" | "LP" })}
+            onChange={(e) =>
+              setEditDraft({
+                ...editDraft,
+                mrp_or_lp: e.target.value as "" | "MRP" | "LP",
+              })
+            }
           >
             <option value="">—</option>
             <option value="MRP">MRP</option>
@@ -906,16 +1189,32 @@ export function ItemMasterTable({
           </select>
         );
       case "hsn_code":
-        return <input className="w-24 rounded border px-1 py-0.5" value={editDraft.hsn_code} onChange={(e) => setEditDraft({ ...editDraft, hsn_code: e.target.value })} />;
+        return (
+          <input
+            className="w-24 rounded border px-1 py-0.5"
+            value={editDraft.hsn_code}
+            onChange={(e) =>
+              setEditDraft({ ...editDraft, hsn_code: e.target.value })
+            }
+          />
+        );
       case "vendor_description":
-        return <input className="w-full min-w-40 rounded border px-1 py-0.5" value={editDraft.vendor_description} onChange={(e) => setEditDraft({ ...editDraft, vendor_description: e.target.value })} />;
+        return (
+          <input
+            className="w-full min-w-40 rounded border px-1 py-0.5"
+            value={editDraft.vendor_description}
+            onChange={(e) =>
+              setEditDraft({ ...editDraft, vendor_description: e.target.value })
+            }
+          />
+        );
     }
   }
 
   const selectedItems = items.filter((i) => selectedIds.has(i.id));
   const lastUpdatedAt = selectedItems.reduce<string | null>(
     (latest, i) => (!latest || i.updated_at > latest ? i.updated_at : latest),
-    null
+    null,
   );
 
   const visibleColumnList = columnOrder.filter((k) => visibleColumns.has(k));
@@ -928,8 +1227,11 @@ export function ItemMasterTable({
         <div>
           <h1 className="text-[18px] font-bold text-on-surface">Item Master</h1>
           <p className="text-sm text-secondary">
-            Every component and its cost. Feeders in the Feeder Master are built from these items.
-            {isAdmin ? "" : " Only admins can edit — ask an admin to make changes."}
+            Every component and its cost. Feeders in the Feeder Master are built
+            from these items.
+            {isAdmin
+              ? ""
+              : " Only admins can edit — ask an admin to make changes."}
           </p>
         </div>
         {isAdmin && (
@@ -946,7 +1248,8 @@ export function ItemMasterTable({
               onClick={() => downloadXlsx("item-master.xlsx", items)}
               className="flex h-8 items-center gap-1.5 rounded-[4px] bg-surface-container-lowest px-2.5 text-xs font-medium text-on-surface shadow-sm hover:bg-surface-container-low"
             >
-              <Icon name="download" size={16} className="text-secondary" /> Export Item Master
+              <Icon name="download" size={16} className="text-secondary" />{" "}
+              Export Item Master
             </button>
           </div>
         )}
@@ -955,7 +1258,11 @@ export function ItemMasterTable({
       <div className="space-y-3 rounded-[8px] bg-surface-container-lowest p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative min-w-[240px] flex-1">
-            <Icon name="search" size={16} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-secondary" />
+            <Icon
+              name="search"
+              size={16}
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-secondary"
+            />
             <input
               ref={searchRef}
               value={search}
@@ -967,7 +1274,13 @@ export function ItemMasterTable({
               ⌘K
             </span>
           </div>
-          <FilterSelect className="w-36" value={makeFilter} onChange={setMakeFilter} allLabel="All makes" options={distinctMakes} />
+          <FilterSelect
+            className="w-36"
+            value={makeFilter}
+            onChange={setMakeFilter}
+            allLabel="All makes"
+            options={distinctMakes}
+          />
           <FilterSelect
             className="w-36"
             value={categoryFilter}
@@ -989,13 +1302,26 @@ export function ItemMasterTable({
             allLabel="All poles"
             options={distinctPoles.map(String)}
           />
-          <FilterSelect className="w-28" value={kaFilter} onChange={setKaFilter} allLabel="All kA" options={distinctKa.map(String)} />
+          <FilterSelect
+            className="w-28"
+            value={kaFilter}
+            onChange={setKaFilter}
+            allLabel="All kA"
+            options={distinctKa.map(String)}
+          />
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-outline-variant/30 pt-3">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-secondary">Status</span>
-            <StatusChip label="All" count={counts.all} active={statusFilter === "all"} onClick={() => setStatusFilter("all")} />
+            <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-secondary">
+              Status
+            </span>
+            <StatusChip
+              label="All"
+              count={counts.all}
+              active={statusFilter === "all"}
+              onClick={() => setStatusFilter("all")}
+            />
             <StatusChip
               label={STATUS_LABELS.active}
               count={counts.active}
@@ -1023,7 +1349,11 @@ export function ItemMasterTable({
               onClick={saveCurrentView}
               className="flex h-8 items-center gap-1.5 rounded-[4px] bg-surface-container-low px-2.5 text-xs font-medium text-on-surface hover:bg-surface-container-high"
             >
-              <Icon name="bookmark_border" size={14} className="text-secondary" />
+              <Icon
+                name="bookmark_border"
+                size={14}
+                className="text-secondary"
+              />
               {savedViewFlash ? "Saved!" : "Save Current View"}
             </button>
             <div className="relative">
@@ -1031,7 +1361,8 @@ export function ItemMasterTable({
                 onClick={() => setColumnsOpen((v) => !v)}
                 className="flex h-8 items-center gap-1.5 rounded-[4px] bg-surface-container-low px-2.5 text-xs font-medium text-on-surface hover:bg-surface-container-high"
               >
-                <Icon name="view_column" size={14} className="text-secondary" /> Customize Columns ({visibleColumns.size})
+                <Icon name="view_column" size={14} className="text-secondary" />{" "}
+                Customize Columns ({visibleColumns.size})
               </button>
               {columnsOpen && (
                 <div className="absolute right-0 top-full z-20 mt-1 w-64 rounded-[4px] bg-surface-container-lowest p-2 shadow-md">
@@ -1039,7 +1370,10 @@ export function ItemMasterTable({
                     Show, hide &amp; reorder columns
                   </p>
                   {columnOrder.map((key, idx) => (
-                    <div key={key} className="flex items-center gap-1 rounded px-1 py-1 hover:bg-surface-container-low">
+                    <div
+                      key={key}
+                      className="flex items-center gap-1 rounded px-1 py-1 hover:bg-surface-container-low"
+                    >
                       <div className="flex flex-col">
                         <button
                           disabled={idx === 0}
@@ -1057,8 +1391,14 @@ export function ItemMasterTable({
                         </button>
                       </div>
                       <label className="flex flex-1 items-center gap-2 text-xs text-on-surface">
-                        <input type="checkbox" checked={visibleColumns.has(key)} onChange={() => toggleColumn(key)} className="rounded" />
+                        <input
+                          type="checkbox"
+                          checked={visibleColumns.has(key)}
+                          onChange={() => toggleColumn(key)}
+                          className="rounded"
+                        />
                         {COLUMN_LABELS[key]}
+                        {key === "mrp_or_lp" && <MrpLpInfo />}
                       </label>
                     </div>
                   ))}
@@ -1073,7 +1413,10 @@ export function ItemMasterTable({
             </div>
             {isAdmin && (
               <>
-                <SheetSyncButton onDone={refresh} currentUserName={currentUserName} />
+                <SheetSyncButton
+                  onDone={refresh}
+                  currentUserName={currentUserName}
+                />
                 <button
                   onClick={() => setAddDialogOpen(true)}
                   className="flex h-8 items-center gap-1.5 rounded-[4px] bg-primary px-3 text-xs font-medium text-on-primary shadow-sm hover:bg-primary-container"
@@ -1090,7 +1433,8 @@ export function ItemMasterTable({
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-[8px] border border-error/30 bg-error-container px-4 py-2.5 text-sm text-on-error-container">
           <span className="flex items-center gap-2">
             <Icon name="warning" size={16} />
-            {duplicateIds.size} item(s) look like duplicates (matching SKU, Vendor Cat, or same Description + Make). Review and clean these up.
+            {duplicateIds.size} item(s) look like duplicates (matching SKU,
+            Vendor Cat, or same Description + Make). Review and clean these up.
           </span>
           <button
             onClick={() => setDuplicatesOnly((v) => !v)}
@@ -1139,14 +1483,19 @@ export function ItemMasterTable({
                     placeholder="%"
                     className="w-16 rounded border border-outline-variant/50 px-1.5 py-1 text-xs text-on-surface"
                   />
-                  <button onClick={applyBulkDiscount} className="rounded bg-primary px-2 py-1 text-xs font-medium text-on-primary hover:bg-primary-container">
+                  <button
+                    onClick={applyBulkDiscount}
+                    className="rounded bg-primary px-2 py-1 text-xs font-medium text-on-primary hover:bg-primary-container"
+                  >
                     Apply
                   </button>
                 </div>
               )}
             </div>
             <button
-              onClick={() => downloadCsv("item-master-selected.csv", selectedItems)}
+              onClick={() =>
+                downloadCsv("item-master-selected.csv", selectedItems)
+              }
               className="flex items-center gap-1.5 rounded bg-surface-container-low px-2.5 py-1 text-xs font-medium text-on-surface hover:bg-surface-container-high"
             >
               <Icon name="file_download" size={14} /> Export selected
@@ -1159,14 +1508,26 @@ export function ItemMasterTable({
             </button>
             {lastUpdatedAt && (
               <div className="flex items-center gap-1.5 border-l border-inverse-on-surface/20 pl-3 font-mono text-[11px] text-inverse-on-surface/80">
-                <Icon name="schedule" size={14} className="text-inverse-on-surface/60" />
+                <Icon
+                  name="schedule"
+                  size={14}
+                  className="text-inverse-on-surface/60"
+                />
                 Last updated:{" "}
-                {new Date(lastUpdatedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} by{" "}
-                {currentUserName}
+                {new Date(lastUpdatedAt).toLocaleString("en-IN", {
+                  day: "2-digit",
+                  month: "short",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}{" "}
+                by {currentUserName}
               </div>
             )}
           </div>
-          <button onClick={() => setSelectedIds(new Set())} className="text-inverse-on-surface/70 hover:text-inverse-on-surface">
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="text-inverse-on-surface/70 hover:text-inverse-on-surface"
+          >
             <Icon name="close" size={18} />
           </button>
         </div>
@@ -1175,7 +1536,10 @@ export function ItemMasterTable({
       <div className="overflow-hidden rounded-[8px] bg-surface-container-lowest shadow-sm">
         <div className="overflow-x-auto">
           <datalist id="item-frame-suggestions">
-            {[...BREAKER_FRAME_SUGGESTIONS.ACB, ...BREAKER_FRAME_SUGGESTIONS.MCCB].map((f) => (
+            {[
+              ...BREAKER_FRAME_SUGGESTIONS.ACB,
+              ...BREAKER_FRAME_SUGGESTIONS.MCCB,
+            ].map((f) => (
               <option key={f} value={f} />
             ))}
           </datalist>
@@ -1187,7 +1551,10 @@ export function ItemMasterTable({
                     <input
                       type="checkbox"
                       className="cursor-pointer rounded"
-                      checked={paged.length > 0 && paged.every((i) => selectedIds.has(i.id))}
+                      checked={
+                        paged.length > 0 &&
+                        paged.every((i) => selectedIds.has(i.id))
+                      }
                       onChange={toggleSelectAllOnPage}
                     />
                   </th>
@@ -1201,10 +1568,16 @@ export function ItemMasterTable({
                     dir={sortDir}
                     onSort={handleSort}
                     align={COLUMN_ALIGN[key]}
-                    className={key === "description" ? "min-w-[240px]" : undefined}
+                    className={
+                      key === "description" ? "min-w-[240px]" : undefined
+                    }
                   />
                 ))}
-                {isAdmin && <th className="sticky right-0 bg-surface-container px-2 text-right">Actions</th>}
+                {isAdmin && (
+                  <th className="sticky right-0 bg-surface-container px-2 text-right">
+                    Actions
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-container">
@@ -1218,8 +1591,18 @@ export function ItemMasterTable({
                       </td>
                     ))}
                     <td className="whitespace-nowrap px-2 py-1 text-right">
-                      <button onClick={() => saveEdit(item.id)} className="mr-2 text-xs font-medium text-tertiary hover:underline">Save</button>
-                      <button onClick={() => setEditingId(null)} className="text-xs text-secondary hover:underline">Cancel</button>
+                      <button
+                        onClick={() => saveEdit(item.id)}
+                        className="mr-2 text-xs font-medium text-tertiary hover:underline"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setEditingId(null)}
+                        className="text-xs text-secondary hover:underline"
+                      >
+                        Cancel
+                      </button>
                     </td>
                   </tr>
                 ) : (
@@ -1238,32 +1621,56 @@ export function ItemMasterTable({
                       </td>
                     )}
                     {visibleColumnList.map((key) => (
-                      <td key={key} className={CELL_CLASS[key]} title={key === "description" ? item.description : undefined}>
+                      <td
+                        key={key}
+                        className={CELL_CLASS[key]}
+                        title={
+                          key === "description" ? item.description : undefined
+                        }
+                      >
                         {renderCell(item, key)}
                       </td>
                     ))}
                     {isAdmin && (
                       <td className="sticky right-0 bg-surface-container-lowest px-2 text-right group-hover:bg-surface-container-low">
                         <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => startEdit(item)} title="Edit" className="rounded p-1 text-secondary hover:bg-surface-container hover:text-primary">
+                          <button
+                            onClick={() => startEdit(item)}
+                            title="Edit"
+                            className="rounded p-1 text-secondary hover:bg-surface-container hover:text-primary"
+                          >
                             <Icon name="edit" size={15} />
                           </button>
                           <button
                             onClick={() => toggleArchive(item)}
-                            title={item.status === "discontinued" ? "Unarchive" : "Archive"}
+                            title={
+                              item.status === "discontinued"
+                                ? "Unarchive"
+                                : "Archive"
+                            }
                             className="rounded p-1 text-secondary hover:bg-surface-container hover:text-error"
                           >
-                            <Icon name={item.status === "discontinued" ? "unarchive" : "archive"} size={15} />
+                            <Icon
+                              name={
+                                item.status === "discontinued"
+                                  ? "unarchive"
+                                  : "archive"
+                              }
+                              size={15}
+                            />
                           </button>
                         </div>
                       </td>
                     )}
                   </tr>
-                )
+                ),
               )}
               {paged.length === 0 && (
                 <tr>
-                  <td colSpan={totalCols} className="px-3 py-10 text-center text-sm text-secondary">
+                  <td
+                    colSpan={totalCols}
+                    className="px-3 py-10 text-center text-sm text-secondary"
+                  >
                     No items found.
                   </td>
                 </tr>
@@ -1275,11 +1682,21 @@ export function ItemMasterTable({
         <div className="flex flex-col items-center justify-between gap-2 border-t border-outline-variant/30 bg-surface-container-low px-4 py-2.5 sm:flex-row">
           <div className="flex items-center gap-4">
             <span className="text-xs text-secondary">
-              Showing <span className="font-semibold text-on-surface">{sorted.length === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + rowsPerPage, sorted.length)}</span> of{" "}
-              <span className="font-semibold text-on-surface">{sorted.length}</span> items
+              Showing{" "}
+              <span className="font-semibold text-on-surface">
+                {sorted.length === 0 ? 0 : pageStart + 1}-
+                {Math.min(pageStart + rowsPerPage, sorted.length)}
+              </span>{" "}
+              of{" "}
+              <span className="font-semibold text-on-surface">
+                {sorted.length}
+              </span>{" "}
+              items
             </span>
             <div className="flex items-center gap-1.5">
-              <span className="text-[10px] uppercase text-secondary">Rows:</span>
+              <span className="text-[10px] uppercase text-secondary">
+                Rows:
+              </span>
               <select
                 value={rowsPerPage}
                 onChange={(e) => setRowsPerPage(Number(e.target.value))}
@@ -1294,11 +1711,22 @@ export function ItemMasterTable({
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <PageButton icon="first_page" disabled={currentPage === 1} onClick={() => setPage(1)} />
-            <PageButton icon="chevron_left" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} />
+            <PageButton
+              icon="first_page"
+              disabled={currentPage === 1}
+              onClick={() => setPage(1)}
+            />
+            <PageButton
+              icon="chevron_left"
+              disabled={currentPage === 1}
+              onClick={() => setPage(currentPage - 1)}
+            />
             {getPageNumbers(currentPage, totalPages).map((p, i) =>
               p === "..." ? (
-                <span key={`ellipsis-${i}`} className="px-1 font-display text-xs text-secondary">
+                <span
+                  key={`ellipsis-${i}`}
+                  className="px-1 font-display text-xs text-secondary"
+                >
                   ...
                 </span>
               ) : (
@@ -1306,15 +1734,25 @@ export function ItemMasterTable({
                   key={p}
                   onClick={() => setPage(p)}
                   className={`flex h-7 w-7 items-center justify-center rounded font-display text-xs font-semibold ${
-                    p === currentPage ? "bg-primary text-on-primary" : "text-secondary hover:bg-surface-container"
+                    p === currentPage
+                      ? "bg-primary text-on-primary"
+                      : "text-secondary hover:bg-surface-container"
                   }`}
                 >
                   {p}
                 </button>
-              )
+              ),
             )}
-            <PageButton icon="chevron_right" disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)} />
-            <PageButton icon="last_page" disabled={currentPage === totalPages} onClick={() => setPage(totalPages)} />
+            <PageButton
+              icon="chevron_right"
+              disabled={currentPage === totalPages}
+              onClick={() => setPage(currentPage + 1)}
+            />
+            <PageButton
+              icon="last_page"
+              disabled={currentPage === totalPages}
+              onClick={() => setPage(totalPages)}
+            />
           </div>
         </div>
       </div>
@@ -1349,7 +1787,11 @@ function FilterSelect({
           </option>
         ))}
       </select>
-      <Icon name="expand_more" size={16} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-secondary" />
+      <Icon
+        name="expand_more"
+        size={16}
+        className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-secondary"
+      />
     </div>
   );
 }
@@ -1369,11 +1811,17 @@ function StatusChip({
     <button
       onClick={onClick}
       className={`flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold transition-colors ${
-        active ? "bg-primary-container text-on-primary-container" : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high"
+        active
+          ? "bg-primary-container text-on-primary-container"
+          : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high"
       }`}
     >
       <span>{label}</span>
-      <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${active ? "bg-primary text-on-primary" : "bg-surface-container-highest text-secondary"}`}>{count}</span>
+      <span
+        className={`rounded-full px-1.5 py-0.5 text-[10px] ${active ? "bg-primary text-on-primary" : "bg-surface-container-highest text-secondary"}`}
+      >
+        {count}
+      </span>
     </button>
   );
 }
@@ -1396,13 +1844,29 @@ function SortableTh({
   className?: string;
 }) {
   const active = current === sortKey;
-  const justify = align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-between";
+  const info = sortKey === "mrp_or_lp" ? <MrpLpInfo /> : null;
+  const justify =
+    align === "right"
+      ? "justify-end"
+      : align === "center"
+        ? "justify-center"
+        : "justify-between";
   return (
-    <th className={`cursor-pointer select-none px-2 hover:text-on-surface ${className}`} onClick={() => onSort(sortKey)}>
+    <th
+      className={`cursor-pointer select-none px-2 hover:text-on-surface ${className}`}
+      onClick={() => onSort(sortKey)}
+    >
       <div className={`flex items-center gap-1 ${justify}`}>
-        <span>{label}</span>
+        <span className="flex items-center gap-1">
+          {label}
+          {info}
+        </span>
         {active ? (
-          <Icon name={dir === "asc" ? "arrow_upward" : "arrow_downward"} size={13} className="text-primary" />
+          <Icon
+            name={dir === "asc" ? "arrow_upward" : "arrow_downward"}
+            size={13}
+            className="text-primary"
+          />
         ) : (
           <Icon name="unfold_more" size={13} className="text-outline-variant" />
         )}
@@ -1411,7 +1875,15 @@ function SortableTh({
   );
 }
 
-function PageButton({ icon, disabled, onClick }: { icon: string; disabled: boolean; onClick: () => void }) {
+function PageButton({
+  icon,
+  disabled,
+  onClick,
+}: {
+  icon: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
   return (
     <button
       onClick={onClick}
@@ -1435,10 +1907,11 @@ function StatusBadge({ status }: { status: ItemStatus }) {
     discontinued: "bg-error",
   };
   return (
-    <span className={`flex items-center gap-1.5 text-[11px] font-semibold ${styles[status]}`}>
+    <span
+      className={`flex items-center gap-1.5 text-[11px] font-semibold ${styles[status]}`}
+    >
       <span className={`h-1.5 w-1.5 rounded-full ${dots[status]}`} />
       {STATUS_LABELS[status]}
     </span>
   );
 }
-

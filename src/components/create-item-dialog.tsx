@@ -1,11 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
+import { ValuePicker } from "@/components/value-picker";
+import { MrpLpInfo } from "@/components/mrp-lp-info";
 import { numericKeyGuard } from "@/lib/numeric-input";
-import { BREAKER_FRAME_SUGGESTIONS, itemCode, findDuplicateItem, isBreakerCategory, isFrameRequiredCategory, validateNewItemFields } from "@/lib/item-display";
+import {
+  BREAKER_FRAME_SUGGESTIONS,
+  itemCode,
+  findDuplicateItem,
+  isBreakerCategory,
+  isFrameRequiredCategory,
+  validateNewItemFields,
+} from "@/lib/item-display";
 import { effectiveNetRate } from "@/lib/feeder-cost";
 import type { ItemMaster, ItemSource, ItemStatus } from "@/types/database";
 
@@ -30,7 +39,8 @@ const EMPTY_DRAFT = {
   supplier: "",
   notes: "",
   pricelisted: false,
-  mrp_or_lp: "" as "" | "MRP" | "LP",
+  // LP (list price, discount applies) is the usual case
+  mrp_or_lp: "LP" as "" | "MRP" | "LP",
   hsn_code: "",
   vendor_description: "",
 };
@@ -59,7 +69,14 @@ function draftToRow(d: Draft) {
   // list price is on file -- Unit Cost is only a manual fallback for items
   // with no vendor price list. Mirrors effectiveNetRate, the same formula
   // BOM Builder/Feeder Master use to cost feeders.
-  const unit_cost = Math.round(effectiveNetRate({ unit_cost: Number(d.unit_cost) || 0, list_price, discount_pct }) * 100) / 100;
+  const unit_cost =
+    Math.round(
+      effectiveNetRate({
+        unit_cost: Number(d.unit_cost) || 0,
+        list_price,
+        discount_pct,
+      }) * 100,
+    ) / 100;
   return {
     sku: d.sku.trim() || null,
     vendor_cat: d.vendor_cat.trim() || null,
@@ -103,6 +120,41 @@ export function CreateItemDialog({
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // existing values for the Make / Category / kA / Poles dropdowns
+  const [opts, setOpts] = useState<{
+    make: string[];
+    category: string[];
+    ka: string[];
+    poles: string[];
+  }>({
+    make: [],
+    category: [],
+    ka: [],
+    poles: [],
+  });
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await createClient().rpc("item_option_values");
+      if (cancelled || !data) return;
+      const d = data as {
+        make: string[];
+        category: string[];
+        ka: number[];
+        poles: number[];
+      };
+      setOpts({
+        make: d.make ?? [],
+        category: d.category ?? [],
+        ka: (d.ka ?? []).map(String),
+        poles: (d.poles ?? []).map(String),
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   function patch(p: Partial<Draft>) {
     setDraft((d) => ({ ...d, ...p }));
@@ -112,7 +164,8 @@ export function CreateItemDialog({
   // (a Design-catalog item normally has one) -- so default Source to
   // Estimation whenever the SKU is blank, unless the user has actively
   // picked a source themselves.
-  const effectiveSource: ItemSource | "" = draft.source || (draft.sku.trim() ? "" : "Estimation");
+  const effectiveSource: ItemSource | "" =
+    draft.source || (draft.sku.trim() ? "" : "Estimation");
   const isBreaker = isBreakerCategory(draft.category);
 
   function handleClose() {
@@ -133,15 +186,27 @@ export function CreateItemDialog({
     setSaving(true);
     const supabase = createClient();
 
-    const dup = await findDuplicateItem(supabase, { sku: resolved.sku, vendor_cat: resolved.vendor_cat });
+    const dup = await findDuplicateItem(supabase, {
+      sku: resolved.sku,
+      vendor_cat: resolved.vendor_cat,
+    });
     if (dup) {
       setSaving(false);
-      const matchedOn = resolved.sku.trim() && dup.sku === resolved.sku.trim() ? "SKU" : "Vendor Cat";
-      setError(`An item with this ${matchedOn} already exists: ${itemCode(dup)} — ${dup.description}. Use that item instead of creating a duplicate.`);
+      const matchedOn =
+        resolved.sku.trim() && dup.sku === resolved.sku.trim()
+          ? "SKU"
+          : "Vendor Cat";
+      setError(
+        `An item with this ${matchedOn} already exists: ${itemCode(dup)} — ${dup.description}. Use that item instead of creating a duplicate.`,
+      );
       return;
     }
 
-    const { data, error } = await supabase.from("item_master").insert(draftToRow(resolved)).select("*").single();
+    const { data, error } = await supabase
+      .from("item_master")
+      .insert(draftToRow(resolved))
+      .select("*")
+      .single();
     setSaving(false);
     if (error || !data) {
       setError(error?.message ?? "Could not create item.");
@@ -154,29 +219,77 @@ export function CreateItemDialog({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse-surface/40 p-4 backdrop-blur-sm" onClick={handleClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-inverse-surface/40 p-4 backdrop-blur-sm"
+      onClick={handleClose}
+    >
       <SavingOverlay show={saving} label="Creating item..." />
       <div
         className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-[8px] bg-surface-container-lowest shadow-md"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-outline-variant/30 p-4">
-          <h2 className="font-display text-base font-semibold text-on-surface">Create New Item</h2>
-          <button onClick={handleClose} className="rounded p-1 text-secondary hover:bg-surface-container-low hover:text-on-surface">
+          <h2 className="font-display text-base font-semibold text-on-surface">
+            Create New Item
+          </h2>
+          <button
+            onClick={handleClose}
+            className="rounded p-1 text-secondary hover:bg-surface-container-low hover:text-on-surface"
+          >
             <Icon name="close" size={18} />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="overflow-y-auto p-4">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Field label="SKU" value={draft.sku} onChange={(v) => patch({ sku: v })} />
-            <Field label="Vendor Cat" value={draft.vendor_cat} onChange={(v) => patch({ vendor_cat: v })} />
-            <Field label="Description (item name)" value={draft.description} onChange={(v) => patch({ description: v })} required className="sm:col-span-2" />
-            <Field label="Make" value={draft.make} onChange={(v) => patch({ make: v })} required />
-            <Field label="Category" value={draft.category} onChange={(v) => patch({ category: v })} required />
-            <SourceField value={effectiveSource} onChange={(v) => patch({ source: v })} />
-            <StatusField value={draft.status} onChange={(v) => patch({ status: v })} />
-            <Field label="Amps" value={draft.amps} onChange={(v) => patch({ amps: v })} numeric required={isBreaker} />
+            <Field
+              label="SKU"
+              value={draft.sku}
+              onChange={(v) => patch({ sku: v })}
+            />
+            <Field
+              label="Vendor Cat"
+              value={draft.vendor_cat}
+              onChange={(v) => patch({ vendor_cat: v })}
+            />
+            <Field
+              label="Description (item name)"
+              value={draft.description}
+              onChange={(v) => patch({ description: v })}
+              required
+              className="sm:col-span-2"
+            />
+            <PickerField
+              label="Make"
+              required
+              value={draft.make}
+              options={opts.make}
+              onChange={(v) => patch({ make: v })}
+              placeholder="Select make..."
+            />
+            <PickerField
+              label="Category"
+              required
+              value={draft.category}
+              options={opts.category}
+              onChange={(v) => patch({ category: v })}
+              placeholder="Select category..."
+            />
+            <SourceField
+              value={effectiveSource}
+              onChange={(v) => patch({ source: v })}
+            />
+            <StatusField
+              value={draft.status}
+              onChange={(v) => patch({ status: v })}
+            />
+            <Field
+              label="Amps"
+              value={draft.amps}
+              onChange={(v) => patch({ amps: v })}
+              numeric
+              required={isBreaker}
+            />
             <Field
               label="Frame (ACB/MCCB)"
               value={draft.frame}
@@ -185,30 +298,93 @@ export function CreateItemDialog({
               list="item-frame-suggestions"
             />
             <datalist id="item-frame-suggestions">
-              {[...BREAKER_FRAME_SUGGESTIONS.ACB, ...BREAKER_FRAME_SUGGESTIONS.MCCB].map((f) => (
+              {[
+                ...BREAKER_FRAME_SUGGESTIONS.ACB,
+                ...BREAKER_FRAME_SUGGESTIONS.MCCB,
+              ].map((f) => (
                 <option key={f} value={f} />
               ))}
             </datalist>
-            <Field label="kA" value={draft.ka} onChange={(v) => patch({ ka: v })} numeric required={isBreaker} />
-            <Field label="Poles" value={draft.poles} onChange={(v) => patch({ poles: v })} numeric required={isBreaker} />
-            <Field label="Material (GI / CRCA)" value={draft.material} onChange={(v) => patch({ material: v })} list="item-material-suggestions" />
+            <PickerField
+              label="kA"
+              required={isBreaker}
+              numeric
+              value={draft.ka}
+              options={opts.ka}
+              onChange={(v) => patch({ ka: v })}
+            />
+            <PickerField
+              label="Poles"
+              required={isBreaker}
+              numeric
+              value={draft.poles}
+              options={opts.poles}
+              onChange={(v) => patch({ poles: v })}
+            />
+            <Field
+              label="Material (GI / CRCA)"
+              value={draft.material}
+              onChange={(v) => patch({ material: v })}
+              list="item-material-suggestions"
+            />
             <datalist id="item-material-suggestions">
               <option value="GI" />
               <option value="CRCA" />
             </datalist>
-            <Field label="Weight (kg)" value={draft.weight_kg} onChange={(v) => patch({ weight_kg: v })} numeric />
-            <Field label="UOM" value={draft.uom} onChange={(v) => patch({ uom: v })} />
-            <Field label="List price" value={draft.list_price} onChange={(v) => patch({ list_price: v })} numeric />
-            <Field label="Discount %" value={draft.discount_pct} onChange={(v) => patch({ discount_pct: v })} numeric />
-            <Field label="Unit cost" value={draft.unit_cost} onChange={(v) => patch({ unit_cost: v })} numeric />
-            <Field label="Supplier" value={draft.supplier} onChange={(v) => patch({ supplier: v })} />
-            <Field label="Notes" value={draft.notes} onChange={(v) => patch({ notes: v })} className="sm:col-span-2" />
-            <Field label="HSN Code" value={draft.hsn_code} onChange={(v) => patch({ hsn_code: v })} />
+            <Field
+              label="Weight (kg)"
+              value={draft.weight_kg}
+              onChange={(v) => patch({ weight_kg: v })}
+              numeric
+            />
+            <Field
+              label="UOM"
+              value={draft.uom}
+              onChange={(v) => patch({ uom: v })}
+            />
+            <Field
+              label="List price"
+              value={draft.list_price}
+              onChange={(v) => patch({ list_price: v })}
+              numeric
+            />
+            <Field
+              label="Discount %"
+              value={draft.discount_pct}
+              onChange={(v) => patch({ discount_pct: v })}
+              numeric
+            />
+            <Field
+              label="Unit cost"
+              value={draft.unit_cost}
+              onChange={(v) => patch({ unit_cost: v })}
+              numeric
+            />
+            <Field
+              label="Supplier"
+              value={draft.supplier}
+              onChange={(v) => patch({ supplier: v })}
+            />
+            <Field
+              label="Notes"
+              value={draft.notes}
+              onChange={(v) => patch({ notes: v })}
+              className="sm:col-span-2"
+            />
+            <Field
+              label="HSN Code"
+              value={draft.hsn_code}
+              onChange={(v) => patch({ hsn_code: v })}
+            />
             <div>
-              <label className="mb-1 block text-xs font-medium text-on-surface-variant">MRP or LP</label>
+              <label className="mb-1 flex items-center gap-1 text-xs font-medium text-on-surface-variant">
+                MRP or LP <MrpLpInfo />
+              </label>
               <select
                 value={draft.mrp_or_lp}
-                onChange={(e) => patch({ mrp_or_lp: e.target.value as "" | "MRP" | "LP" })}
+                onChange={(e) =>
+                  patch({ mrp_or_lp: e.target.value as "" | "MRP" | "LP" })
+                }
                 className="w-full rounded-[4px] border border-outline-variant/60 px-2 py-1.5 text-sm"
               >
                 <option value="">—</option>
@@ -216,25 +392,45 @@ export function CreateItemDialog({
                 <option value="LP">LP</option>
               </select>
             </div>
-            <Field label="Vendor Description" value={draft.vendor_description} onChange={(v) => patch({ vendor_description: v })} className="sm:col-span-2" />
+            <Field
+              label="Vendor Description"
+              value={draft.vendor_description}
+              onChange={(v) => patch({ vendor_description: v })}
+              className="sm:col-span-2"
+            />
             <div className="flex items-end pb-1.5">
               <label className="flex items-center gap-1.5 text-xs font-medium text-on-surface-variant">
-                <input type="checkbox" checked={draft.pricelisted} onChange={(e) => patch({ pricelisted: e.target.checked })} />
+                <input
+                  type="checkbox"
+                  checked={draft.pricelisted}
+                  onChange={(e) => patch({ pricelisted: e.target.checked })}
+                />
                 Pricelisted
               </label>
             </div>
           </div>
           <p className="mt-3 text-xs text-secondary">
-            Either SKU or Vendor Cat is required (both are fine too). Description, Make, Category, and Source are always required. For ACB,
-            MCCB, and MCB items, Amps, Poles, and kA are required too. Unit cost is auto-calculated from List price and Discount % when both
-            are set — only type a Unit cost yourself for items with no list price on file.
+            Either SKU or Vendor Cat is required (both are fine too).
+            Description, Make, Category, and Source are always required. For
+            ACB, MCCB, and MCB items, Amps, Poles, and kA are required too. Unit
+            cost is auto-calculated from List price and Discount % when both are
+            set — only type a Unit cost yourself for items with no list price on
+            file.
           </p>
           {error && <p className="mt-2 text-sm text-error">{error}</p>}
           <div className="mt-4 flex items-center justify-end gap-2 border-t border-outline-variant/30 pt-3">
-            <button type="button" onClick={handleClose} className="rounded-[4px] px-3 py-1.5 text-sm font-medium text-secondary hover:bg-surface-container-low">
+            <button
+              type="button"
+              onClick={handleClose}
+              className="rounded-[4px] px-3 py-1.5 text-sm font-medium text-secondary hover:bg-surface-container-low"
+            >
               Cancel
             </button>
-            <button type="submit" disabled={saving} className="rounded-[4px] bg-primary px-4 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-container disabled:opacity-50">
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded-[4px] bg-primary px-4 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-container disabled:opacity-50"
+            >
               {saving ? "Creating..." : "Create item"}
             </button>
           </div>
@@ -244,7 +440,13 @@ export function CreateItemDialog({
   );
 }
 
-function SourceField({ value, onChange }: { value: ItemSource | ""; onChange: (v: ItemSource) => void }) {
+function SourceField({
+  value,
+  onChange,
+}: {
+  value: ItemSource | "";
+  onChange: (v: ItemSource) => void;
+}) {
   return (
     <div>
       <label className="mb-1 block text-xs font-medium text-on-surface-variant">
@@ -266,10 +468,18 @@ function SourceField({ value, onChange }: { value: ItemSource | ""; onChange: (v
   );
 }
 
-function StatusField({ value, onChange }: { value: ItemStatus; onChange: (v: ItemStatus) => void }) {
+function StatusField({
+  value,
+  onChange,
+}: {
+  value: ItemStatus;
+  onChange: (v: ItemStatus) => void;
+}) {
   return (
     <div>
-      <label className="mb-1 block text-xs font-medium text-on-surface-variant">Status</label>
+      <label className="mb-1 block text-xs font-medium text-on-surface-variant">
+        Status
+      </label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value as ItemStatus)}
@@ -314,6 +524,39 @@ function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="w-full rounded-[4px] border border-outline-variant/60 px-2 py-1.5 text-sm"
+      />
+    </div>
+  );
+}
+
+function PickerField({
+  label,
+  value,
+  options,
+  onChange,
+  required = false,
+  numeric = false,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+  required?: boolean;
+  numeric?: boolean;
+  placeholder?: string;
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-medium text-on-surface-variant">
+        {label} {required && <span className="text-error">*</span>}
+      </label>
+      <ValuePicker
+        value={value}
+        options={options}
+        onChange={onChange}
+        numeric={numeric}
+        placeholder={placeholder}
       />
     </div>
   );
