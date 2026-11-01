@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
 import { createClient } from "@/lib/supabase/server";
-import { importItemRows, parseBooleanCell, parseMaterialCell, parseMrpOrLpCell, parseWeightCell, type ParsedItemRow } from "@/lib/item-import";
+import {
+  importItemRows,
+  parseBooleanCell,
+  parseMaterialCell,
+  parseMrpOrLpCell,
+  parseWeightCell,
+  type ItemUpdateChange,
+  type ParsedItemRow,
+} from "@/lib/item-import";
 
 // Reads item master rows from a Google Sheet and imports them into
 // item_master. The sheet's first row must be a header with description and
@@ -10,7 +18,15 @@ import { importItemRows, parseBooleanCell, parseMaterialCell, parseMrpOrLpCell, 
 // frame / ka / poles / uom / unit_cost / list_price / discount_pct /
 // supplier / notes / pricelisted / mrp_or_lp / hsn_code /
 // vendor_description are optional. Columns can be in any order.
-export async function POST() {
+// Two steps, so changes to existing items are reviewed before they're
+// written: POST { preview: true } reads the sheet and returns the proposed
+// updates WITHOUT writing anything; POST { acceptIds: [...] } then imports,
+// updating only the accepted existing items (new items are always created).
+export async function POST(req: Request) {
+  const body = (await req.json().catch(() => ({}))) as {
+    preview?: boolean;
+    acceptIds?: string[];
+  };
   const supabase = await createClient();
   const {
     data: { user },
@@ -19,17 +35,24 @@ export async function POST() {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   }
 
-  const { GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY, GOOGLE_SHEET_ID } =
-    process.env;
+  const {
+    GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+    GOOGLE_SHEET_ID,
+  } = process.env;
   const range = process.env.GOOGLE_SHEET_RANGE || "Item Master!A:U";
 
-  if (!GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || !GOOGLE_SHEET_ID) {
+  if (
+    !GOOGLE_SERVICE_ACCOUNT_EMAIL ||
+    !GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY ||
+    !GOOGLE_SHEET_ID
+  ) {
     return NextResponse.json(
       {
         error:
           "Google Sheet sync isn't configured yet. Set GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY and GOOGLE_SHEET_ID in your environment (see README).",
       },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -48,18 +71,24 @@ export async function POST() {
 
     const values = data.values ?? [];
     if (values.length < 2) {
-      return NextResponse.json({ error: "Sheet has no data rows." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Sheet has no data rows." },
+        { status: 400 },
+      );
     }
 
-    const header = values[0].map((h) => String(h).trim().toLowerCase().replace(/\s+/g, "_"));
+    const header = values[0].map((h) =>
+      String(h).trim().toLowerCase().replace(/\s+/g, "_"),
+    );
     const missing: string[] = [];
     if (!header.includes("description")) missing.push("description");
     if (!header.includes("source")) missing.push("source");
-    if (!header.includes("sku") && !header.includes("vendor_cat")) missing.push("sku or vendor_cat");
+    if (!header.includes("sku") && !header.includes("vendor_cat"))
+      missing.push("sku or vendor_cat");
     if (missing.length > 0) {
       return NextResponse.json(
         { error: `Sheet is missing required column(s): ${missing.join(", ")}` },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -90,7 +119,9 @@ export async function POST() {
           uom: get("uom") || "nos",
           unit_cost: Number(get("unit_cost")) || 0,
           list_price: get("list_price") ? Number(get("list_price")) : null,
-          discount_pct: get("discount_pct") ? Number(get("discount_pct")) : null,
+          discount_pct: get("discount_pct")
+            ? Number(get("discount_pct"))
+            : null,
           supplier: get("supplier") || null,
           notes: get("notes") || null,
           pricelisted: parseBooleanCell(get("pricelisted")),
@@ -100,16 +131,46 @@ export async function POST() {
         };
         return { rowNumber: i + 2, data };
       })
-      .filter((r): r is { rowNumber: number; data: ParsedItemRow } => r !== null);
+      .filter(
+        (r): r is { rowNumber: number; data: ParsedItemRow } => r !== null,
+      );
 
     if (rows.length === 0) {
-      return NextResponse.json({ error: "No data rows found in the sheet." }, { status: 400 });
+      return NextResponse.json(
+        { error: "No data rows found in the sheet." },
+        { status: 400 },
+      );
     }
 
-    const summary = await importItemRows(supabase, rows);
+    if (body.preview) {
+      let captured: { changes: ItemUpdateChange[]; newCount: number } = {
+        changes: [],
+        newCount: 0,
+      };
+      await importItemRows(
+        supabase,
+        rows,
+        undefined,
+        async (changes, newCount) => {
+          captured = { changes, newCount };
+          return "cancel";
+        },
+      );
+      return NextResponse.json({ preview: true, ...captured });
+    }
+    const accept = new Set(body.acceptIds ?? []);
+    const summary = await importItemRows(
+      supabase,
+      rows,
+      undefined,
+      async () => accept,
+    );
     return NextResponse.json(summary);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error contacting Google Sheets.";
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Unknown error contacting Google Sheets.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

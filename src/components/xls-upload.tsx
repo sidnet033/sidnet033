@@ -1,10 +1,21 @@
 "use client";
 
+import { ImportChangesDialog } from "@/components/import-changes-dialog";
 import { useRef, useState } from "react";
 import { excelCellText } from "@/lib/excel-cell";
 import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase/client";
-import { importItemRows, logImport, parseBooleanCell, parseMaterialCell, parseMrpOrLpCell, parseWeightCell, type ImportSummary, type ParsedItemRow } from "@/lib/item-import";
+import {
+  importItemRows,
+  logImport,
+  parseBooleanCell,
+  parseMaterialCell,
+  parseMrpOrLpCell,
+  parseWeightCell,
+  type ImportSummary,
+  type ItemUpdateChange,
+  type ParsedItemRow,
+} from "@/lib/item-import";
 import { Icon } from "@/components/icon";
 
 // Expected columns in the sheet's header row (any order, case-insensitive):
@@ -23,13 +34,25 @@ const REQUIRED_SOURCE = "source";
 
 type Stage = "idle" | "reading" | "importing" | "done" | "error";
 
-export function XlsUpload({ onDone, currentUserName }: { onDone: () => void; currentUserName?: string }) {
+export function XlsUpload({
+  onDone,
+  currentUserName,
+}: {
+  onDone: () => void;
+  currentUserName?: string;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [stage, setStage] = useState<Stage>("idle");
   const [fileName, setFileName] = useState("");
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
+  // review step: proposed updates to existing items, waiting for the user
+  const [review, setReview] = useState<{
+    changes: ItemUpdateChange[];
+    newCount: number;
+    resolve: (decision: Set<string> | "cancel") => void;
+  } | null>(null);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -48,16 +71,22 @@ export function XlsUpload({ onDone, currentUserName }: { onDone: () => void; cur
       const headerRow = sheet.getRow(1);
       const columnIndex: Record<string, number> = {};
       headerRow.eachCell((cell, colNumber) => {
-        const key = String(cell.value ?? "").trim().toLowerCase().replace(/\s+/g, "_");
+        const key = String(cell.value ?? "")
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, "_");
         if (key) columnIndex[key] = colNumber;
       });
 
       const missing: string[] = [];
       if (!(REQUIRED_DESCRIPTION in columnIndex)) missing.push("description");
       if (!(REQUIRED_SOURCE in columnIndex)) missing.push("source");
-      if (!("sku" in columnIndex) && !("vendor_cat" in columnIndex)) missing.push("sku or vendor_cat");
+      if (!("sku" in columnIndex) && !("vendor_cat" in columnIndex))
+        missing.push("sku or vendor_cat");
       if (missing.length > 0) {
-        setErrorText(`Sheet is missing required column(s): ${missing.join(", ")}`);
+        setErrorText(
+          `Sheet is missing required column(s): ${missing.join(", ")}`,
+        );
         setStage("error");
         return;
       }
@@ -86,13 +115,19 @@ export function XlsUpload({ onDone, currentUserName }: { onDone: () => void; cur
             amps: cellText("amps") ? Number(cellText("amps")) : null,
             frame: cellText("frame").trim() || null,
             material: parseMaterialCell(cellText("material")),
-            weight_kg: parseWeightCell(cellText("weight_kg") || cellText("weight")),
+            weight_kg: parseWeightCell(
+              cellText("weight_kg") || cellText("weight"),
+            ),
             ka: cellText("ka") ? Number(cellText("ka")) : null,
             poles: cellText("poles") ? Number(cellText("poles")) : null,
             uom: cellText("uom").trim() || "nos",
             unit_cost: Number(cellText("unit_cost")) || 0,
-            list_price: cellText("list_price") ? Number(cellText("list_price")) : null,
-            discount_pct: cellText("discount_pct") ? Number(cellText("discount_pct")) : null,
+            list_price: cellText("list_price")
+              ? Number(cellText("list_price"))
+              : null,
+            discount_pct: cellText("discount_pct")
+              ? Number(cellText("discount_pct"))
+              : null,
             supplier: cellText("supplier").trim() || null,
             notes: cellText("notes").trim() || null,
             pricelisted: parseBooleanCell(cellText("pricelisted")),
@@ -113,7 +148,22 @@ export function XlsUpload({ onDone, currentUserName }: { onDone: () => void; cur
       setProgress({ done: 0, total: rows.length });
 
       const supabase = createClient();
-      const result = await importItemRows(supabase, rows, (done, total) => setProgress({ done, total }));
+      const result = await importItemRows(
+        supabase,
+        rows,
+        (done, total) => setProgress({ done, total }),
+        (changes, newCount) =>
+          changes.length === 0
+            ? Promise.resolve(new Set<string>())
+            : new Promise((resolve) =>
+                setReview({ changes, newCount, resolve }),
+              ),
+      );
+      if (result.cancelled) {
+        setSummary(result);
+        setStage("done");
+        return;
+      }
       await logImport(supabase, {
         source: "xlsx_upload",
         fileName: file.name,
@@ -138,13 +188,36 @@ export function XlsUpload({ onDone, currentUserName }: { onDone: () => void; cur
   }
 
   const open = stage !== "idle";
-  const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
+  const pct =
+    progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
 
   return (
     <>
+      {review && (
+        <ImportChangesDialog
+          changes={review.changes}
+          newCount={review.newCount}
+          onAccept={(ids) => {
+            review.resolve(ids);
+            setReview(null);
+          }}
+          onCancel={() => {
+            review.resolve("cancel");
+            setReview(null);
+          }}
+        />
+      )}
       <label className="flex h-8 cursor-pointer items-center gap-1.5 rounded-[4px] bg-surface-container-lowest px-2.5 text-xs font-medium text-on-surface shadow-sm hover:bg-surface-container-low">
-        <Icon name="upload_file" size={16} className="text-secondary" /> Import CSV / Excel
-        <input ref={inputRef} type="file" accept=".xlsx" onChange={handleFile} disabled={open} className="hidden" />
+        <Icon name="upload_file" size={16} className="text-secondary" /> Import
+        CSV / Excel
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".xlsx"
+          onChange={handleFile}
+          disabled={open}
+          className="hidden"
+        />
       </label>
 
       {open && (
@@ -155,7 +228,9 @@ export function XlsUpload({ onDone, currentUserName }: { onDone: () => void; cur
                 <Icon name="upload_file" size={20} />
               </div>
               <div>
-                <h2 className="font-display text-sm font-semibold text-on-surface">Import item master</h2>
+                <h2 className="font-display text-sm font-semibold text-on-surface">
+                  Import item master
+                </h2>
                 <p className="text-xs text-secondary">{fileName}</p>
               </div>
             </div>
@@ -163,7 +238,9 @@ export function XlsUpload({ onDone, currentUserName }: { onDone: () => void; cur
             {(stage === "reading" || stage === "importing") && (
               <div className="space-y-2">
                 <p className="text-xs text-on-surface-variant">
-                  {stage === "reading" ? "Reading file..." : `Importing row ${progress.done} of ${progress.total}...`}
+                  {stage === "reading"
+                    ? "Reading file..."
+                    : `Importing row ${progress.done} of ${progress.total}...`}
                 </p>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-surface-container-high">
                   <div
@@ -186,34 +263,69 @@ export function XlsUpload({ onDone, currentUserName }: { onDone: () => void; cur
               </div>
             )}
 
-            {stage === "done" && summary && (
+            {stage === "done" && summary && summary.cancelled && (
+              <p className="text-sm text-on-surface-variant">
+                Import cancelled — nothing was created or updated.
+              </p>
+            )}
+            {stage === "done" && summary && !summary.cancelled && (
               <div className="space-y-3">
+                {summary.unchanged || summary.declined ? (
+                  <p className="text-[11px] text-secondary">
+                    {summary.unchanged
+                      ? `${summary.unchanged} existing item(s) had no changes. `
+                      : ""}
+                    {summary.declined
+                      ? `${summary.declined} update(s) you didn't accept were left as they were.`
+                      : ""}
+                  </p>
+                ) : null}
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div className="rounded-[4px] bg-tertiary-fixed/50 p-2">
-                    <p className="text-[15px] font-bold text-on-tertiary-fixed">{summary.created}</p>
-                    <p className="text-[10px] uppercase tracking-wide text-on-tertiary-fixed/80">New</p>
+                    <p className="text-[15px] font-bold text-on-tertiary-fixed">
+                      {summary.created}
+                    </p>
+                    <p className="text-[10px] uppercase tracking-wide text-on-tertiary-fixed/80">
+                      New
+                    </p>
                   </div>
                   <div className="rounded-[4px] bg-secondary-container/60 p-2">
-                    <p className="text-[15px] font-bold text-on-secondary-container">{summary.updated}</p>
-                    <p className="text-[10px] uppercase tracking-wide text-on-secondary-container/80">Updated</p>
+                    <p className="text-[15px] font-bold text-on-secondary-container">
+                      {summary.updated}
+                    </p>
+                    <p className="text-[10px] uppercase tracking-wide text-on-secondary-container/80">
+                      Updated
+                    </p>
                   </div>
                   <div className="rounded-[4px] bg-error-container p-2">
-                    <p className="text-[15px] font-bold text-on-error-container">{summary.skipped.length}</p>
-                    <p className="text-[10px] uppercase tracking-wide text-on-error-container/80">Failed</p>
+                    <p className="text-[15px] font-bold text-on-error-container">
+                      {summary.skipped.length}
+                    </p>
+                    <p className="text-[10px] uppercase tracking-wide text-on-error-container/80">
+                      Failed
+                    </p>
                   </div>
                 </div>
 
                 {summary.skipped.length > 0 && (
                   <div className="max-h-40 space-y-1 overflow-y-auto rounded-[4px] bg-surface-container-low p-2">
                     {summary.skipped.map((s, i) => (
-                      <p key={i} className="text-[11px] text-on-surface-variant">
-                        <span className="font-medium text-error">Row {s.row}:</span> {s.reason}
+                      <p
+                        key={i}
+                        className="text-[11px] text-on-surface-variant"
+                      >
+                        <span className="font-medium text-error">
+                          Row {s.row}:
+                        </span>{" "}
+                        {s.reason}
                       </p>
                     ))}
                   </div>
                 )}
 
-                <p className="text-[11px] text-secondary">Saved to the import audit log.</p>
+                <p className="text-[11px] text-secondary">
+                  Saved to the import audit log.
+                </p>
 
                 <button
                   onClick={close}

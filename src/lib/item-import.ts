@@ -65,11 +65,118 @@ export type ImportSummary = {
   created: number;
   updated: number;
   skipped: { row: number; reason: string }[];
+  /** existing items the file matched but where nothing actually changed */
+  unchanged?: number;
+  /** existing items whose changes the user didn't accept */
+  declined?: number;
+  /** the user cancelled at the review step -- nothing was written */
+  cancelled?: boolean;
 };
+
+// One existing item an import would change, field by field (old -> new).
+export type ItemFieldChange = {
+  field: string;
+  label: string;
+  from: string;
+  to: string;
+};
+export type ItemUpdateChange = {
+  id: string;
+  rowNumber: number;
+  code: string;
+  description: string;
+  fields: ItemFieldChange[];
+};
+// Called with every proposed update (and how many new items will be
+// created) BEFORE anything is written. Return the ids to update, or
+// "cancel" to abort the whole import.
+export type ReviewUpdates = (
+  changes: ItemUpdateChange[],
+  newCount: number,
+) => Promise<Set<string> | "cancel">;
+
+const FIELD_LABELS: Record<keyof ParsedItemRow, string> = {
+  sku: "SKU",
+  vendor_cat: "Vendor Cat",
+  description: "Description",
+  make: "Make",
+  category: "Category",
+  source: "Source",
+  status: "Status",
+  amps: "Amps",
+  frame: "Frame",
+  material: "Material",
+  weight_kg: "Weight (kg)",
+  ka: "kA",
+  poles: "Poles",
+  uom: "UOM",
+  unit_cost: "Net cost",
+  list_price: "List price",
+  discount_pct: "Discount %",
+  supplier: "Supplier",
+  notes: "Notes",
+  pricelisted: "Pricelisted",
+  mrp_or_lp: "MRP or LP",
+  hsn_code: "HSN code",
+  vendor_description: "Vendor description",
+};
+const NUMERIC = new Set([
+  "amps",
+  "weight_kg",
+  "ka",
+  "poles",
+  "unit_cost",
+  "list_price",
+  "discount_pct",
+]);
+
+function shown(v: unknown): string {
+  if (v == null || v === "") return "—";
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  return String(v);
+}
+
+function sameValue(field: string, a: unknown, b: unknown): boolean {
+  const blankA = a == null || a === "";
+  const blankB = b == null || b === "";
+  if (blankA || blankB) return blankA && blankB;
+  if (NUMERIC.has(field)) return Math.abs(Number(a) - Number(b)) < 0.005;
+  if (typeof a === "boolean" || typeof b === "boolean")
+    return Boolean(a) === Boolean(b);
+  return String(a).trim() === String(b).trim();
+}
+
+/** what an update row would change on the existing item (blank-kept fields excluded) */
+export function diffItem(
+  existing: Record<string, unknown>,
+  incoming: ParsedItemRow,
+  keepIfBlank: readonly string[],
+): ItemFieldChange[] {
+  const out: ItemFieldChange[] = [];
+  for (const key of Object.keys(FIELD_LABELS) as (keyof ParsedItemRow)[]) {
+    const to = incoming[key];
+    if (keepIfBlank.includes(key) && to == null) continue;
+    const from = existing[key];
+    // the status column defaults to "active" when the sheet has none
+    if (!sameValue(key, from, to))
+      out.push({
+        field: key,
+        label: FIELD_LABELS[key],
+        from: shown(from),
+        to: shown(to),
+      });
+  }
+  return out;
+}
 
 const CHUNK_SIZE = 500;
 
-type Resolved = { rowNumber: number; id: string; data: ParsedItemRow; isNew: boolean };
+type Resolved = {
+  rowNumber: number;
+  id: string;
+  data: ParsedItemRow;
+  isNew: boolean;
+};
 
 // Every item needs a SKU or a Vendor Cat (or both) — this is the key used
 // to decide whether an incoming row updates an existing item or creates a
@@ -84,25 +191,43 @@ type Resolved = { rowNumber: number; id: string; data: ParsedItemRow; isNew: boo
 export async function importItemRows(
   supabase: SupabaseClient,
   rows: { rowNumber: number; data: ParsedItemRow }[],
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number) => void,
+  reviewUpdates?: ReviewUpdates,
 ): Promise<ImportSummary> {
-  const summary: ImportSummary = { created: 0, updated: 0, skipped: [] };
+  const summary: ImportSummary = {
+    created: 0,
+    updated: 0,
+    skipped: [],
+    unchanged: 0,
+    declined: 0,
+  };
 
   const validRows: { rowNumber: number; data: ParsedItemRow }[] = [];
   for (const row of rows) {
     if (!row.data.sku && !row.data.vendor_cat) {
-      summary.skipped.push({ row: row.rowNumber, reason: "Missing both SKU and Vendor Cat" });
+      summary.skipped.push({
+        row: row.rowNumber,
+        reason: "Missing both SKU and Vendor Cat",
+      });
       continue;
     }
     if (!row.data.description) {
-      summary.skipped.push({ row: row.rowNumber, reason: "Missing description" });
+      summary.skipped.push({
+        row: row.rowNumber,
+        reason: "Missing description",
+      });
       continue;
     }
     // Every item must record where it came from -- accept either value
     // case-insensitively but normalize to the canonical casing the app
     // and the item_master check constraint expect.
     const normalizedSource = row.data.source.trim().toLowerCase();
-    const source = normalizedSource === "design" ? "Design" : normalizedSource === "estimation" ? "Estimation" : null;
+    const source =
+      normalizedSource === "design"
+        ? "Design"
+        : normalizedSource === "estimation"
+          ? "Estimation"
+          : null;
     if (!source) {
       summary.skipped.push({
         row: row.rowNumber,
@@ -114,9 +239,14 @@ export async function importItemRows(
     // list price is on the sheet -- Unit Cost is only a manual fallback for
     // rows with no list price at all. Mirrors effectiveNetRate, the same
     // formula BOM Builder/Feeder Master use to cost feeders.
-    const unit_cost = Math.round(
-      effectiveNetRate({ unit_cost: row.data.unit_cost, list_price: row.data.list_price, discount_pct: row.data.discount_pct }) * 100
-    ) / 100;
+    const unit_cost =
+      Math.round(
+        effectiveNetRate({
+          unit_cost: row.data.unit_cost,
+          list_price: row.data.list_price,
+          discount_pct: row.data.discount_pct,
+        }) * 100,
+      ) / 100;
     validRows.push({ ...row, data: { ...row.data, source, unit_cost } });
   }
   onProgress?.(rows.length - validRows.length, rows.length);
@@ -125,18 +255,32 @@ export async function importItemRows(
   // max-rows setting (Supabase defaults to 1000) -- with a catalog bigger
   // than that, an unpaginated fetch here would silently "not find" the
   // tail of the catalog and re-insert it as duplicates on every import.
-  const existing: { id: string; sku: string | null; vendor_cat: string | null }[] = [];
+  const existing: {
+    id: string;
+    sku: string | null;
+    vendor_cat: string | null;
+  }[] = [];
   for (let from = 0; ; from += CHUNK_SIZE) {
     const { data, error: fetchError } = await supabase
       .from("item_master")
       .select("id, sku, vendor_cat")
       .range(from, from + CHUNK_SIZE - 1);
     if (fetchError) {
-      for (const row of validRows) summary.skipped.push({ row: row.rowNumber, reason: fetchError.message });
+      for (const row of validRows)
+        summary.skipped.push({
+          row: row.rowNumber,
+          reason: fetchError.message,
+        });
       onProgress?.(rows.length, rows.length);
       return summary;
     }
-    existing.push(...((data ?? []) as { id: string; sku: string | null; vendor_cat: string | null }[]));
+    existing.push(
+      ...((data ?? []) as {
+        id: string;
+        sku: string | null;
+        vendor_cat: string | null;
+      }[]),
+    );
     if (!data || data.length < CHUNK_SIZE) break;
   }
 
@@ -156,7 +300,9 @@ export async function importItemRows(
   const order: string[] = [];
   const byId = new Map<string, Resolved>();
   for (const { rowNumber, data } of validRows) {
-    const matchedId = (data.sku && skuToId.get(data.sku)) || (data.vendor_cat && vendorCatToId.get(data.vendor_cat));
+    const matchedId =
+      (data.sku && skuToId.get(data.sku)) ||
+      (data.vendor_cat && vendorCatToId.get(data.vendor_cat));
     let id: string;
     if (matchedId) {
       id = matchedId;
@@ -173,7 +319,12 @@ export async function importItemRows(
     // drops the SKU an earlier row had).
     const prior = byId.get(id);
     const merged = prior
-      ? (Object.fromEntries(Object.entries(data).map(([k, v]) => [k, v ?? prior.data[k as keyof ParsedItemRow]])) as unknown as ParsedItemRow)
+      ? (Object.fromEntries(
+          Object.entries(data).map(([k, v]) => [
+            k,
+            v ?? prior.data[k as keyof ParsedItemRow],
+          ]),
+        ) as unknown as ParsedItemRow)
       : data;
     byId.set(id, { rowNumber, id, data: merged, isNew: newIds.has(id) });
   }
@@ -211,6 +362,87 @@ export async function importItemRows(
     toInsert.push(resolved);
   }
 
+  const KEEP_IF_BLANK = [
+    "sku",
+    "vendor_cat",
+    "frame",
+    "material",
+    "weight_kg",
+  ] as const;
+  // Review step: compare every update against the item as it is now, drop
+  // the ones that change nothing, and let the caller (the user) accept or
+  // reject the rest before anything is written.
+  let updates = toUpdate;
+  if (toUpdate.length === 0 && reviewUpdates) {
+    // nothing to update -- still give the caller its say (a preview stops here)
+    const decision = await reviewUpdates([], toInsert.length);
+    if (decision === "cancel") {
+      onProgress?.(rows.length, rows.length);
+      return {
+        created: 0,
+        updated: 0,
+        skipped: [],
+        unchanged: 0,
+        declined: 0,
+        cancelled: true,
+      };
+    }
+  }
+  if (toUpdate.length > 0) {
+    const current = new Map<string, Record<string, unknown>>();
+    const ids = toUpdate.map((r) => r.id);
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data, error } = await supabase
+        .from("item_master")
+        .select("*")
+        .in("id", ids.slice(i, i + 200));
+      if (error) throw error;
+      for (const row of data ?? [])
+        current.set(row.id as string, row as Record<string, unknown>);
+    }
+    const changes: ItemUpdateChange[] = [];
+    updates = [];
+    for (const r of toUpdate) {
+      const existingRow = current.get(r.id);
+      if (!existingRow) continue;
+      const fields = diffItem(existingRow, r.data, KEEP_IF_BLANK);
+      if (fields.length === 0) {
+        summary.unchanged = (summary.unchanged ?? 0) + 1;
+        continue;
+      }
+      updates.push(r);
+      changes.push({
+        id: r.id,
+        rowNumber: r.rowNumber,
+        code: String(
+          existingRow.sku ??
+            existingRow.vendor_cat ??
+            r.data.sku ??
+            r.data.vendor_cat ??
+            "",
+        ),
+        description: String(existingRow.description ?? r.data.description),
+        fields,
+      });
+    }
+    if (reviewUpdates) {
+      const decision = await reviewUpdates(changes, toInsert.length);
+      if (decision === "cancel") {
+        onProgress?.(rows.length, rows.length);
+        return {
+          created: 0,
+          updated: 0,
+          skipped: [],
+          unchanged: 0,
+          declined: 0,
+          cancelled: true,
+        };
+      }
+      summary.declined = updates.filter((r) => !decision.has(r.id)).length;
+      updates = updates.filter((r) => decision.has(r.id));
+    }
+  }
+
   let done = summary.skipped.length;
   const total = rows.length;
 
@@ -220,10 +452,14 @@ export async function importItemRows(
   // carry, because an upsert batch writes the same columns for every row.
   // Same for SKU / Vendor Cat: a row that matched an item by one of them
   // and leaves the other blank must not erase it.
-  const KEEP_IF_BLANK = ["sku", "vendor_cat", "frame", "material", "weight_kg"] as const;
-  const blankKeys = (r: Resolved) => KEEP_IF_BLANK.filter((k) => r.data[k] == null);
+  const blankKeys = (r: Resolved) =>
+    KEEP_IF_BLANK.filter((k) => r.data[k] == null);
   const rowOf = (r: Resolved, mode: "insert" | "update") => {
-    const row: Record<string, unknown> = { ...r.data, id: r.id, updated_at: new Date().toISOString() };
+    const row: Record<string, unknown> = {
+      ...r.data,
+      id: r.id,
+      updated_at: new Date().toISOString(),
+    };
     if (mode === "update") for (const k of blankKeys(r)) delete row[k];
     return row;
   };
@@ -246,7 +482,9 @@ export async function importItemRows(
       const { error } =
         mode === "insert"
           ? await supabase.from("item_master").insert(payload)
-          : await supabase.from("item_master").upsert(payload, { onConflict: "id" });
+          : await supabase
+              .from("item_master")
+              .upsert(payload, { onConflict: "id" });
 
       if (!error) {
         if (mode === "insert") summary.created += chunk.length;
@@ -260,9 +498,14 @@ export async function importItemRows(
           const { error: rowError } =
             mode === "insert"
               ? await supabase.from("item_master").insert(row)
-              : await supabase.from("item_master").upsert(row, { onConflict: "id" });
+              : await supabase
+                  .from("item_master")
+                  .upsert(row, { onConflict: "id" });
           if (rowError) {
-            summary.skipped.push({ row: r.rowNumber, reason: rowError.message });
+            summary.skipped.push({
+              row: r.rowNumber,
+              reason: rowError.message,
+            });
           } else if (mode === "insert") {
             summary.created += 1;
           } else {
@@ -277,7 +520,7 @@ export async function importItemRows(
   }
 
   await writeChunked(toInsert, "insert");
-  await writeChunked(toUpdate, "update");
+  await writeChunked(updates, "update");
 
   return summary;
 }
@@ -291,7 +534,7 @@ export async function logImport(
     fileName?: string | null;
     summary: ImportSummary;
     importedByName?: string | null;
-  }
+  },
 ) {
   const {
     data: { user },
@@ -309,8 +552,13 @@ export async function logImport(
 }
 
 export function summaryText(summary: ImportSummary): string {
+  if (summary.cancelled) return "Import cancelled — nothing was changed.";
   const parts = [`${summary.created} created`, `${summary.updated} updated`];
-  if (summary.skipped.length > 0) parts.push(`${summary.skipped.length} skipped`);
+  if (summary.unchanged) parts.push(`${summary.unchanged} unchanged`);
+  if (summary.declined)
+    parts.push(`${summary.declined} change(s) not accepted`);
+  if (summary.skipped.length > 0)
+    parts.push(`${summary.skipped.length} skipped`);
   let text = parts.join(", ") + ".";
   if (summary.skipped.length > 0) {
     const shown = summary.skipped.slice(0, 5);

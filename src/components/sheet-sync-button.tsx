@@ -2,17 +2,63 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { logImport, summaryText, type ImportSummary } from "@/lib/item-import";
+import {
+  logImport,
+  summaryText,
+  type ImportSummary,
+  type ItemUpdateChange,
+} from "@/lib/item-import";
+import { ImportChangesDialog } from "@/components/import-changes-dialog";
 
-export function SheetSyncButton({ onDone, currentUserName }: { onDone: () => void; currentUserName?: string }) {
+export function SheetSyncButton({
+  onDone,
+  currentUserName,
+}: {
+  onDone: () => void;
+  currentUserName?: string;
+}) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
+  const [review, setReview] = useState<{
+    changes: ItemUpdateChange[];
+    newCount: number;
+  } | null>(null);
+
+  // 1) preview (writes nothing)  2) review changes  3) import accepted ones
   async function handleSync() {
     setBusy(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/sync-sheet", { method: "POST" });
+      const res = await fetch("/api/sync-sheet", {
+        method: "POST",
+        body: JSON.stringify({ preview: true }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setMessage(body.error || "Sync failed.");
+        setBusy(false);
+        return;
+      }
+      const preview = body as { changes: ItemUpdateChange[]; newCount: number };
+      if (preview.changes.length > 0) {
+        setReview(preview);
+        return; // continues in runImport once the user decides
+      }
+      await runImport([]);
+    } catch {
+      setMessage("Sync failed — check your connection.");
+      setBusy(false);
+    }
+  }
+
+  async function runImport(acceptIds: string[]) {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/sync-sheet", {
+        method: "POST",
+        body: JSON.stringify({ acceptIds }),
+      });
       const body = await res.json();
       if (!res.ok) {
         setMessage(body.error || "Sync failed.");
@@ -35,6 +81,21 @@ export function SheetSyncButton({ onDone, currentUserName }: { onDone: () => voi
 
   return (
     <div className="relative">
+      {review && (
+        <ImportChangesDialog
+          changes={review.changes}
+          newCount={review.newCount}
+          onAccept={(ids) => {
+            setReview(null);
+            void runImport([...ids]);
+          }}
+          onCancel={() => {
+            setReview(null);
+            setBusy(false);
+            setMessage("Sync cancelled — nothing was changed.");
+          }}
+        />
+      )}
       <button
         onClick={handleSync}
         disabled={busy}
