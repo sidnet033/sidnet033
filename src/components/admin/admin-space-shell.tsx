@@ -22,7 +22,9 @@ export function AdminSpaceShell({
   const [tab, setTab] = useState<"users" | "roles">("users");
   const [profiles, setProfiles] = useState(initialProfiles);
   const [roles, setRoles] = useState(initialRoles);
-  const [permsByRole, setPermsByRole] = useState<Record<string, RolePermission[]>>(() => {
+  const [permsByRole, setPermsByRole] = useState<
+    Record<string, RolePermission[]>
+  >(() => {
     const grouped: Record<string, RolePermission[]> = {};
     for (const p of initialPermissions) (grouped[p.role_id] ??= []).push(p);
     return grouped;
@@ -49,14 +51,26 @@ export function AdminSpaceShell({
                 href="/admin/import-log"
                 className="flex h-9 items-center gap-space-xs rounded bg-surface-container-low px-space-md font-label-md text-label-md text-on-surface shadow-sm transition-colors hover:bg-surface-container"
               >
-                <Icon name="history_toggle_off" size={16} className="text-primary" />
+                <Icon
+                  name="history_toggle_off"
+                  size={16}
+                  className="text-primary"
+                />
                 Audit Logs
+              </Link>
+              <Link
+                href="/admin/price-log"
+                className="flex h-9 items-center gap-space-xs rounded bg-surface-container-low px-space-md font-label-md text-label-md text-on-surface shadow-sm transition-colors hover:bg-surface-container"
+              >
+                <Icon name="price_change" size={16} className="text-primary" />
+                Price Update Log
               </Link>
               <button
                 onClick={() => setCreateRoleOpen(true)}
                 className="flex h-9 items-center gap-space-xs rounded bg-surface-container px-space-md font-label-md text-label-md text-on-surface shadow-sm transition-colors hover:bg-surface-variant"
               >
-                <Icon name="shield_lock" size={16} className="text-tertiary" />+ Create New Role
+                <Icon name="shield_lock" size={16} className="text-tertiary" />+
+                Create New Role
               </button>
               <button
                 onClick={() => setInviteOpen(true)}
@@ -76,14 +90,18 @@ export function AdminSpaceShell({
                 <button
                   onClick={() => setTab("users")}
                   className={`flex items-center gap-space-xs py-space-md px-space-lg font-headline-sm text-headline-sm transition-all ${
-                    tab === "users" ? "border-b-2 border-primary text-primary" : "text-secondary hover:text-on-surface"
+                    tab === "users"
+                      ? "border-b-2 border-primary text-primary"
+                      : "text-secondary hover:text-on-surface"
                   }`}
                 >
                   <Icon name="badge" size={18} />
                   Users Directory
                   <span
                     className={`ml-1 rounded-full px-space-xs py-0.5 text-[11px] font-bold ${
-                      tab === "users" ? "bg-primary/10 text-primary" : "bg-surface-container-high text-secondary"
+                      tab === "users"
+                        ? "bg-primary/10 text-primary"
+                        : "bg-surface-container-high text-secondary"
                     }`}
                   >
                     {profiles.length}
@@ -92,14 +110,18 @@ export function AdminSpaceShell({
                 <button
                   onClick={() => setTab("roles")}
                   className={`flex items-center gap-space-xs py-space-md px-space-lg font-headline-sm text-headline-sm transition-all ${
-                    tab === "roles" ? "border-b-2 border-primary text-primary" : "text-secondary hover:text-on-surface"
+                    tab === "roles"
+                      ? "border-b-2 border-primary text-primary"
+                      : "text-secondary hover:text-on-surface"
                   }`}
                 >
                   <Icon name="security" size={18} />
                   Roles &amp; Permissions
                   <span
                     className={`ml-1 rounded-full px-space-xs py-0.5 text-[11px] font-bold ${
-                      tab === "roles" ? "bg-primary/10 text-primary" : "bg-surface-container-high text-secondary"
+                      tab === "roles"
+                        ? "bg-primary/10 text-primary"
+                        : "bg-surface-container-high text-secondary"
                     }`}
                   >
                     {roles.length}

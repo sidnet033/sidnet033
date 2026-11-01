@@ -1,5 +1,6 @@
 "use client";
 
+import { PastePricesDialog } from "@/components/paste-prices-dialog";
 import { searchByPhrases, searchItems } from "@/lib/item-search";
 import { ItemSearchHelp } from "@/components/search-help";
 import { CategoryFilter } from "@/components/category-multi-select";
@@ -408,7 +409,6 @@ async function saveLineTable(
 export function BomBuilder({
   switchboardId,
   currentUserId,
-  isAdmin,
   revisionArchived,
   allItems,
 }: {
@@ -457,6 +457,7 @@ export function BomBuilder({
   const [warningsOpen, setWarningsOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [costOpen, setCostOpen] = useState(false);
+  const [pricePasteOpen, setPricePasteOpen] = useState(false);
 
   // Creating a new item from within the BOM Builder (e.g. next to "Add Item
   // to Feeder") should be searchable immediately across every feeder module
@@ -740,13 +741,15 @@ export function BomBuilder({
     // Already in this BOM (added before, or GA has it placed somewhere) --
     // there's only ever one module per feeder, so adding it again just
     // bumps that module's qty instead of creating a second card for it.
-    if (draft?.modules.some((m) => m.feeder.id === opt.id)) {
+    const fromThis = (m: DraftModule) =>
+      m.feeder.id === opt.id || m.feeder.source_library_feeder_id === opt.id;
+    if (draft?.modules.some(fromThis)) {
       setDraft((d) =>
         d
           ? {
               ...d,
               modules: d.modules.map((m) =>
-                m.feeder.id === opt.id ? { ...m, qty: m.qty + 1 } : m,
+                fromThis(m) ? { ...m, qty: m.qty + 1 } : m,
               ),
             }
           : d,
@@ -1397,22 +1400,6 @@ export function BomBuilder({
       for (const m of draft.modules) {
         const isNewModule = !savedFeederIds.has(m.feeder.id);
 
-        // A library feeder is shared master data — editing its fields or
-        // lines here must never mutate it. If it was customized in this
-        // session, fork it into a new switchboard-scoped custom feeder now
-        // (so it shows as "Custom Feeder" from here on) and leave the
-        // original library feeder untouched.
-        const feederFieldsChanged =
-          m.baselineFeeder.name !== m.feeder.name ||
-          m.baselineFeeder.tag !== m.feeder.tag ||
-          m.baselineFeeder.rating_summary !== m.feeder.rating_summary ||
-          m.baselineFeeder.category !== m.feeder.category ||
-          m.baselineFeeder.description !== m.feeder.description ||
-          m.baselineFeeder.rated_current !== m.feeder.rated_current ||
-          m.baselineFeeder.pole_config !== m.feeder.pole_config ||
-          m.baselineFeeder.breaking_capacity !== m.feeder.breaking_capacity ||
-          m.baselineFeeder.device_type !== m.feeder.device_type ||
-          m.baselineFeeder.rated_kw !== m.feeder.rated_kw;
         const draftLineIdSet = new Set(m.lines.map((l) => l.id));
         const persistedOrder = m.lines
           .filter((l) => !l.id.startsWith("new-"))
@@ -1422,20 +1409,6 @@ export function BomBuilder({
           .map((l) => l.id);
         const orderChanged =
           persistedOrder.join("|") !== baselineOrder.join("|");
-        const linesChanged =
-          orderChanged ||
-          m.baselineLines.some((l) => !draftLineIdSet.has(l.id)) ||
-          m.lines.some((l) => {
-            if (l.id.startsWith("new-")) return true;
-            const prior = m.baselineLines.find((x) => x.id === l.id);
-            return (
-              !prior ||
-              prior.qty !== l.qty ||
-              prior.list_price_override !== l.list_price_override ||
-              prior.discount_pct_override !== l.discount_pct_override
-            );
-          });
-
         let feederId = m.feeder.id;
         let forked = false;
         // A feeder split off another one in this session exists only in the
@@ -1473,7 +1446,10 @@ export function BomBuilder({
             );
           feederId = (newFeeder as { id: string }).id;
         }
-        if (m.feeder.is_library && (feederFieldsChanged || linesChanged)) {
+        // A library feeder is never used directly: on save it always becomes
+        // this switchboard's own copy, so later edits to the library (names,
+        // items, prices) can't change this BOM -- or any quote made from it.
+        if (m.feeder.is_library) {
           if (currentUserId === undefined) {
             const {
               data: { user },
@@ -1498,6 +1474,7 @@ export function BomBuilder({
               rated_kw: m.feeder.rated_kw,
               switchboard_id: sb.id,
               is_library: false,
+              source_library_feeder_id: m.feeder.id,
               created_by: currentUserId,
             })
             .select("id")
@@ -1750,7 +1727,10 @@ export function BomBuilder({
   // many are already in the BOM.
   const placedCounts = new Map<string, number>();
   for (const m of draft.modules) {
-    if (m.feeder.is_library) placedCounts.set(m.feeder.id, m.qty);
+    const libId = m.feeder.is_library
+      ? m.feeder.id
+      : m.feeder.source_library_feeder_id;
+    if (libId) placedCounts.set(libId, (placedCounts.get(libId) ?? 0) + m.qty);
   }
   const bomCategories = Array.from(
     new Set(
@@ -1834,6 +1814,15 @@ export function BomBuilder({
           )}
           {!readOnly && !dirty && (
             <span className="text-[12px] text-tertiary">Saved</span>
+          )}
+          {!readOnly && (
+            <button
+              onClick={() => setPricePasteOpen(true)}
+              title="Paste SKU / cat # with list price (and discount %) to update those items in every feeder of this switchboard"
+              className="btn btn-outline btn-sm"
+            >
+              Paste prices
+            </button>
           )}
           <button
             onClick={() => setCostOpen(true)}
@@ -2052,6 +2041,54 @@ export function BomBuilder({
         </Modal>
       )}
 
+      {pricePasteOpen && (
+        <PastePricesDialog
+          title={`Paste prices — ${sb.tag}`}
+          scopeNote="Every feeder in this switchboard that uses the item is updated; click Save Changes to keep it."
+          items={items}
+          linesFor={(itemId) => {
+            let lines = 0;
+            let feeders = 0;
+            for (const m of draft.modules) {
+              const n = m.lines.filter((l) => l.item_id === itemId).length;
+              lines += n;
+              if (n) feeders++;
+            }
+            return { lines, feeders };
+          }}
+          onApply={(updates) => {
+            const byItem = new Map(updates.map((u) => [u.item.id, u]));
+            setDraft((d) =>
+              d
+                ? {
+                    ...d,
+                    modules: d.modules.map((m) =>
+                      m.lines.some((l) => byItem.has(l.item_id))
+                        ? {
+                            ...m,
+                            lines: m.lines.map((l) => {
+                              const u = byItem.get(l.item_id);
+                              return u
+                                ? {
+                                    ...l,
+                                    list_price_override: u.listPrice,
+                                    discount_pct_override:
+                                      u.discountPct ?? l.discount_pct_override,
+                                  }
+                                : l;
+                            }),
+                          }
+                        : m,
+                    ),
+                  }
+                : d,
+            );
+            setPricePasteOpen(false);
+          }}
+          onClose={() => setPricePasteOpen(false)}
+        />
+      )}
+
       {costOpen && (
         <Modal
           title={`Cost Breakdown — ${sb.tag}`}
@@ -2116,7 +2153,7 @@ export function BomBuilder({
                 : null
             }
             readOnly={readOnly}
-            canEditLines={!readOnly && (isAdmin || !mod.feeder.is_library)}
+            canEditLines={!readOnly}
             allItems={items}
             onRename={(field, value) => renameFeeder(mod, field, value)}
             onRatingChange={(field, value) =>
@@ -2146,7 +2183,7 @@ export function BomBuilder({
                 : undefined
             }
             onSplit={
-              !readOnly && (isAdmin || !mod.feeder.is_library)
+              !readOnly
                 ? (picks, name) => splitModule(mod, picks, name)
                 : undefined
             }
@@ -2465,7 +2502,11 @@ function FeederModuleCard({
                 : "border-surface-container-high bg-surface-container-low text-secondary"
             }`}
           >
-            {mod.feeder.is_library ? "Library Feeder" : "Custom Feeder"}
+            {mod.feeder.is_library
+              ? "From Library — becomes this board's own copy on save"
+              : mod.feeder.source_library_feeder_id
+                ? "From Library (own copy)"
+                : "Custom Feeder"}
           </span>
           <select
             disabled={readOnly || !canEditLines}

@@ -100,6 +100,7 @@ export type Feeder = {
   breaking_capacity: string | null;
   device_type: DeviceType | null;
   rated_kw: number | null;
+  source_library_feeder_id?: string | null;
 };
 
 export type DeviceType = "ACB" | "MCCB" | "MCB" | "DOL" | "RDOL" | "STAR_DELTA" | "VFD" | "SOFT_STARTER" | "OTHER";

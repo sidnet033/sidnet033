@@ -1,6 +1,7 @@
 "use client";
 
-import { searchItems } from "@/lib/item-search";
+import { PastePricesDialog } from "@/components/paste-prices-dialog";
+import { searchByPhrases, searchItems } from "@/lib/item-search";
 import { ItemSearchHelp } from "@/components/search-help";
 import { CategoryFilter } from "@/components/category-multi-select";
 import { useMemo, useState } from "react";
@@ -99,6 +100,8 @@ export function FeederMasterWorkspace({
   const [linesByFeeder, setLinesByFeeder] = useState(initialLinesByFeeder);
   const [items, setItems] = useState(allItems);
   const [typeFilter, setTypeFilter] = useState("ALL");
+  const [pricePasteOpen, setPricePasteOpen] = useState(false);
+  const [feederSearch, setFeederSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -129,10 +132,18 @@ export function FeederMasterWorkspace({
   const typeOptions = Array.from(
     new Set(feeders.map((f) => f.category).filter((c): c is string => !!c)),
   ).sort();
-  const filteredFeeders =
+  // type filter, then "a|b|c" search (any phrase; best matches first)
+  const filteredFeeders = searchByPhrases(
     typeFilter === "ALL"
       ? feeders
-      : feeders.filter((f) => f.category === typeFilter);
+      : feeders.filter((f) => f.category === typeFilter),
+    feederSearch,
+    (f) =>
+      [f.name, f.tag, f.category, f.rating_summary, f.description]
+        .filter(Boolean)
+        .join(" \u0000 "),
+    feeders.length,
+  );
 
   const itemCategories = Array.from(
     new Set(items.map((i) => i.category).filter((c): c is string => !!c)),
@@ -463,6 +474,65 @@ export function FeederMasterWorkspace({
 
   return (
     <div className="w-full bg-surface px-gutter-lg py-gutter">
+      {pricePasteOpen && (
+        <PastePricesDialog
+          title="Paste prices — Feeder Library"
+          scopeNote="Every library feeder that uses the item is updated straight away and logged in Admin Space. BOMs keep their own copies, so projects aren't affected."
+          items={items}
+          linesFor={(itemId) => {
+            let lines = 0;
+            let count = 0;
+            for (const f of feeders) {
+              const n = (linesByFeeder[f.id] ?? []).filter(
+                (l) => l.item_id === itemId,
+              ).length;
+              lines += n;
+              if (n) count++;
+            }
+            return { lines, feeders: count };
+          }}
+          onApply={async (updates) => {
+            const { data, error } = await supabase.rpc(
+              "bulk_update_library_prices",
+              {
+                p_rows: updates.map((u) => ({
+                  item_id: u.item.id,
+                  list_price: u.listPrice,
+                  discount_pct: u.discountPct,
+                })),
+              },
+            );
+            if (error) {
+              alert(error.message);
+              return;
+            }
+            const byItem = new Map(updates.map((u) => [u.item.id, u]));
+            setLinesByFeeder((prev) => {
+              const next: typeof prev = {};
+              for (const [fid, lines] of Object.entries(prev)) {
+                next[fid] = lines.map((l) => {
+                  const u = byItem.get(l.item_id);
+                  return u
+                    ? {
+                        ...l,
+                        list_price_override: u.listPrice,
+                        discount_pct_override:
+                          u.discountPct ?? l.discount_pct_override,
+                      }
+                    : l;
+                });
+              }
+              return next;
+            });
+            setPricePasteOpen(false);
+            const res = data as { lines: number; feeders: number };
+            alert(
+              `Updated ${res.lines} line(s) in ${res.feeders} library feeder(s). The change is logged in Admin Space → Price update log.`,
+            );
+          }}
+          onClose={() => setPricePasteOpen(false)}
+        />
+      )}
       <SavingOverlay show={saving} />
       <CreateItemDialog
         open={createItemOpen}
@@ -500,6 +570,13 @@ export function FeederMasterWorkspace({
                   onDone={refreshAll}
                 />
                 <button
+                  onClick={() => setPricePasteOpen(true)}
+                  title="Paste SKU / cat # with list price (and discount %) to update those items in every library feeder"
+                  className="flex items-center gap-space-xs rounded bg-surface-container-lowest px-space-md py-space-sm font-body-md text-body-md text-on-surface shadow-sm hover:bg-surface-container-low"
+                >
+                  <Icon name="content_paste" size={18} /> Paste prices
+                </button>
+                <button
                   disabled
                   title="Export coming soon"
                   className="flex cursor-not-allowed items-center gap-space-xs rounded bg-surface-container-lowest px-space-md py-space-sm font-body-md text-body-md text-on-surface shadow-sm"
@@ -529,22 +606,42 @@ export function FeederMasterWorkspace({
                 Standard Feeder Library
               </h2>
             </div>
-            <div className="flex items-center gap-space-2xs rounded bg-surface-container-lowest px-space-sm py-space-2xs shadow-sm">
-              <span className="font-label-sm text-label-sm text-on-surface-variant">
-                Filter Type:
-              </span>
-              <select
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-                className="cursor-pointer bg-transparent font-label-sm text-label-sm text-on-surface focus:outline-none"
-              >
-                <option value="ALL">All Types ({typeOptions.length})</option>
-                {typeOptions.map((t) => (
-                  <option key={t} value={t}>
-                    {t} ({feeders.filter((f) => f.category === t).length})
-                  </option>
-                ))}
-              </select>
+            <div className="flex flex-wrap items-center gap-space-sm">
+              <div className="relative flex w-72 items-center">
+                <Icon
+                  name="search"
+                  size={16}
+                  className="pointer-events-none absolute left-2 text-secondary"
+                />
+                <input
+                  value={feederSearch}
+                  onChange={(e) => setFeederSearch(e.target.value)}
+                  placeholder="Search feeders — use | for several"
+                  className="h-8 w-full rounded bg-surface-container-lowest pl-8 pr-8 text-[13px] shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <ItemSearchHelp
+                  fields="feeder name, tag, type, rating and description"
+                  example="incomer|acb|1600a"
+                  noun="feeders"
+                />
+              </div>
+              <div className="flex items-center gap-space-2xs rounded bg-surface-container-lowest px-space-sm py-space-2xs shadow-sm">
+                <span className="font-label-sm text-label-sm text-on-surface-variant">
+                  Filter Type:
+                </span>
+                <select
+                  value={typeFilter}
+                  onChange={(e) => setTypeFilter(e.target.value)}
+                  className="cursor-pointer bg-transparent font-label-sm text-label-sm text-on-surface focus:outline-none"
+                >
+                  <option value="ALL">All Types ({typeOptions.length})</option>
+                  {typeOptions.map((t) => (
+                    <option key={t} value={t}>
+                      {t} ({feeders.filter((f) => f.category === t).length})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
