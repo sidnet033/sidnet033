@@ -1,5 +1,6 @@
 "use client";
 
+import { FilterSelect, filterHit } from "@/components/multi-filter";
 import { PastePricesDialog } from "@/components/paste-prices-dialog";
 import { searchByPhrases, searchItems } from "@/lib/item-search";
 import { ItemSearchHelp } from "@/components/search-help";
@@ -99,7 +100,7 @@ export function FeederMasterWorkspace({
   const [feeders, setFeeders] = useState(initialFeeders);
   const [linesByFeeder, setLinesByFeeder] = useState(initialLinesByFeeder);
   const [items, setItems] = useState(allItems);
-  const [typeFilter, setTypeFilter] = useState("ALL");
+  const [typeFilter, setTypeFilter] = useState("");
   const [pricePasteOpen, setPricePasteOpen] = useState(false);
   const [feederSearch, setFeederSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -134,9 +135,7 @@ export function FeederMasterWorkspace({
   ).sort();
   // type filter, then "a|b|c" search (any phrase; best matches first)
   const filteredFeeders = searchByPhrases(
-    typeFilter === "ALL"
-      ? feeders
-      : feeders.filter((f) => f.category === typeFilter),
+    feeders.filter((f) => filterHit(typeFilter, f.category, "text")),
     feederSearch,
     (f) =>
       [f.name, f.tag, f.category, f.rating_summary, f.description]
@@ -625,23 +624,21 @@ export function FeederMasterWorkspace({
                   noun="feeders"
                 />
               </div>
-              <div className="flex items-center gap-space-2xs rounded bg-surface-container-lowest px-space-sm py-space-2xs shadow-sm">
-                <span className="font-label-sm text-label-sm text-on-surface-variant">
-                  Filter Type:
-                </span>
-                <select
-                  value={typeFilter}
-                  onChange={(e) => setTypeFilter(e.target.value)}
-                  className="cursor-pointer bg-transparent font-label-sm text-label-sm text-on-surface focus:outline-none"
-                >
-                  <option value="ALL">All Types ({typeOptions.length})</option>
-                  {typeOptions.map((t) => (
-                    <option key={t} value={t}>
-                      {t} ({feeders.filter((f) => f.category === t).length})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <FilterSelect
+                className="w-48"
+                value={typeFilter}
+                onChange={setTypeFilter}
+                allLabel={`All types (${typeOptions.length})`}
+                options={typeOptions}
+                help={
+                  <>
+                    Tick types, or type them separated by <b>|</b> to show
+                    feeders of <i>any</i> of them — e.g.{" "}
+                    <span className="font-mono">incomer|outgoing</span>. Part of
+                    a type name is enough.
+                  </>
+                }
+              />
             </div>
           </div>
 
