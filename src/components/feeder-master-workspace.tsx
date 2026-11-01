@@ -457,16 +457,13 @@ export function FeederMasterWorkspace({
     if (idx < 0 || swapIdx < 0 || swapIdx >= lines.length) return;
     [lines[idx], lines[swapIdx]] = [lines[swapIdx], lines[idx]];
     setLinesByFeeder((prev) => ({ ...prev, [selectedId]: lines }));
-    await Promise.all([
-      supabase
-        .from("feeder_items")
-        .update({ sort_order: idx })
-        .eq("id", lines[idx].id),
-      supabase
-        .from("feeder_items")
-        .update({ sort_order: swapIdx })
-        .eq("id", lines[swapIdx].id),
-    ]);
+    // renumber the whole feeder, so lines that all came in with the same
+    // sort_order (e.g. from an import) keep this exact order on reload
+    await Promise.all(
+      lines.map((l, i) =>
+        supabase.from("feeder_items").update({ sort_order: i }).eq("id", l.id),
+      ),
+    );
   }
 
   return (

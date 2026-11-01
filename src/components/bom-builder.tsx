@@ -1137,6 +1137,26 @@ export function BomBuilder({
     );
   }
 
+  // move a line up/down within its feeder; saved with Save Changes
+  function moveLine(mod: DraftModule, lineId: string, dir: -1 | 1) {
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            modules: d.modules.map((m) => {
+              if (m.feeder.id !== mod.feeder.id) return m;
+              const lines = [...m.lines];
+              const i = lines.findIndex((l) => l.id === lineId);
+              const j = i + dir;
+              if (i < 0 || j < 0 || j >= lines.length) return m;
+              [lines[i], lines[j]] = [lines[j], lines[i]];
+              return { ...m, lines };
+            }),
+          }
+        : d,
+    );
+  }
+
   function removeLine(mod: DraftModule, lineId: string) {
     setDraft((d) =>
       d
@@ -1392,7 +1412,16 @@ export function BomBuilder({
           m.baselineFeeder.device_type !== m.feeder.device_type ||
           m.baselineFeeder.rated_kw !== m.feeder.rated_kw;
         const draftLineIdSet = new Set(m.lines.map((l) => l.id));
+        const persistedOrder = m.lines
+          .filter((l) => !l.id.startsWith("new-"))
+          .map((l) => l.id);
+        const baselineOrder = m.baselineLines
+          .filter((l) => draftLineIdSet.has(l.id))
+          .map((l) => l.id);
+        const orderChanged =
+          persistedOrder.join("|") !== baselineOrder.join("|");
         const linesChanged =
+          orderChanged ||
           m.baselineLines.some((l) => !draftLineIdSet.has(l.id)) ||
           m.lines.some((l) => {
             if (l.id.startsWith("new-")) return true;
@@ -1660,6 +1689,7 @@ export function BomBuilder({
               const priorLine = m.baselineLines.find((x) => x.id === l.id);
               if (
                 !priorLine ||
+                orderChanged ||
                 priorLine.qty !== l.qty ||
                 priorLine.list_price_override !== l.list_price_override ||
                 priorLine.discount_pct_override !== l.discount_pct_override
@@ -2099,6 +2129,7 @@ export function BomBuilder({
               updateLineOverride(mod, lineId, field, value)
             }
             onRemoveLine={(lineId) => removeLine(mod, lineId)}
+            onMoveLine={(lineId, dir) => moveLine(mod, lineId, dir)}
             onDuplicate={
               !readOnly && !mod.feeder.id.startsWith("new-")
                 ? () => duplicateModule(mod)
@@ -2290,6 +2321,7 @@ function FeederModuleCard({
   onLineQtyChange,
   onLineOverrideChange,
   onRemoveLine,
+  onMoveLine,
   onDuplicate,
   onDelete,
   onPromote,
@@ -2320,6 +2352,7 @@ function FeederModuleCard({
     value: number | null,
   ) => void;
   onRemoveLine: (lineId: string) => void;
+  onMoveLine: (lineId: string, dir: -1 | 1) => void;
   onDuplicate?: () => void;
   onDelete?: () => void;
   onPromote?: () => void;
@@ -2711,7 +2744,25 @@ function FeederModuleCard({
                       {money(line.qty * netRate)}
                     </td>
                     {canEditLines && (
-                      <td className="px-2 py-1.5 text-right">
+                      <td className="whitespace-nowrap px-2 py-1.5 text-right">
+                        <button
+                          onClick={() => onMoveLine(line.id, -1)}
+                          disabled={i === 0}
+                          title="Move up"
+                          aria-label="Move up"
+                          className="rounded p-0.5 text-secondary hover:bg-surface-container-high hover:text-on-surface disabled:opacity-25"
+                        >
+                          <Icon name="arrow_upward" size={14} />
+                        </button>
+                        <button
+                          onClick={() => onMoveLine(line.id, 1)}
+                          disabled={i === mod.lines.length - 1}
+                          title="Move down"
+                          aria-label="Move down"
+                          className="mr-1 rounded p-0.5 text-secondary hover:bg-surface-container-high hover:text-on-surface disabled:opacity-25"
+                        >
+                          <Icon name="arrow_downward" size={14} />
+                        </button>
                         <button
                           onClick={() => onRemoveLine(line.id)}
                           className="text-error hover:underline"
