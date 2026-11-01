@@ -1,5 +1,6 @@
 "use client";
 
+import { CategoryFilter } from "@/components/category-multi-select";
 import { useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
@@ -13,10 +14,21 @@ import { effectiveNetRate } from "@/lib/feeder-cost";
 import { FEEDER_TYPES, computeFeederTag } from "@/lib/feeder-tag";
 import { DEVICE_TYPE_LABELS, MOTOR_STARTER_TYPES } from "@/lib/artuk-sizing";
 import { FeederImportDialog } from "@/components/feeder-import-dialog";
-import type { DeviceType, Feeder, FeederItemWithDetails, ItemMaster } from "@/types/database";
+import type {
+  DeviceType,
+  Feeder,
+  FeederItemWithDetails,
+  ItemMaster,
+} from "@/types/database";
 
 const POLE_CONFIGS = ["3-Pole (3P)", "4-Pole (4P)", "3P + N", "2-Pole (2P)"];
-const BREAKING_CAPACITIES = ["65 kA (1s)", "50 kA (1s)", "36 kA (1s)", "25 kA (1s)", "100 kA (1s)"];
+const BREAKING_CAPACITIES = [
+  "65 kA (1s)",
+  "50 kA (1s)",
+  "36 kA (1s)",
+  "25 kA (1s)",
+  "100 kA (1s)",
+];
 const DEVICE_TYPES = Object.keys(DEVICE_TYPE_LABELS) as DeviceType[];
 
 function money(n: number) {
@@ -31,7 +43,11 @@ function netRate(item: ItemMaster) {
 // there (see bom-builder.tsx) — that override sticks even when the same
 // feeder is viewed here in the library.
 function lineNetRate(line: FeederItemWithDetails) {
-  return effectiveNetRate(line.item, line.list_price_override, line.discount_pct_override);
+  return effectiveNetRate(
+    line.item,
+    line.list_price_override,
+    line.discount_pct_override,
+  );
 }
 
 function feederCost(lines: FeederItemWithDetails[]) {
@@ -91,25 +107,45 @@ export function FeederMasterWorkspace({
 
   const [itemSearch, setItemSearch] = useState("");
   const [selectedItem, setSelectedItem] = useState<ItemMaster | null>(null);
-  const [categoryChip, setCategoryChip] = useState<string | null>(null);
+  const [categoryChips, setCategoryChips] = useState<Set<string>>(new Set());
   const [createItemOpen, setCreateItemOpen] = useState(false);
 
   const selectedFeeder = feeders.find((f) => f.id === selectedId) ?? null;
-  const selectedLines = selectedId ? linesByFeeder[selectedId] ?? [] : [];
-  const dirty = form && savedForm && JSON.stringify(form) !== JSON.stringify(savedForm);
-  const displayedTag = form ? computeFeederTag(form.category, form.rated_current, selectedLines[0]?.item.make ?? null, feeders, selectedId) : "";
+  const selectedLines = selectedId ? (linesByFeeder[selectedId] ?? []) : [];
+  const dirty =
+    form && savedForm && JSON.stringify(form) !== JSON.stringify(savedForm);
+  const displayedTag = form
+    ? computeFeederTag(
+        form.category,
+        form.rated_current,
+        selectedLines[0]?.item.make ?? null,
+        feeders,
+        selectedId,
+      )
+    : "";
 
-  const typeOptions = Array.from(new Set(feeders.map((f) => f.category).filter((c): c is string => !!c))).sort();
-  const filteredFeeders = typeFilter === "ALL" ? feeders : feeders.filter((f) => f.category === typeFilter);
+  const typeOptions = Array.from(
+    new Set(feeders.map((f) => f.category).filter((c): c is string => !!c)),
+  ).sort();
+  const filteredFeeders =
+    typeFilter === "ALL"
+      ? feeders
+      : feeders.filter((f) => f.category === typeFilter);
 
-  const itemCategories = Array.from(new Set(items.map((i) => i.category).filter((c): c is string => !!c))).sort().slice(0, 6);
+  const itemCategories = Array.from(
+    new Set(items.map((i) => i.category).filter((c): c is string => !!c)),
+  ).sort();
 
   const itemMatches = itemSearch.trim()
     ? items
         .filter((i) => {
-          if (categoryChip && i.category !== categoryChip) return false;
+          if (categoryChips.size && !categoryChips.has(i.category ?? ""))
+            return false;
           const q = itemSearch.toLowerCase();
-          return itemCode(i).toLowerCase().includes(q) || i.description.toLowerCase().includes(q);
+          return (
+            itemCode(i).toLowerCase().includes(q) ||
+            i.description.toLowerCase().includes(q)
+          );
         })
         .slice(0, 10)
     : [];
@@ -139,7 +175,11 @@ export function FeederMasterWorkspace({
     setFeeders(feederList);
     const feederIds = feederList.map((f) => f.id);
     const { data: lines } = feederIds.length
-      ? await supabase.from("feeder_items").select("*, item:item_master(*)").in("feeder_id", feederIds).order("sort_order")
+      ? await supabase
+          .from("feeder_items")
+          .select("*, item:item_master(*)")
+          .in("feeder_id", feederIds)
+          .order("sort_order")
       : { data: [] };
     const nextLinesByFeeder: Record<string, FeederItemWithDetails[]> = {};
     for (const line of (lines ?? []) as unknown as FeederItemWithDetails[]) {
@@ -153,7 +193,13 @@ export function FeederMasterWorkspace({
   // the line's price override; a new price needs no write (lines read the
   // live Item Master price).
   const pricedLines: PricedLine[] = feeders.flatMap((f) =>
-    (linesByFeeder[f.id] ?? []).map((l) => ({ lineId: l.id, item: l.item, where: f.name, list_price_override: l.list_price_override, discount_pct_override: l.discount_pct_override }))
+    (linesByFeeder[f.id] ?? []).map((l) => ({
+      lineId: l.id,
+      item: l.item,
+      where: f.name,
+      list_price_override: l.list_price_override,
+      discount_pct_override: l.discount_pct_override,
+    })),
   );
 
   async function applyPriceDecisions(decisions: PriceDecision[]) {
@@ -162,27 +208,48 @@ export function FeederMasterWorkspace({
       .flat()
       .filter((l) => {
         const d = byLine.get(l.id);
-        return d && (d.list_price_override !== l.list_price_override || d.discount_pct_override !== l.discount_pct_override);
+        return (
+          d &&
+          (d.list_price_override !== l.list_price_override ||
+            d.discount_pct_override !== l.discount_pct_override)
+        );
       });
     setLinesByFeeder((prev) =>
       Object.fromEntries(
-        Object.entries(prev).map(([fid, lines]) => [fid, lines.map((l) => {
-          const d = byLine.get(l.id);
-          return d ? { ...l, item: d.item, list_price_override: d.list_price_override, discount_pct_override: d.discount_pct_override } : l;
-        })])
-      )
+        Object.entries(prev).map(([fid, lines]) => [
+          fid,
+          lines.map((l) => {
+            const d = byLine.get(l.id);
+            return d
+              ? {
+                  ...l,
+                  item: d.item,
+                  list_price_override: d.list_price_override,
+                  discount_pct_override: d.discount_pct_override,
+                }
+              : l;
+          }),
+        ]),
+      ),
     );
     if (!pinned.length) return;
     setSaving(true);
     const results = await Promise.all(
       pinned.map((l) => {
         const d = byLine.get(l.id)!;
-        return supabase.from("feeder_items").update({ list_price_override: d.list_price_override, discount_pct_override: d.discount_pct_override }).eq("id", l.id);
-      })
+        return supabase
+          .from("feeder_items")
+          .update({
+            list_price_override: d.list_price_override,
+            discount_pct_override: d.discount_pct_override,
+          })
+          .eq("id", l.id);
+      }),
     );
     setSaving(false);
     const failed = results.find((r) => r.error);
-    if (failed?.error) alert(`Could not save the kept prices: ${failed.error.message}`);
+    if (failed?.error)
+      alert(`Could not save the kept prices: ${failed.error.message}`);
   }
 
   async function handleCreate() {
@@ -235,7 +302,14 @@ export function FeederMasterWorkspace({
     if (sourceLines.length) {
       const { data: insertedLines, error: linesError } = await supabase
         .from("feeder_items")
-        .insert(sourceLines.map((l, i) => ({ feeder_id: newFeeder.id, item_id: l.item_id, qty: l.qty, sort_order: i })))
+        .insert(
+          sourceLines.map((l, i) => ({
+            feeder_id: newFeeder.id,
+            item_id: l.item_id,
+            qty: l.qty,
+            sort_order: i,
+          })),
+        )
         .select("*, item:item_master(*)");
       if (linesError) {
         setBusyId(null);
@@ -271,7 +345,10 @@ export function FeederMasterWorkspace({
     }
   }
 
-  function updateField<K extends keyof FeederFormState>(field: K, value: FeederFormState[K]) {
+  function updateField<K extends keyof FeederFormState>(
+    field: K,
+    value: FeederFormState[K],
+  ) {
     setForm((prev) => (prev ? { ...prev, [field]: value } : prev));
   }
 
@@ -294,13 +371,18 @@ export function FeederMasterWorkspace({
       rated_kw: form.rated_kw ? Number(form.rated_kw) : null,
       updated_at: new Date().toISOString(),
     };
-    const { error } = await supabase.from("feeders").update(patch).eq("id", selectedFeeder.id);
+    const { error } = await supabase
+      .from("feeders")
+      .update(patch)
+      .eq("id", selectedFeeder.id);
     setSaving(false);
     if (error) {
       alert(error.message);
       return;
     }
-    setFeeders((prev) => prev.map((f) => (f.id === selectedFeeder.id ? { ...f, ...patch } : f)));
+    setFeeders((prev) =>
+      prev.map((f) => (f.id === selectedFeeder.id ? { ...f, ...patch } : f)),
+    );
     setSavedForm(form);
   }
 
@@ -309,7 +391,12 @@ export function FeederMasterWorkspace({
     const sortOrder = (linesByFeeder[selectedId] ?? []).length;
     const { data, error } = await supabase
       .from("feeder_items")
-      .insert({ feeder_id: selectedId, item_id: item.id, qty: 1, sort_order: sortOrder })
+      .insert({
+        feeder_id: selectedId,
+        item_id: item.id,
+        qty: 1,
+        sort_order: sortOrder,
+      })
       .select("*")
       .single();
     if (error) {
@@ -318,7 +405,10 @@ export function FeederMasterWorkspace({
     }
     setLinesByFeeder((prev) => ({
       ...prev,
-      [selectedId]: [...(prev[selectedId] ?? []), { ...(data as FeederItemWithDetails), item }],
+      [selectedId]: [
+        ...(prev[selectedId] ?? []),
+        { ...(data as FeederItemWithDetails), item },
+      ],
     }));
     setItemSearch("");
     setSelectedItem(null);
@@ -343,14 +433,19 @@ export function FeederMasterWorkspace({
     if (!selectedId) return;
     setLinesByFeeder((prev) => ({
       ...prev,
-      [selectedId]: (prev[selectedId] ?? []).map((l) => (l.id === lineId ? { ...l, qty } : l)),
+      [selectedId]: (prev[selectedId] ?? []).map((l) =>
+        l.id === lineId ? { ...l, qty } : l,
+      ),
     }));
     await supabase.from("feeder_items").update({ qty }).eq("id", lineId);
   }
 
   async function removeLine(lineId: string) {
     if (!selectedId) return;
-    setLinesByFeeder((prev) => ({ ...prev, [selectedId]: (prev[selectedId] ?? []).filter((l) => l.id !== lineId) }));
+    setLinesByFeeder((prev) => ({
+      ...prev,
+      [selectedId]: (prev[selectedId] ?? []).filter((l) => l.id !== lineId),
+    }));
     await supabase.from("feeder_items").delete().eq("id", lineId);
   }
 
@@ -363,15 +458,25 @@ export function FeederMasterWorkspace({
     [lines[idx], lines[swapIdx]] = [lines[swapIdx], lines[idx]];
     setLinesByFeeder((prev) => ({ ...prev, [selectedId]: lines }));
     await Promise.all([
-      supabase.from("feeder_items").update({ sort_order: idx }).eq("id", lines[idx].id),
-      supabase.from("feeder_items").update({ sort_order: swapIdx }).eq("id", lines[swapIdx].id),
+      supabase
+        .from("feeder_items")
+        .update({ sort_order: idx })
+        .eq("id", lines[idx].id),
+      supabase
+        .from("feeder_items")
+        .update({ sort_order: swapIdx })
+        .eq("id", lines[swapIdx].id),
     ]);
   }
 
   return (
     <div className="w-full bg-surface px-gutter-lg py-gutter">
       <SavingOverlay show={saving} />
-      <CreateItemDialog open={createItemOpen} onClose={() => setCreateItemOpen(false)} onCreated={handleItemCreated} />
+      <CreateItemDialog
+        open={createItemOpen}
+        onClose={() => setCreateItemOpen(false)}
+        onCreated={handleItemCreated}
+      />
       <div className="flex flex-col gap-space-lg pb-space-2xl">
         {/* Top context & actions bar */}
         <div className="flex flex-col justify-between gap-space-md md:flex-row md:items-center">
@@ -383,29 +488,41 @@ export function FeederMasterWorkspace({
               <Icon name="chevron_right" size={13} />
               <span>Template Configurator</span>
             </div>
-            <h1 className="font-headline-lg text-headline-lg leading-none tracking-tight text-on-surface">Feeder Master</h1>
+            <h1 className="font-headline-lg text-headline-lg leading-none tracking-tight text-on-surface">
+              Feeder Master
+            </h1>
           </div>
           <div className="flex shrink-0 items-center gap-space-sm self-start md:self-auto">
-          <RefreshItemsButton items={items} onRefreshed={setItems} lines={pricedLines} onPriceDecisions={applyPriceDecisions} />
-          {isAdmin && (
-            <div className="flex shrink-0 items-center gap-space-sm">
-              <FeederImportDialog feeders={feeders} items={items} currentUserName={currentUserName} onDone={refreshAll} />
-              <button
-                disabled
-                title="Export coming soon"
-                className="flex cursor-not-allowed items-center gap-space-xs rounded bg-surface-container-lowest px-space-md py-space-sm font-body-md text-body-md text-on-surface shadow-sm"
-              >
-                <Icon name="file_download" size={18} /> Export Feeder Master
-              </button>
-              <button
-                onClick={handleCreate}
-                className="flex items-center gap-space-xs rounded bg-primary px-space-md py-space-sm font-body-md text-body-md text-on-primary shadow-sm transition-colors hover:bg-primary-container"
-              >
-                <Icon name="add_circle" size={18} />
-                <span className="font-medium">+ Create Feeder</span>
-              </button>
-            </div>
-          )}
+            <RefreshItemsButton
+              items={items}
+              onRefreshed={setItems}
+              lines={pricedLines}
+              onPriceDecisions={applyPriceDecisions}
+            />
+            {isAdmin && (
+              <div className="flex shrink-0 items-center gap-space-sm">
+                <FeederImportDialog
+                  feeders={feeders}
+                  items={items}
+                  currentUserName={currentUserName}
+                  onDone={refreshAll}
+                />
+                <button
+                  disabled
+                  title="Export coming soon"
+                  className="flex cursor-not-allowed items-center gap-space-xs rounded bg-surface-container-lowest px-space-md py-space-sm font-body-md text-body-md text-on-surface shadow-sm"
+                >
+                  <Icon name="file_download" size={18} /> Export Feeder Master
+                </button>
+                <button
+                  onClick={handleCreate}
+                  className="flex items-center gap-space-xs rounded bg-primary px-space-md py-space-sm font-body-md text-body-md text-on-primary shadow-sm transition-colors hover:bg-primary-container"
+                >
+                  <Icon name="add_circle" size={18} />
+                  <span className="font-medium">+ Create Feeder</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -416,10 +533,14 @@ export function FeederMasterWorkspace({
               <div className="flex h-6 w-6 items-center justify-center rounded bg-primary/10 text-primary">
                 <Icon name="folder_copy" size={16} />
               </div>
-              <h2 className="font-headline-sm text-headline-sm text-on-surface">Standard Feeder Library</h2>
+              <h2 className="font-headline-sm text-headline-sm text-on-surface">
+                Standard Feeder Library
+              </h2>
             </div>
             <div className="flex items-center gap-space-2xs rounded bg-surface-container-lowest px-space-sm py-space-2xs shadow-sm">
-              <span className="font-label-sm text-label-sm text-on-surface-variant">Filter Type:</span>
+              <span className="font-label-sm text-label-sm text-on-surface-variant">
+                Filter Type:
+              </span>
               <select
                 value={typeFilter}
                 onChange={(e) => setTypeFilter(e.target.value)}
@@ -441,16 +562,25 @@ export function FeederMasterWorkspace({
               const cost = feederCost(lines);
               const expanded = expandedId === f.id;
               return (
-                <div key={f.id} className="overflow-hidden rounded bg-surface-container-lowest shadow-sm transition-colors">
+                <div
+                  key={f.id}
+                  className="overflow-hidden rounded bg-surface-container-lowest shadow-sm transition-colors"
+                >
                   <div
                     onClick={() => toggleExpand(f.id)}
                     className="flex cursor-pointer flex-col justify-between gap-space-md p-space-md transition-colors hover:bg-surface-container-low/40 md:flex-row md:items-center"
                   >
                     <div className="flex items-start gap-space-md md:items-center">
-                      <Icon name={expanded ? "expand_more" : "chevron_right"} size={18} className="mt-1 shrink-0 text-on-surface-variant md:mt-0" />
+                      <Icon
+                        name={expanded ? "expand_more" : "chevron_right"}
+                        size={18}
+                        className="mt-1 shrink-0 text-on-surface-variant md:mt-0"
+                      />
                       <div className="flex flex-col">
                         <div className="flex flex-wrap items-center gap-space-sm">
-                          <span className="font-telemetry-md text-telemetry-md font-bold text-on-surface">{f.tag || "—"}</span>
+                          <span className="font-telemetry-md text-telemetry-md font-bold text-on-surface">
+                            {f.tag || "—"}
+                          </span>
                           {f.category && (
                             <span className="rounded bg-surface-container-high px-space-xs py-space-2xs font-label-sm text-label-sm font-semibold text-primary">
                               {f.category.toUpperCase()}
@@ -458,12 +588,20 @@ export function FeederMasterWorkspace({
                           )}
                           {(f.pole_config || f.breaking_capacity) && (
                             <span className="rounded bg-surface-container px-space-xs py-space-2xs font-label-sm text-label-sm text-on-surface-variant">
-                              {[f.pole_config, f.breaking_capacity].filter(Boolean).join(" • ")}
+                              {[f.pole_config, f.breaking_capacity]
+                                .filter(Boolean)
+                                .join(" • ")}
                             </span>
                           )}
                         </div>
-                        <span className="mt-space-2xs font-body-md text-body-md text-on-surface">{f.name}</span>
-                        {f.description && <span className="font-label-sm text-label-sm text-on-surface-variant">{f.description}</span>}
+                        <span className="mt-space-2xs font-body-md text-body-md text-on-surface">
+                          {f.name}
+                        </span>
+                        {f.description && (
+                          <span className="font-label-sm text-label-sm text-on-surface-variant">
+                            {f.description}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center justify-between gap-space-lg md:justify-end">
@@ -471,10 +609,15 @@ export function FeederMasterWorkspace({
                         <span className="font-label-sm text-label-sm text-on-surface-variant">
                           {lines.length} Item{lines.length === 1 ? "" : "s"}
                         </span>
-                        <span className="font-telemetry-md text-telemetry-md font-bold text-primary">{money(cost)}</span>
+                        <span className="font-telemetry-md text-telemetry-md font-bold text-primary">
+                          {money(cost)}
+                        </span>
                       </div>
                       {isAdmin && (
-                        <div className="flex items-center gap-space-xs" onClick={(e) => e.stopPropagation()}>
+                        <div
+                          className="flex items-center gap-space-xs"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <button
                             onClick={() => selectFeeder(f)}
                             className="rounded bg-surface-container-low px-space-sm py-space-xs font-label-md text-label-md text-on-surface shadow-sm transition-colors hover:bg-surface-container"
@@ -512,19 +655,35 @@ export function FeederMasterWorkspace({
                   {expanded && (
                     <div className="border-t border-surface-container-high">
                       {lines.length === 0 ? (
-                        <p className="p-space-md text-center font-body-sm text-body-sm text-secondary">No items in this feeder yet.</p>
+                        <p className="p-space-md text-center font-body-sm text-body-sm text-secondary">
+                          No items in this feeder yet.
+                        </p>
                       ) : (
                         <table className="w-full text-left">
                           <thead>
                             <tr className="bg-surface-container-low font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">
-                              <th className="py-space-xs pl-space-lg pr-space-xs">SKU</th>
-                              <th className="px-space-sm py-space-xs">Vendor Cat</th>
+                              <th className="py-space-xs pl-space-lg pr-space-xs">
+                                SKU
+                              </th>
+                              <th className="px-space-sm py-space-xs">
+                                Vendor Cat
+                              </th>
                               <th className="px-space-sm py-space-xs">Make</th>
-                              <th className="px-space-sm py-space-xs">Category</th>
-                              <th className="px-space-sm py-space-xs">Description</th>
-                              <th className="px-space-sm py-space-xs text-center">Qty</th>
-                              <th className="px-space-sm py-space-xs text-right">Net Rate</th>
-                              <th className="py-space-xs pr-space-lg pl-space-xs text-right">Amount</th>
+                              <th className="px-space-sm py-space-xs">
+                                Category
+                              </th>
+                              <th className="px-space-sm py-space-xs">
+                                Description
+                              </th>
+                              <th className="px-space-sm py-space-xs text-center">
+                                Qty
+                              </th>
+                              <th className="px-space-sm py-space-xs text-right">
+                                Net Rate
+                              </th>
+                              <th className="py-space-xs pr-space-lg pl-space-xs text-right">
+                                Amount
+                              </th>
                             </tr>
                           </thead>
                           <tbody className="font-body-sm text-body-sm text-on-surface">
@@ -533,13 +692,27 @@ export function FeederMasterWorkspace({
                                 key={line.id}
                                 className={`border-t border-surface-container ${itemRowClass(line.item)}`}
                               >
-                                <td className="py-space-xs pl-space-lg pr-space-xs font-telemetry-md font-bold text-primary">{line.item.sku || "—"}</td>
-                                <td className="px-space-sm py-space-xs text-on-surface-variant">{line.item.vendor_cat || "—"}</td>
-                                <td className="px-space-sm py-space-xs text-on-surface-variant">{line.item.make || "—"}</td>
-                                <td className="px-space-sm py-space-xs text-on-surface-variant">{line.item.category || "—"}</td>
-                                <td className="px-space-sm py-space-xs">{line.item.description}</td>
-                                <td className="px-space-sm py-space-xs text-center tabular-nums">{line.qty}</td>
-                                <td className="px-space-sm py-space-xs text-right tabular-nums">{money(lineNetRate(line))}</td>
+                                <td className="py-space-xs pl-space-lg pr-space-xs font-telemetry-md font-bold text-primary">
+                                  {line.item.sku || "—"}
+                                </td>
+                                <td className="px-space-sm py-space-xs text-on-surface-variant">
+                                  {line.item.vendor_cat || "—"}
+                                </td>
+                                <td className="px-space-sm py-space-xs text-on-surface-variant">
+                                  {line.item.make || "—"}
+                                </td>
+                                <td className="px-space-sm py-space-xs text-on-surface-variant">
+                                  {line.item.category || "—"}
+                                </td>
+                                <td className="px-space-sm py-space-xs">
+                                  {line.item.description}
+                                </td>
+                                <td className="px-space-sm py-space-xs text-center tabular-nums">
+                                  {line.qty}
+                                </td>
+                                <td className="px-space-sm py-space-xs text-right tabular-nums">
+                                  {money(lineNetRate(line))}
+                                </td>
                                 <td className="py-space-xs pr-space-lg pl-space-xs text-right font-semibold tabular-nums">
                                   {money(line.qty * lineNetRate(line))}
                                 </td>
@@ -555,7 +728,10 @@ export function FeederMasterWorkspace({
             })}
             {filteredFeeders.length === 0 && (
               <div className="rounded bg-surface-container-lowest p-space-lg text-center text-sm text-secondary shadow-sm">
-                No feeders yet. {isAdmin ? 'Use "+ Create Feeder" above.' : "Ask an admin to build the feeder master."}
+                No feeders yet.{" "}
+                {isAdmin
+                  ? 'Use "+ Create Feeder" above.'
+                  : "Ask an admin to build the feeder master."}
               </div>
             )}
           </div>
@@ -571,8 +747,12 @@ export function FeederMasterWorkspace({
                     <Icon name="tune" size={18} />
                   </div>
                   <div className="flex flex-col">
-                    <h2 className="font-headline-sm text-headline-sm leading-tight text-on-surface">Feeder Attributes</h2>
-                    <span className="font-label-sm text-label-sm text-on-surface-variant">Define electrical parameters and switchgear specifications</span>
+                    <h2 className="font-headline-sm text-headline-sm leading-tight text-on-surface">
+                      Feeder Attributes
+                    </h2>
+                    <span className="font-label-sm text-label-sm text-on-surface-variant">
+                      Define electrical parameters and switchgear specifications
+                    </span>
                   </div>
                 </div>
                 <div className="flex items-center gap-space-sm">
@@ -610,7 +790,9 @@ export function FeederMasterWorkspace({
                     <div className="relative flex items-center">
                       <select
                         value={form.category}
-                        onChange={(e) => updateField("category", e.target.value)}
+                        onChange={(e) =>
+                          updateField("category", e.target.value)
+                        }
                         className="h-9 w-full appearance-none rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-8 font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
                       >
                         <option value="">Select type...</option>
@@ -619,16 +801,30 @@ export function FeederMasterWorkspace({
                             {t}
                           </option>
                         ))}
-                        {form.category && !FEEDER_TYPES.includes(form.category) && <option value={form.category}>{form.category}</option>}
+                        {form.category &&
+                          !FEEDER_TYPES.includes(form.category) && (
+                            <option value={form.category}>
+                              {form.category}
+                            </option>
+                          )}
                       </select>
-                      <Icon name="expand_more" size={18} className="pointer-events-none absolute right-space-sm text-on-surface-variant" />
+                      <Icon
+                        name="expand_more"
+                        size={18}
+                        className="pointer-events-none absolute right-space-sm text-on-surface-variant"
+                      />
                     </div>
                   </FormField>
                   <FormField label="Device Type">
                     <div className="relative flex items-center">
                       <select
                         value={form.device_type}
-                        onChange={(e) => updateField("device_type", e.target.value as DeviceType | "")}
+                        onChange={(e) =>
+                          updateField(
+                            "device_type",
+                            e.target.value as DeviceType | "",
+                          )
+                        }
                         className="h-9 w-full appearance-none rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-8 font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
                       >
                         <option value="">Select device...</option>
@@ -638,7 +834,11 @@ export function FeederMasterWorkspace({
                           </option>
                         ))}
                       </select>
-                      <Icon name="expand_more" size={18} className="pointer-events-none absolute right-space-sm text-on-surface-variant" />
+                      <Icon
+                        name="expand_more"
+                        size={18}
+                        className="pointer-events-none absolute right-space-sm text-on-surface-variant"
+                      />
                     </div>
                   </FormField>
                 </div>
@@ -654,7 +854,9 @@ export function FeederMasterWorkspace({
                   <FormField label="Feeder Description">
                     <textarea
                       value={form.description}
-                      onChange={(e) => updateField("description", e.target.value)}
+                      onChange={(e) =>
+                        updateField("description", e.target.value)
+                      }
                       rows={3}
                       placeholder="Engineering specification details..."
                       className="w-full resize-none rounded border border-outline-variant bg-surface-container-lowest p-space-sm font-body-sm text-body-sm text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
@@ -663,14 +865,18 @@ export function FeederMasterWorkspace({
                 </div>
 
                 <div className="flex flex-col gap-space-md">
-                  {MOTOR_STARTER_TYPES.includes(form.device_type as DeviceType) ? (
+                  {MOTOR_STARTER_TYPES.includes(
+                    form.device_type as DeviceType,
+                  ) ? (
                     <FormField label="Rated Power">
                       <div className="relative flex items-center">
                         <input
                           type="text"
                           inputMode="decimal"
                           value={form.rated_kw}
-                          onChange={(e) => updateField("rated_kw", e.target.value)}
+                          onChange={(e) =>
+                            updateField("rated_kw", e.target.value)
+                          }
                           onKeyDown={numericKeyGuard()}
                           className="h-9 w-full rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-10 text-right font-telemetry-md text-telemetry-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
                         />
@@ -686,7 +892,9 @@ export function FeederMasterWorkspace({
                           type="text"
                           inputMode="decimal"
                           value={form.rated_current}
-                          onChange={(e) => updateField("rated_current", e.target.value)}
+                          onChange={(e) =>
+                            updateField("rated_current", e.target.value)
+                          }
                           onKeyDown={numericKeyGuard()}
                           className="h-9 w-full rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-10 text-right font-telemetry-md text-telemetry-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
                         />
@@ -701,7 +909,9 @@ export function FeederMasterWorkspace({
                       <div className="relative flex items-center">
                         <select
                           value={form.pole_config}
-                          onChange={(e) => updateField("pole_config", e.target.value)}
+                          onChange={(e) =>
+                            updateField("pole_config", e.target.value)
+                          }
                           className="h-9 w-full appearance-none rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-7 font-body-md text-body-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
                         >
                           <option value="">—</option>
@@ -710,16 +920,27 @@ export function FeederMasterWorkspace({
                               {p}
                             </option>
                           ))}
-                          {form.pole_config && !POLE_CONFIGS.includes(form.pole_config) && <option value={form.pole_config}>{form.pole_config}</option>}
+                          {form.pole_config &&
+                            !POLE_CONFIGS.includes(form.pole_config) && (
+                              <option value={form.pole_config}>
+                                {form.pole_config}
+                              </option>
+                            )}
                         </select>
-                        <Icon name="expand_more" size={16} className="pointer-events-none absolute right-space-xs text-on-surface-variant" />
+                        <Icon
+                          name="expand_more"
+                          size={16}
+                          className="pointer-events-none absolute right-space-xs text-on-surface-variant"
+                        />
                       </div>
                     </FormField>
                     <FormField label="Breaking Capacity">
                       <div className="relative flex items-center">
                         <select
                           value={form.breaking_capacity}
-                          onChange={(e) => updateField("breaking_capacity", e.target.value)}
+                          onChange={(e) =>
+                            updateField("breaking_capacity", e.target.value)
+                          }
                           className="h-9 w-full appearance-none rounded border border-outline-variant bg-surface-container-lowest pl-space-sm pr-7 font-telemetry-md text-telemetry-md text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
                         >
                           <option value="">—</option>
@@ -728,11 +949,20 @@ export function FeederMasterWorkspace({
                               {b}
                             </option>
                           ))}
-                          {form.breaking_capacity && !BREAKING_CAPACITIES.includes(form.breaking_capacity) && (
-                            <option value={form.breaking_capacity}>{form.breaking_capacity}</option>
-                          )}
+                          {form.breaking_capacity &&
+                            !BREAKING_CAPACITIES.includes(
+                              form.breaking_capacity,
+                            ) && (
+                              <option value={form.breaking_capacity}>
+                                {form.breaking_capacity}
+                              </option>
+                            )}
                         </select>
-                        <Icon name="expand_more" size={16} className="pointer-events-none absolute right-space-xs text-on-surface-variant" />
+                        <Icon
+                          name="expand_more"
+                          size={16}
+                          className="pointer-events-none absolute right-space-xs text-on-surface-variant"
+                        />
                       </div>
                     </FormField>
                   </div>
@@ -748,7 +978,9 @@ export function FeederMasterWorkspace({
                     <div className="flex h-7 w-7 items-center justify-center rounded bg-primary/10 text-primary">
                       <Icon name="add_box" size={16} />
                     </div>
-                    <h3 className="font-headline-sm text-headline-sm leading-tight text-on-surface">Add Item</h3>
+                    <h3 className="font-headline-sm text-headline-sm leading-tight text-on-surface">
+                      Add Item
+                    </h3>
                   </div>
                   <a
                     href="/item-master"
@@ -756,12 +988,17 @@ export function FeederMasterWorkspace({
                     rel="noopener noreferrer"
                     className="flex items-center gap-space-xs self-start rounded bg-surface-container-low px-space-sm py-space-xs font-body-sm text-body-sm font-medium text-on-surface shadow-sm transition-colors hover:bg-surface-container md:self-auto"
                   >
-                    <Icon name="open_in_new" size={16} /> Browse Item Master Catalog
+                    <Icon name="open_in_new" size={16} /> Browse Item Master
+                    Catalog
                   </a>
                 </div>
                 <div className="flex flex-col items-stretch gap-space-sm md:flex-row md:items-center">
                   <div className="relative flex flex-1 items-center">
-                    <Icon name="search" size={18} className="pointer-events-none absolute left-space-sm text-on-surface-variant" />
+                    <Icon
+                      name="search"
+                      size={18}
+                      className="pointer-events-none absolute left-space-sm text-on-surface-variant"
+                    />
                     <input
                       value={itemSearch}
                       onChange={(e) => {
@@ -779,17 +1016,25 @@ export function FeederMasterWorkspace({
                             type="button"
                             onClick={() => {
                               setSelectedItem(item);
-                              setItemSearch(`${itemCode(item)} — ${item.description}`);
+                              setItemSearch(
+                                `${itemCode(item)} — ${item.description}`,
+                              );
                             }}
                             className={`flex w-full items-center justify-between gap-space-sm border-b border-surface-container px-space-sm py-1.5 text-left last:border-b-0 hover:bg-surface-container-low ${itemRowClass(
-                              item
+                              item,
                             )}`}
                           >
                             <span className="min-w-0">
-                              <span className="font-mono text-xs font-semibold text-primary">{itemCode(item)}</span>{" "}
-                              <span className="text-body-sm text-on-surface">{item.description}</span>
+                              <span className="font-mono text-xs font-semibold text-primary">
+                                {itemCode(item)}
+                              </span>{" "}
+                              <span className="text-body-sm text-on-surface">
+                                {item.description}
+                              </span>
                             </span>
-                            <span className="shrink-0 font-body-sm text-body-sm text-secondary">{money(netRate(item))}</span>
+                            <span className="shrink-0 font-body-sm text-body-sm text-secondary">
+                              {money(netRate(item))}
+                            </span>
                           </button>
                         ))}
                       </div>
@@ -808,28 +1053,19 @@ export function FeederMasterWorkspace({
                     onClick={() => setCreateItemOpen(true)}
                     className="flex h-9 shrink-0 items-center gap-space-xs rounded border border-outline-variant bg-surface-container-lowest px-space-md font-body-sm text-body-sm font-medium text-on-surface shadow-sm transition-colors hover:bg-surface-container-low"
                   >
-                    <Icon name="add_circle" size={16} /> Create New Item in Master
+                    <Icon name="add_circle" size={16} /> Create New Item in
+                    Master
                   </button>
                 </div>
-                <div className="flex items-center gap-space-xs overflow-x-auto pt-space-2xs font-label-sm text-label-sm">
-                  <span className="shrink-0 font-medium text-on-surface-variant">Quick Filters:</span>
-                  <button
-                    type="button"
-                    onClick={() => setCategoryChip(null)}
-                    className={`shrink-0 rounded-full px-space-sm py-space-2xs shadow-sm transition-colors ${categoryChip === null ? "bg-primary font-semibold text-on-primary" : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container hover:text-on-surface"}`}
-                  >
-                    All Items
-                  </button>
-                  {itemCategories.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => setCategoryChip(c)}
-                      className={`shrink-0 rounded-full px-space-sm py-space-2xs transition-colors ${categoryChip === c ? "bg-primary font-semibold text-on-primary shadow-sm" : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container hover:text-on-surface"}`}
-                    >
-                      {c}
-                    </button>
-                  ))}
+                <div className="flex items-center gap-space-xs pt-space-2xs font-label-sm text-label-sm">
+                  <span className="shrink-0 font-medium text-on-surface-variant">
+                    Category:
+                  </span>
+                  <CategoryFilter
+                    categories={itemCategories}
+                    selected={categoryChips}
+                    onChange={setCategoryChips}
+                  />
                 </div>
               </div>
 
@@ -837,19 +1073,37 @@ export function FeederMasterWorkspace({
                 <table className="w-full text-left">
                   <thead>
                     <tr className="bg-surface-container-low font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">
-                      <th className="w-10 py-space-sm pl-space-lg pr-space-xs text-center">#</th>
+                      <th className="w-10 py-space-sm pl-space-lg pr-space-xs text-center">
+                        #
+                      </th>
                       <th className="px-space-sm py-space-sm">SKU</th>
                       <th className="px-space-sm py-space-sm">Vendor Cat</th>
                       <th className="px-space-sm py-space-sm">Make</th>
                       <th className="px-space-sm py-space-sm">Category</th>
-                      <th className="min-w-[240px] px-space-sm py-space-sm">Description</th>
-                      <th className="w-20 px-space-sm py-space-sm text-center">Qty</th>
-                      <th className="px-space-sm py-space-sm text-right">List Price</th>
-                      <th className="w-20 px-space-sm py-space-sm text-right">Disc %</th>
-                      <th className="px-space-sm py-space-sm text-right">Net Rate</th>
-                      <th className="w-16 px-space-sm py-space-sm text-center">UOM</th>
-                      <th className="px-space-sm py-space-sm text-right">Amount</th>
-                      <th className="w-28 py-space-sm pl-space-xs pr-space-lg text-right">Actions</th>
+                      <th className="min-w-[240px] px-space-sm py-space-sm">
+                        Description
+                      </th>
+                      <th className="w-20 px-space-sm py-space-sm text-center">
+                        Qty
+                      </th>
+                      <th className="px-space-sm py-space-sm text-right">
+                        List Price
+                      </th>
+                      <th className="w-20 px-space-sm py-space-sm text-right">
+                        Disc %
+                      </th>
+                      <th className="px-space-sm py-space-sm text-right">
+                        Net Rate
+                      </th>
+                      <th className="w-16 px-space-sm py-space-sm text-center">
+                        UOM
+                      </th>
+                      <th className="px-space-sm py-space-sm text-right">
+                        Amount
+                      </th>
+                      <th className="w-28 py-space-sm pl-space-xs pr-space-lg text-right">
+                        Actions
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="font-body-sm text-body-sm text-on-surface">
@@ -857,33 +1111,58 @@ export function FeederMasterWorkspace({
                       <tr
                         key={line.id}
                         className={`group transition-colors hover:bg-surface-container-low/60 ${i % 2 === 1 ? "bg-surface-container-low/20" : ""} ${itemRowClass(
-                          line.item
+                          line.item,
                         )}`}
                       >
-                        <td className="py-space-sm pl-space-lg pr-space-xs text-center font-telemetry-md text-on-surface-variant">{i + 1}</td>
-                        <td className="px-space-sm py-space-sm font-telemetry-md text-telemetry-md font-bold text-primary">{line.item.sku || "—"}</td>
-                        <td className="px-space-sm py-space-sm font-label-md text-label-md text-on-surface-variant">{line.item.vendor_cat || "—"}</td>
-                        <td className="px-space-sm py-space-sm text-on-surface-variant">{line.item.make || "—"}</td>
-                        <td className="px-space-sm py-space-sm text-on-surface-variant">{line.item.category || "—"}</td>
-                        <td className="px-space-sm py-space-sm font-medium text-on-surface">{line.item.description}</td>
+                        <td className="py-space-sm pl-space-lg pr-space-xs text-center font-telemetry-md text-on-surface-variant">
+                          {i + 1}
+                        </td>
+                        <td className="px-space-sm py-space-sm font-telemetry-md text-telemetry-md font-bold text-primary">
+                          {line.item.sku || "—"}
+                        </td>
+                        <td className="px-space-sm py-space-sm font-label-md text-label-md text-on-surface-variant">
+                          {line.item.vendor_cat || "—"}
+                        </td>
+                        <td className="px-space-sm py-space-sm text-on-surface-variant">
+                          {line.item.make || "—"}
+                        </td>
+                        <td className="px-space-sm py-space-sm text-on-surface-variant">
+                          {line.item.category || "—"}
+                        </td>
+                        <td className="px-space-sm py-space-sm font-medium text-on-surface">
+                          {line.item.description}
+                        </td>
                         <td className="px-space-sm py-space-sm text-center">
                           <input
                             type="text"
                             inputMode="decimal"
                             value={line.qty}
-                            onChange={(e) => updateLineQty(line.id, Number(e.target.value) || 0)}
+                            onChange={(e) =>
+                              updateLineQty(
+                                line.id,
+                                Number(e.target.value) || 0,
+                              )
+                            }
                             onKeyDown={numericKeyGuard()}
                             className="h-7 w-14 rounded bg-surface-container-low text-center font-telemetry-md text-telemetry-md focus:outline-none focus:ring-1 focus:ring-primary"
                           />
                         </td>
                         <td className="px-space-sm py-space-sm text-right font-telemetry-md text-on-surface-variant">
-                          {line.item.list_price != null ? money(line.item.list_price) : "—"}
+                          {line.item.list_price != null
+                            ? money(line.item.list_price)
+                            : "—"}
                         </td>
                         <td className="px-space-sm py-space-sm text-right font-telemetry-md text-tertiary">
-                          {line.item.discount_pct != null ? `${line.item.discount_pct}%` : "—"}
+                          {line.item.discount_pct != null
+                            ? `${line.item.discount_pct}%`
+                            : "—"}
                         </td>
-                        <td className="px-space-sm py-space-sm text-right font-telemetry-md text-on-surface">{money(lineNetRate(line))}</td>
-                        <td className="px-space-sm py-space-sm text-center font-label-md text-label-md uppercase text-on-surface-variant">{line.item.uom}</td>
+                        <td className="px-space-sm py-space-sm text-right font-telemetry-md text-on-surface">
+                          {money(lineNetRate(line))}
+                        </td>
+                        <td className="px-space-sm py-space-sm text-center font-label-md text-label-md uppercase text-on-surface-variant">
+                          {line.item.uom}
+                        </td>
                         <td className="px-space-sm py-space-sm text-right font-telemetry-md text-telemetry-md font-bold text-on-surface">
                           {money(line.qty * lineNetRate(line))}
                         </td>
@@ -918,7 +1197,10 @@ export function FeederMasterWorkspace({
                     ))}
                     {selectedLines.length === 0 && (
                       <tr>
-                        <td colSpan={13} className="px-space-lg py-space-lg text-center text-secondary">
+                        <td
+                          colSpan={13}
+                          className="px-space-lg py-space-lg text-center text-secondary"
+                        >
                           No items yet. Search above to add one.
                         </td>
                       </tr>
@@ -934,10 +1216,18 @@ export function FeederMasterWorkspace({
   );
 }
 
-function FormField({ label, children }: { label: string; children: React.ReactNode }) {
+function FormField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-space-xs">
-      <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-on-surface-variant">{label}</label>
+      <label className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-on-surface-variant">
+        {label}
+      </label>
       {children}
     </div>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import { CategoryFilter } from "@/components/category-multi-select";
 import { useWarnOnUnload } from "@/lib/switchboard-presence";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -369,15 +370,13 @@ async function saveLineTable(
   }
   for (const [i, r] of draft.entries()) {
     if (r.id.startsWith("new-")) {
-      const { error } = await supabase
-        .from(table)
-        .insert({
-          switchboard_id: switchboardId,
-          description: r.description,
-          qty: r.qty,
-          rate: r.rate,
-          sort_order: i,
-        });
+      const { error } = await supabase.from(table).insert({
+        switchboard_id: switchboardId,
+        description: r.description,
+        qty: r.qty,
+        rate: r.rate,
+        sort_order: i,
+      });
       if (error) throw error;
     } else {
       const prior = saved.find((x) => x.id === r.id);
@@ -1495,15 +1494,13 @@ export function BomBuilder({
 
         if (isNewModule) {
           const vId = await unassignedVerticalId();
-          const { error } = await supabase
-            .from("placed_feeders")
-            .insert({
-              vertical_id: vId,
-              feeder_id: feederId,
-              qty: m.qty,
-              tier_number: 1,
-              sort_order: 0,
-            });
+          const { error } = await supabase.from("placed_feeders").insert({
+            vertical_id: vId,
+            feeder_id: feederId,
+            qty: m.qty,
+            tier_number: 1,
+            sort_order: 0,
+          });
           if (error) throw error;
         } else {
           const priorModule = saved.modules.find(
@@ -1551,15 +1548,13 @@ export function BomBuilder({
                   "feeder placement",
                 );
               } else {
-                const { error } = await supabase
-                  .from("placed_feeders")
-                  .insert({
-                    vertical_id: vId,
-                    feeder_id: feederId,
-                    qty: delta,
-                    tier_number: 1,
-                    sort_order: 0,
-                  });
+                const { error } = await supabase.from("placed_feeders").insert({
+                  vertical_id: vId,
+                  feeder_id: feederId,
+                  qty: delta,
+                  tier_number: 1,
+                  sort_order: 0,
+                });
                 if (error) throw error;
               }
             } else {
@@ -2335,7 +2330,7 @@ function FeederModuleCard({
   const [createItemOpen, setCreateItemOpen] = useState(false);
   const [bulkAddOpen, setBulkAddOpen] = useState(false);
   const [itemSearch, setItemSearch] = useState("");
-  const [categoryChip, setCategoryChip] = useState<string | null>(null);
+  const [categoryChips, setCategoryChips] = useState<Set<string>>(new Set());
   const [justAdded, setJustAdded] = useState<{ id: string; label: string }[]>(
     [],
   );
@@ -2344,14 +2339,13 @@ function FeederModuleCard({
 
   const itemCategories = Array.from(
     new Set(allItems.map((i) => i.category).filter((c): c is string => !!c)),
-  )
-    .sort()
-    .slice(0, 8);
+  ).sort();
 
   const matches = itemSearch.trim()
     ? allItems
         .filter((i) => {
-          if (categoryChip && i.category !== categoryChip) return false;
+          if (categoryChips.size && !categoryChips.has(i.category ?? ""))
+            return false;
           const q = itemSearch.toLowerCase();
           return (
             itemCode(i).toLowerCase().includes(q) ||
@@ -2383,7 +2377,7 @@ function FeederModuleCard({
   function closeAddDialog() {
     setAddDialogOpen(false);
     setItemSearch("");
-    setCategoryChip(null);
+    setCategoryChips(new Set());
     setJustAdded([]);
   }
 
@@ -2846,33 +2840,11 @@ function FeederModuleCard({
                 />
               </div>
               {itemCategories.length > 0 && (
-                <div className="flex items-center gap-1 overflow-x-auto pb-1 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => setCategoryChip(null)}
-                    className={`shrink-0 rounded-full px-2 py-0.5 transition-colors ${
-                      categoryChip === null
-                        ? "bg-primary font-semibold text-on-primary"
-                        : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container"
-                    }`}
-                  >
-                    All
-                  </button>
-                  {itemCategories.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => setCategoryChip(c)}
-                      className={`shrink-0 rounded-full px-2 py-0.5 transition-colors ${
-                        categoryChip === c
-                          ? "bg-primary font-semibold text-on-primary"
-                          : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container"
-                      }`}
-                    >
-                      {c}
-                    </button>
-                  ))}
-                </div>
+                <CategoryFilter
+                  categories={itemCategories}
+                  selected={categoryChips}
+                  onChange={setCategoryChips}
+                />
               )}
             </div>
 
