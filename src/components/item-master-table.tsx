@@ -431,6 +431,7 @@ export function ItemMasterTable({
   );
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
   const [bulkDiscountOpen, setBulkDiscountOpen] = useState(false);
   const [bulkDiscountValue, setBulkDiscountValue] = useState("");
 
@@ -802,6 +803,59 @@ export function ItemMasterTable({
       return;
     }
     setSelectedIds(new Set());
+  }
+
+  // Admin only (the database refuses anyone else). Items used in any feeder
+  // are kept -- deleting them would break those feeders and their BOMs --
+  // and reported so they can be archived instead.
+  async function handleDeleteSelected() {
+    if (!isAdmin) return;
+    const ids = Array.from(selectedIds);
+    if (
+      !confirm(
+        `Permanently delete ${ids.length} item(s)? This can't be undone. Items used in any feeder will be skipped.`,
+      )
+    )
+      return;
+    setDeleting(true);
+    try {
+      const CHUNK = 200;
+      const used = new Set<string>();
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const { data, error } = await supabase
+          .from("feeder_items")
+          .select("item_id")
+          .in("item_id", ids.slice(i, i + CHUNK));
+        if (error) throw error;
+        for (const r of data ?? []) used.add(r.item_id as string);
+      }
+      const deletable = ids.filter((id) => !used.has(id));
+      const deleted: string[] = [];
+      for (let i = 0; i < deletable.length; i += CHUNK) {
+        const { data, error } = await supabase
+          .from("item_master")
+          .delete()
+          .in("id", deletable.slice(i, i + CHUNK))
+          .select("id");
+        if (error) throw error;
+        for (const r of data ?? []) deleted.push(r.id as string);
+      }
+      const gone = new Set(deleted);
+      setItems((prev) => prev.filter((i) => !gone.has(i.id)));
+      setSelectedIds(new Set(ids.filter((id) => !gone.has(id))));
+      const skipped = ids.length - deleted.length;
+      alert(
+        `Deleted ${deleted.length} item(s).` +
+          (skipped
+            ? ` ${skipped} item(s) were not deleted because they're used in feeders — they're still selected, so you can archive them instead.`
+            : ""),
+      );
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not delete items.");
+      refresh();
+    } finally {
+      setDeleting(false);
+    }
   }
 
   async function applyBulkDiscount() {
@@ -1505,6 +1559,14 @@ export function ItemMasterTable({
               className="flex items-center gap-1.5 rounded bg-surface-container-low px-2.5 py-1 text-xs font-medium text-on-surface hover:bg-surface-container-high"
             >
               <Icon name="archive" size={14} /> Archive selected
+            </button>
+            <button
+              onClick={handleDeleteSelected}
+              disabled={deleting}
+              className="flex items-center gap-1.5 rounded bg-error px-2.5 py-1 text-xs font-medium text-on-error hover:opacity-90 disabled:opacity-50"
+            >
+              <Icon name="delete" size={14} />{" "}
+              {deleting ? "Deleting..." : "Delete selected"}
             </button>
             {lastUpdatedAt && (
               <div className="flex items-center gap-1.5 border-l border-inverse-on-surface/20 pl-3 font-mono text-[11px] text-inverse-on-surface/80">
