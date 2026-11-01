@@ -321,3 +321,9 @@ export function currentConfigOf(
     null
   );
 }
+
+export {
+  frontAccessPairLayouts,
+  type InnerLayout,
+  type InnerZone,
+} from "@/lib/artuk-inner-layout";

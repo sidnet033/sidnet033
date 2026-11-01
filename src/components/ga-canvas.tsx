@@ -4,7 +4,9 @@ import { ArtukBayConfigDialog } from "@/components/artuk-bay-config-dialog";
 import {
   configMisfits,
   currentConfigOf,
+  frontAccessPairLayouts,
   type ArtukBayConfig,
+  type InnerLayout,
 } from "@/lib/artuk-bay-configs";
 import { useWarnOnUnload } from "@/lib/switchboard-presence";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -889,6 +891,8 @@ export function GaCanvas({
   const bays = verticals
     .filter((v) => v.bay_type !== "unassigned")
     .sort((a, b) => a.sort_order - b.sort_order);
+  // ArTu-K 920+1120 front-access MCC pairs: cable alleys + shared VBB inside the bays
+  const innerLayouts = frontAccessPairLayouts(bays);
   const busductTotal = bays.reduce((s, v) => s + (v.busduct_entries ?? 0), 0);
   const unallocated =
     verticals.find((v) => v.bay_type === "unassigned") ?? null;
@@ -2764,6 +2768,11 @@ export function GaCanvas({
                                   <BayColumn
                                     key={`${v.id}-${resetKey}`}
                                     vertical={v}
+                                    innerLayout={
+                                      isArtuk
+                                        ? (innerLayouts.get(v.id) ?? null)
+                                        : null
+                                    }
                                     bayNumber={bayNumbers.get(v.id) ?? null}
                                     readOnly={readOnly}
                                     pxPerMm={pxPerMm}
@@ -3798,6 +3807,7 @@ function PanelSummaryTable({
 
 function BayColumn({
   vertical,
+  innerLayout,
   bayNumber,
   readOnly,
   pxPerMm,
@@ -3819,6 +3829,8 @@ function BayColumn({
   tip,
 }: {
   vertical: VerticalWithFeeders;
+  /** zones drawn inside the bay (cable alleys, shared VBB) + where feeders sit */
+  innerLayout?: InnerLayout | null;
   bayNumber: number | null;
   readOnly: boolean;
   pxPerMm: number;
@@ -3855,10 +3867,19 @@ function BayColumn({
   // the 60mm side gaps -- every bay, cable/busbar alleys included
   const gapPx =
     widthMm <= 2 * FEEDER_SIDE_GAP_MM ? 0 : FEEDER_SIDE_GAP_MM * pxPerMm;
-  const feederWidthMm =
-    widthMm <= 2 * FEEDER_SIDE_GAP_MM
+  const feederWidthMm = innerLayout
+    ? innerLayout.feederRightMm - innerLayout.feederLeftMm
+    : widthMm <= 2 * FEEDER_SIDE_GAP_MM
       ? widthMm
       : widthMm - 2 * FEEDER_SIDE_GAP_MM;
+  const feederMargins = innerLayout
+    ? {
+        marginLeft: innerLayout.feederLeftMm * pxPerMm,
+        marginRight: (widthMm - innerLayout.feederRightMm) * pxPerMm,
+      }
+    : gapPx > 0
+      ? { marginLeft: gapPx, marginRight: gapPx }
+      : undefined;
 
   return (
     <div
@@ -3895,15 +3916,36 @@ function BayColumn({
       )}
       {/* feeders sit 60mm in from each side of the bay; their left/right
           edges are the dotted lines */}
+      {innerLayout?.zones.map((z) => (
+        <div
+          key={z.leftMm}
+          title={
+            z.kind === "vbb"
+              ? "Shared vertical busbar compartment (VBBC) — serves the MCCBs of both bays"
+              : `Cable alley — ${z.widthMm}mm`
+          }
+          className={`pointer-events-none absolute inset-y-0 flex items-center justify-center border-x border-black/60 ${
+            z.kind === "vbb"
+              ? "bg-neutral-200"
+              : "bg-[repeating-linear-gradient(135deg,#e5e7eb_0,#e5e7eb_4px,#f8fafc_4px,#f8fafc_9px)]"
+          }`}
+          style={{ left: z.leftMm * pxPerMm, width: z.widthMm * pxPerMm }}
+        >
+          <span
+            className="whitespace-nowrap font-telemetry-md text-[9px] font-bold uppercase tracking-wide text-black/70"
+            style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
+          >
+            {z.label}
+          </span>
+        </div>
+      ))}
       <div
         className={
-          gapPx > 0
+          feederMargins
             ? "h-full border-x border-dashed border-black/50 bg-white"
             : "h-full bg-white"
         }
-        style={
-          gapPx > 0 ? { marginLeft: gapPx, marginRight: gapPx } : undefined
-        }
+        style={feederMargins}
       >
         {compartments.map((c, ci) => {
           // compartment tag as on a GA drawing: <bay>F<n> top to bottom

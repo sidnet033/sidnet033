@@ -1,5 +1,9 @@
 import type { BayType, Feeder } from "@/types/database";
 import {
+  frontAccessPairLayouts,
+  type InnerLayout,
+} from "@/lib/artuk-inner-layout";
+import {
   suggestAcbFrame,
   suggestMccbFrame,
   type BayFunction,
@@ -529,6 +533,18 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
     return null;
   };
   const droppers = new Map<string, DropperGroup>();
+  // feeders inside a 920+1120 front-access pair sit between the cable alley
+  // / VBB zones, not across the whole bay
+  const innerLayouts = artuk
+    ? frontAccessPairLayouts(
+        bays.map((b) => ({
+          id: b.id,
+          bay_type: b.bayType,
+          width_mm: b.widthMm,
+          depth_mm: b.depthMm,
+        })),
+      )
+    : new Map<string, InnerLayout>();
 
   bays.forEach((bay, i) => {
     if (isAlley(bay.bayType) || bay.widthMm <= 0) return;
@@ -784,9 +800,17 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
                 false,
               )
           : null;
-      const towardDropper =
-        group.x >= centreX ? bay.leftMm + bay.widthMm : bay.leftMm;
-      const terminalX = (towardDropper + centreX) / 2;
+      const inner = innerLayouts.get(bay.id);
+      const feederCentreX = inner
+        ? bay.leftMm + (inner.feederLeftMm + inner.feederRightMm) / 2
+        : centreX;
+      const towardDropper = inner
+        ? bay.leftMm +
+          (group.x >= feederCentreX ? inner.feederRightMm : inner.feederLeftMm)
+        : group.x >= centreX
+          ? bay.leftMm + bay.widthMm
+          : bay.leftMm;
+      const terminalX = (towardDropper + feederCentreX) / 2;
       drafts.push({
         kind: "feeder_link",
         verticalId: null,
@@ -1046,7 +1070,8 @@ function finishSegment(
       neutral = {
         bar,
         runs: sizeOverridden || runsOverridden ? runs : first.neRuns,
-      }; // as ABB charts it
+      };
+    // as ABB charts it
     else
       neutral =
         ctx.neutralPct >= 100
