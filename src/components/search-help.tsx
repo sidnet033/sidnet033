@@ -8,11 +8,14 @@ export function ItemSearchHelp({
   fields = "SKU, vendor cat #, make, category and description",
   example = "actuator|teknic|3co|acb",
   noun = "items",
+  andExample,
 }: {
   className?: string;
   fields?: string;
   example?: string;
   noun?: string;
+  /** shows the "+" (all phrases) rule with this example */
+  andExample?: string;
 }) {
   return (
     <span className={`group absolute inline-flex ${className}`}>
@@ -37,6 +40,15 @@ export function ItemSearchHelp({
         <i>any</i> of them, e.g. <span className="font-mono">{example}</span>.{" "}
         {noun.charAt(0).toUpperCase() + noun.slice(1)} matching the most phrases
         are listed first.
+        {andExample && (
+          <>
+            <br />
+            <br />
+            Join phrases with <b>+</b> to find {noun} matching <i>all</i> of
+            them, e.g. <span className="font-mono">{andExample}</span>. Mix
+            both: <span className="font-mono">acb+1600|mccb+250</span>.
+          </>
+        )}
       </span>
     </span>
   );

@@ -135,12 +135,27 @@ export function FeederMasterWorkspace({
   const typeOptions = Array.from(
     new Set(feeders.map((f) => f.category).filter((c): c is string => !!c)),
   ).sort();
-  // type filter, then "a|b|c" search (any phrase; best matches first)
+  // type filter, then search over the feeder's name and its contents:
+  // "a|b" = any phrase, "a+b" = all phrases (best matches first)
   const filteredFeeders = searchByPhrases(
     feeders.filter((f) => filterHit(typeFilter, f.category, "text")),
     feederSearch,
     (f) =>
-      [f.name, f.tag, f.category, f.rating_summary, f.description]
+      [
+        f.name,
+        f.tag,
+        f.category,
+        f.rating_summary,
+        f.description,
+        ...(linesByFeeder[f.id] ?? []).flatMap((l) => [
+          l.item ? itemCode(l.item) : null,
+          l.item?.sku,
+          l.item?.vendor_cat,
+          l.item?.make,
+          l.item?.category,
+          l.item?.description,
+        ]),
+      ]
         .filter(Boolean)
         .join(" \u0000 "),
     feeders.length,
@@ -636,12 +651,13 @@ export function FeederMasterWorkspace({
                 <input
                   value={feederSearch}
                   onChange={(e) => setFeederSearch(e.target.value)}
-                  placeholder="Search feeders — use | for several"
+                  placeholder="Search feeders & contents — | any, + all"
                   className="h-8 w-full rounded bg-surface-container-lowest pl-8 pr-8 text-[13px] shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 <ItemSearchHelp
-                  fields="feeder name, tag, type, rating and description"
-                  example="incomer|acb|1600a"
+                  fields="feeder name, tag, type, rating, description and the feeder's items (code, make, category, description)"
+                  example="acb|1600|ct"
+                  andExample="acb+1600+ct"
                   noun="feeders"
                 />
               </div>
