@@ -40,6 +40,11 @@ const FAMILIES: [RegExp, string][] = [
   [/^VC/, "Cable containers"],
   [/^(AD|APR)/, "Fixings & hinges"],
   [/^(85\d{4}|VTBCE)/, "Hardware & logo strips"],
+  [/^(MXM|551)/, "Busbar supports"],
+  [/^H23KT/, "MCCB mounting kits"],
+  [/^TR/, "Busbar crosspieces"],
+  [/^(AA|SA)/, "Lifting & coupling"],
+  [/^1BONOB/, "Localisation parts"],
 ];
 export function familyOf(code: string): string {
   return (
@@ -111,7 +116,14 @@ export function ArtukEnclosureMaster({
       list.push(c);
       m.set(c.parent_sku, list);
     }
-    return Array.from(m.entries())
+    // every ArTuK part: those with a sub-part breakdown and the rest of the
+    // ArTuK parts in Item Master
+    const all = new Map<string, ArtukPartComponent[]>();
+    for (const [sku, lines] of m) all.set(sku, lines);
+    for (const i of items)
+      if (![...all.keys()].some((k) => key(k) === key(i.sku)))
+        all.set(i.sku.trim(), []);
+    return Array.from(all.entries())
       .map(([sku, lines]) => {
         lines.sort((a, b) => a.sort_order - b.sort_order);
         const rows = lines
@@ -130,7 +142,10 @@ export function ArtukEnclosureMaster({
               unit: number;
             } => !!x,
           );
-        const total = rows.reduce((t, r) => t + r.unit * r.line.qty, 0);
+        const item = itemBySku.get(key(sku));
+        const total = rows.length
+          ? rows.reduce((t, r) => t + r.unit * r.line.qty, 0)
+          : Number(item?.unit_cost ?? 0);
         return {
           sku,
           rows,
@@ -140,7 +155,7 @@ export function ArtukEnclosureMaster({
         };
       })
       .sort((a, b) => a.sku.localeCompare(b.sku));
-  }, [components, subById, rates, itemBySku]);
+  }, [components, subById, rates, itemBySku, items]);
 
   const [q, setQ] = useState("");
   const [family, setFamily] = useState("");
@@ -156,16 +171,21 @@ export function ArtukEnclosureMaster({
   const terms = filterTerms(q).map((t) => t.toLowerCase());
   const shown = parts.filter(
     (p) =>
-      ((!family || p.family === family) && terms.length === 0) ||
-      terms.some(
-        (t) =>
-          p.sku.toLowerCase().includes(t) ||
-          (p.description ?? "").toLowerCase().includes(t),
-      ),
+      (!family || p.family === family) &&
+      (terms.length === 0 ||
+        terms.some(
+          (t) =>
+            p.sku.toLowerCase().includes(t) ||
+            (p.description ?? "").toLowerCase().includes(t),
+        )),
   );
   const firstInList =
     families.flatMap((f) => shown.filter((p) => p.family === f))[0] ?? null;
   const part = parts.find((p) => p.sku === selected) ?? firstInList;
+  // parts that have their own sub-part breakdown
+  const withBreakdown = new Set(
+    parts.filter((p) => p.rows.length > 0).map((p) => key(p.sku)),
+  );
 
   return (
     <div className="space-y-4">
@@ -190,7 +210,7 @@ export function ArtukEnclosureMaster({
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
         {/* parts */}
-        <div className="flex max-h-[78vh] flex-col rounded-lg border border-surface-container-high">
+        <div className="flex h-[calc(100vh-12rem)] min-h-[24rem] flex-col rounded-lg border border-surface-container-high">
           <div className="border-b border-surface-container-high p-2">
             <input
               value={q}
@@ -240,7 +260,7 @@ export function ArtukEnclosureMaster({
                       >
                         <span className="flex items-baseline justify-between gap-2">
                           <span
-                            className={`text-[13px] font-bold ${p.sku === part?.sku ? "text-primary" : "text-on-surface"}`}
+                            className={`text-[13px] ${p.rows.length ? "font-bold" : "font-normal"} ${p.sku === part?.sku ? "text-primary" : "text-on-surface"}`}
                           >
                             {p.sku}
                           </span>
@@ -259,7 +279,7 @@ export function ArtukEnclosureMaster({
         </div>
 
         {/* sub-parts of the selected part */}
-        <div className="min-w-0">
+        <div className="h-[calc(100vh-12rem)] min-h-[24rem] min-w-0 overflow-y-auto">
           {!part ? (
             <p className="text-secondary">Pick a part on the left.</p>
           ) : (
@@ -284,68 +304,95 @@ export function ArtukEnclosureMaster({
                   </span>
                 </p>
               </div>
-              <div className="overflow-x-auto rounded-lg border border-surface-container-high">
-                <table className="w-full border-collapse text-[12px]">
-                  <thead className="bg-surface-container-low text-left text-[11px] uppercase tracking-wider text-secondary">
-                    <tr>
-                      <th className="px-2 py-1.5">Sub-part</th>
-                      <th className="px-2 py-1.5">Description</th>
-                      <th className="px-2 py-1.5">Family</th>
-                      <th className="px-2 py-1.5">Material</th>
-                      <th className="px-2 py-1.5">Cost calculation</th>
-                      <th className="px-2 py-1.5 text-right">Unit cost</th>
-                      <th className="px-2 py-1.5 text-center">Qty in part</th>
-                      <th className="px-2 py-1.5 text-right">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {part.rows.map(({ line, sub, unit }) => (
-                      <tr
-                        key={line.id}
-                        className="border-t border-surface-container align-top"
-                      >
-                        <td className="px-2 py-1.5 font-bold whitespace-nowrap">
-                          {sub.code}
+              {part.rows.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-surface-container-high bg-surface-container-low px-4 py-6 text-center text-body-sm text-secondary">
+                  No sub-part breakdown for this part yet — it&apos;s priced at
+                  its Item Master cost.
+                </p>
+              ) : (
+                <div className="overflow-x-auto rounded-lg border border-surface-container-high">
+                  <table className="w-full border-collapse text-[12px]">
+                    <thead className="bg-surface-container-low text-left text-[11px] uppercase tracking-wider text-secondary">
+                      <tr>
+                        <th className="px-2 py-1.5">Sub-part</th>
+                        <th className="px-2 py-1.5">Description</th>
+                        <th className="px-2 py-1.5">Family</th>
+                        <th className="px-2 py-1.5">Material</th>
+                        <th className="px-2 py-1.5">Cost calculation</th>
+                        <th className="px-2 py-1.5 text-right">Unit cost</th>
+                        <th className="px-2 py-1.5 text-center">Qty in part</th>
+                        <th className="px-2 py-1.5 text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {part.rows.map(({ line, sub, unit }) => (
+                        <tr
+                          key={line.id}
+                          className="border-t border-surface-container align-top"
+                        >
+                          <td className="px-2 py-1.5 whitespace-nowrap">
+                            {withBreakdown.has(key(sub.code)) &&
+                            key(sub.code) !== key(part.sku) ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSelected(
+                                    parts.find(
+                                      (p) => key(p.sku) === key(sub.code),
+                                    )!.sku,
+                                  )
+                                }
+                                title="Has its own sub-parts — click to open"
+                                className="font-bold text-primary hover:underline"
+                              >
+                                {sub.code} ›
+                              </button>
+                            ) : (
+                              sub.code
+                            )}
+                          </td>
+                          <td className="px-2 py-1.5">{sub.description}</td>
+                          <td className="px-2 py-1.5">
+                            {sub.family ?? (
+                              <span className="text-secondary">—</span>
+                            )}
+                          </td>
+                          <td className="px-2 py-1.5 whitespace-nowrap">
+                            {materialLabel(sub)}
+                          </td>
+                          <td className="px-2 py-1.5 text-[11px] text-on-surface-variant">
+                            {methodOf(sub, rates).map((m) => (
+                              <span key={m} className="block">
+                                {m}
+                              </span>
+                            ))}
+                          </td>
+                          <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                            {formatMoney(unit)}
+                          </td>
+                          <td className="px-2 py-1.5 text-center">
+                            {line.qty}
+                          </td>
+                          <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                            {formatMoney(unit * line.qty)}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr className="border-t-2 border-primary">
+                        <td
+                          colSpan={7}
+                          className="px-2 py-1.5 text-right font-bold"
+                        >
+                          {part.sku} total
                         </td>
-                        <td className="px-2 py-1.5">{sub.description}</td>
-                        <td className="px-2 py-1.5">
-                          {sub.family ?? (
-                            <span className="text-secondary">—</span>
-                          )}
-                        </td>
-                        <td className="px-2 py-1.5 whitespace-nowrap">
-                          {materialLabel(sub)}
-                        </td>
-                        <td className="px-2 py-1.5 text-[11px] text-on-surface-variant">
-                          {methodOf(sub, rates).map((m) => (
-                            <span key={m} className="block">
-                              {m}
-                            </span>
-                          ))}
-                        </td>
-                        <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                          {formatMoney(unit)}
-                        </td>
-                        <td className="px-2 py-1.5 text-center">{line.qty}</td>
-                        <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                          {formatMoney(unit * line.qty)}
+                        <td className="px-2 py-1.5 text-right font-bold text-primary whitespace-nowrap">
+                          {formatMoney(part.total)}
                         </td>
                       </tr>
-                    ))}
-                    <tr className="border-t-2 border-primary">
-                      <td
-                        colSpan={7}
-                        className="px-2 py-1.5 text-right font-bold"
-                      >
-                        {part.sku} total
-                      </td>
-                      <td className="px-2 py-1.5 text-right font-bold text-primary whitespace-nowrap">
-                        {formatMoney(part.total)}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
         </div>

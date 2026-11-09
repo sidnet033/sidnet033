@@ -23,13 +23,32 @@ export default async function ArtukEnclosureMasterPage() {
     ),
     loadRateMaster(supabase),
   ]);
+  // every ArTuK enclosure part in Item Master, plus any part that has a
+  // sub-part breakdown (some of those aren't in Item Master yet)
   const parentSkus = Array.from(new Set(components.map((c) => c.parent_sku)));
-  const { data: items } = parentSkus.length
-    ? await supabase
+  const [artuk, parents] = await Promise.all([
+    fetchAllRows<{
+      sku: string;
+      description: string;
+      unit_cost: number;
+      status: string;
+    }>((from, to) =>
+      supabase
         .from("item_master")
         .select("sku, description, unit_cost, status")
-        .in("sku", parentSkus)
-    : { data: [] };
+        .eq("status", "active")
+        .in("category", ["ArTuK Enclosure", "ARTUK"])
+        .order("sku")
+        .range(from, to),
+    ),
+    parentSkus.length
+      ? supabase
+          .from("item_master")
+          .select("sku, description, unit_cost, status")
+          .in("sku", parentSkus)
+      : Promise.resolve({ data: [] }),
+  ]);
+  const items = [...artuk, ...((parents.data ?? []) as typeof artuk)];
 
   return (
     <div className="max-w-[1600px] px-8 py-6">
