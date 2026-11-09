@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
 import { formatMoney } from "@/lib/money";
 import { subpartBreakdown, type Rates } from "@/lib/enclosure-rates";
 import { filterTerms } from "@/components/multi-filter";
@@ -88,17 +89,60 @@ function methodOf(s: ArtukSubpart, r: Rates): string[] {
   return ["Fixed price (no weight on file)"];
 }
 
+// fixed-price sub-part: its cost is its own rate, not a formula
+function isFixedPrice(s: ArtukSubpart) {
+  const steel =
+    (s.material === "GI" || s.material === "CRCA") &&
+    Number(s.weight_kg ?? 0) > 0;
+  return !steel && s.gasket_m == null;
+}
+
 export function ArtukEnclosureMaster({
-  subparts,
-  components,
+  subparts: initialSubparts,
+  components: initialComponents,
   rates,
   items,
+  canEdit = false,
 }: {
   subparts: ArtukSubpart[];
   components: ArtukPartComponent[];
   rates: Rates;
   items: ItemRow[];
+  canEdit?: boolean;
 }) {
+  const supabase = useMemo(() => createClient(), []);
+  const [subparts, setSubparts] = useState(initialSubparts);
+  const [components, setComponents] = useState(initialComponents);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const flash = (ok: boolean, text: string) => {
+    setMsg({ ok, text });
+    setTimeout(() => setMsg(null), 4000);
+  };
+  async function saveQty(lineId: string, qty: number) {
+    const { error } = await supabase
+      .from("artuk_part_components")
+      .update({ qty })
+      .eq("id", lineId);
+    if (error) return flash(false, error.message);
+    setComponents((list) =>
+      list.map((c) => (c.id === lineId ? { ...c, qty } : c)),
+    );
+    flash(true, "Qty saved — the part's cost was recalculated.");
+  }
+  async function saveRate(subId: string, rate: number) {
+    const { error } = await supabase
+      .from("artuk_subparts")
+      .update({ unit_cost: rate, updated_at: new Date().toISOString() })
+      .eq("id", subId);
+    if (error) return flash(false, error.message);
+    setSubparts((list) =>
+      list.map((x) => (x.id === subId ? { ...x, unit_cost: rate } : x)),
+    );
+    flash(
+      true,
+      "Rate saved — every part using this sub-part was recalculated.",
+    );
+  }
   const subById = useMemo(
     () => new Map(subparts.map((s) => [s.id, s])),
     [subparts],
@@ -304,6 +348,20 @@ export function ArtukEnclosureMaster({
                   </span>
                 </p>
               </div>
+              {msg && (
+                <p
+                  className={`text-[12px] ${msg.ok ? "text-emerald-700" : "text-error"}`}
+                >
+                  {msg.text}
+                </p>
+              )}
+              {canEdit && part.rows.length > 0 && (
+                <p className="text-[11px] text-secondary">
+                  Edit a qty, or the rate of a fixed-price sub-part, and press
+                  Tab / click away to save. Formula-based costs follow the
+                  weights and the Enclosure Rates Master.
+                </p>
+              )}
               {part.rows.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-surface-container-high bg-surface-container-low px-4 py-6 text-center text-body-sm text-secondary">
                   No sub-part breakdown for this part yet — it&apos;s priced at
@@ -368,10 +426,31 @@ export function ArtukEnclosureMaster({
                             ))}
                           </td>
                           <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                            {formatMoney(unit)}
+                            {canEdit && isFixedPrice(sub) ? (
+                              <NumberInput
+                                key={`r-${sub.id}-${sub.unit_cost}`}
+                                value={Number(sub.unit_cost)}
+                                min={0}
+                                prefix="₹"
+                                title="Fixed price — edit the rate"
+                                onCommit={(v) => saveRate(sub.id, v)}
+                              />
+                            ) : (
+                              formatMoney(unit)
+                            )}
                           </td>
                           <td className="px-2 py-1.5 text-center">
-                            {line.qty}
+                            {canEdit ? (
+                              <NumberInput
+                                key={`q-${line.id}-${line.qty}`}
+                                value={Number(line.qty)}
+                                min={0.001}
+                                title="Qty of this sub-part in the part"
+                                onCommit={(v) => saveQty(line.id, v)}
+                              />
+                            ) : (
+                              line.qty
+                            )}
                           </td>
                           <td className="px-2 py-1.5 text-right whitespace-nowrap">
                             {formatMoney(unit * line.qty)}
@@ -398,5 +477,42 @@ export function ArtukEnclosureMaster({
         </div>
       </div>
     </div>
+  );
+}
+
+function NumberInput({
+  value,
+  min,
+  prefix,
+  title,
+  onCommit,
+}: {
+  value: number;
+  min: number;
+  prefix?: string;
+  title?: string;
+  onCommit: (v: number) => void;
+}) {
+  const [local, setLocal] = useState(String(value));
+  return (
+    <span className="inline-flex items-center gap-0.5">
+      {prefix && <span className="text-secondary">{prefix}</span>}
+      <input
+        value={local}
+        inputMode="decimal"
+        title={title}
+        onChange={(e) => setLocal(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        }}
+        onBlur={() => {
+          const n = Number(local);
+          if (Number.isFinite(n) && n >= min) {
+            if (n !== value) onCommit(n);
+          } else setLocal(String(value));
+        }}
+        className="w-20 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-0.5 text-right"
+      />
+    </span>
   );
 }

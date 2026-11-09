@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth";
 import { ArtukEnclosureMaster } from "@/components/artuk-enclosure-master";
 import { loadRateMaster, ratesFrom } from "@/lib/enclosure-rates";
 import { fetchAllRows } from "@/lib/fetch-all";
@@ -8,6 +9,8 @@ export const dynamic = "force-dynamic";
 
 export default async function ArtukEnclosureMasterPage() {
   const supabase = await createClient();
+  const current = await getCurrentUser();
+  const isAdmin = current?.profile?.role === "admin";
   const [subparts, components, master] = await Promise.all([
     fetchAllRows<ArtukSubpart>((from, to) =>
       supabase.from("artuk_subparts").select("*").order("code").range(from, to),
@@ -53,6 +56,7 @@ export default async function ArtukEnclosureMasterPage() {
   return (
     <div className="max-w-[1600px] px-8 py-6">
       <ArtukEnclosureMaster
+        canEdit={isAdmin}
         subparts={subparts}
         components={components}
         rates={ratesFrom(master)}
