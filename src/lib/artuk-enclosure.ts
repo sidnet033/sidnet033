@@ -910,11 +910,12 @@ export async function priceEnclosure(
             discount_pct: item.discount_pct,
           })
         : 0;
-      const rate = !item
-        ? l.fallbackAmount && l.qty
-          ? l.fallbackAmount / l.qty
-          : 0
-        : (projectCost.get(l.code) ?? netRate);
+      const workbookRate =
+        l.fallbackAmount && l.qty ? l.fallbackAmount / l.qty : 0;
+      // Item Master / sub-part cost; the workbook cost when the part isn't
+      // in Item Master or has no cost there yet
+      const imRate = item ? (projectCost.get(l.code) ?? netRate) : 0;
+      const rate = imRate > 0 ? imRate : workbookRate;
       return {
         ...l,
         description:
