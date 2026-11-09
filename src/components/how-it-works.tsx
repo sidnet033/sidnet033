@@ -1608,12 +1608,13 @@ function DimensionsReference() {
             <tr className="border-b border-surface-container-high/60 align-top">
               <td className="py-1.5 pr-3 font-medium">Pricing</td>
               <td className="py-1.5 pr-3">
-                GI and CRCA parts are priced by weight: Item Master weight (kg)
-                × the project&apos;s GI / CRCA rate (INR/kg, Project Detail).
-                While that rate is 0, and for mixed or bought-out parts, the
-                Item Master price is used. Item Master xls / Google Sheet
-                imports take <b>material</b> (GI / CRCA) and <b>weight_kg</b>{" "}
-                columns; a blank cell keeps what&apos;s already on file.
+                ABB parts with a sub-part list (Masters → ArTuK Sub-parts) cost
+                the sum of qty × sub-part cost: GI / CRCA sub-parts are Total
+                Wt. × the steel rate, bought-out sub-parts their own cost. Other
+                GI / CRCA parts with a weight are weight × rate; the rest use
+                their Item Master price. Steel rates: the project&apos;s own GI
+                / CRCA rate (Project Detail), else the app default (GI ₹90/kg,
+                CRCA ₹71/kg, admin-editable on the ArTuK Sub-parts page).
               </td>
             </tr>
             <tr className="border-b border-surface-container-high/60 align-top">

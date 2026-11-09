@@ -33,6 +33,11 @@ const NAV: NavEntry[] = [
         label: "Feeder Master",
         activeMatch: (p) => p.startsWith("/feeders"),
       },
+      {
+        href: "/artuk-subparts",
+        label: "ArTuK Sub-parts",
+        activeMatch: (p) => p.startsWith("/artuk-subparts"),
+      },
     ],
   },
   {
@@ -170,7 +175,13 @@ export function AppShell({
       <header className="sticky top-0 z-50 flex h-[52px] select-none items-stretch gap-space-xl border-b border-surface-container-high bg-surface-container-lowest px-margin-lg shadow-xs">
         <Link href="/" className="flex items-center gap-space-sm">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/truequote-logo.png" alt="" width={32} height={32} className="h-8 w-8 rounded-lg shadow-sm" />
+          <img
+            src="/truequote-logo.png"
+            alt=""
+            width={32}
+            height={32}
+            className="h-8 w-8 rounded-lg shadow-sm"
+          />
           <span className="flex flex-col leading-none">
             <span className="text-[16px] font-black tracking-tight text-on-surface">
               TrueQuote

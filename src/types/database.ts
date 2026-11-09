@@ -103,7 +103,16 @@ export type Feeder = {
   source_library_feeder_id?: string | null;
 };
 
-export type DeviceType = "ACB" | "MCCB" | "MCB" | "DOL" | "RDOL" | "STAR_DELTA" | "VFD" | "SOFT_STARTER" | "OTHER";
+export type DeviceType =
+  | "ACB"
+  | "MCCB"
+  | "MCB"
+  | "DOL"
+  | "RDOL"
+  | "STAR_DELTA"
+  | "VFD"
+  | "SOFT_STARTER"
+  | "OTHER";
 
 export type FeederItem = {
   id: string;
@@ -127,7 +136,15 @@ export type Customer = {
   created_at: string;
 };
 
-export type ProjectStage = "new" | "wip" | "quoted" | "finalization" | "won" | "lost" | "hold" | "budgetary";
+export type ProjectStage =
+  | "new"
+  | "wip"
+  | "quoted"
+  | "finalization"
+  | "won"
+  | "lost"
+  | "hold"
+  | "budgetary";
 
 export type Project = {
   id: string;
@@ -150,8 +167,8 @@ export type Project = {
   busbar_density_al: number;
   busbar_rate_cu: number;
   busbar_rate_al: number;
-  enclosure_rate_gi: number;
-  enclosure_rate_crca: number;
+  enclosure_rate_gi: number | null; // null = app default (app_settings)
+  enclosure_rate_crca: number | null;
   site_altitude_m: number | null;
   quote_required_by: string | null;
   drive_links: string[];
@@ -159,9 +176,24 @@ export type Project = {
   site_ambient_temp_c: number | null;
 };
 
-export type Consultant = { id: string; name: string; created_by: string | null; created_at: string };
-export type SalesExec = { id: string; name: string; created_by: string | null; created_at: string };
-export type SwitchboardType = { id: string; name: string; created_by: string | null; created_at: string };
+export type Consultant = {
+  id: string;
+  name: string;
+  created_by: string | null;
+  created_at: string;
+};
+export type SalesExec = {
+  id: string;
+  name: string;
+  created_by: string | null;
+  created_at: string;
+};
+export type SwitchboardType = {
+  id: string;
+  name: string;
+  created_by: string | null;
+  created_at: string;
+};
 
 // A revision is a snapshot of a project (Rev 01, Rev 02, ...) — its only
 // per-revision state is "archived" (read-only for everyone). Holds one or
@@ -252,7 +284,16 @@ export type SwitchboardEnclosureLine = {
   created_at: string;
 };
 
-export type BayType = "incomer" | "outgoing" | "riser" | "bus_coupler" | "spare" | "unassigned" | "bay" | "cable_alley" | "busbar_alley";
+export type BayType =
+  | "incomer"
+  | "outgoing"
+  | "riser"
+  | "bus_coupler"
+  | "spare"
+  | "unassigned"
+  | "bay"
+  | "cable_alley"
+  | "busbar_alley";
 
 // a "vertical" is one bay/column of a switchboard's GA
 export type Vertical = {
@@ -289,3 +330,25 @@ export type PlacedFeeder = {
 // Minimal placeholder so @supabase/ssr's generic client type-checks.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Database = any;
+
+export type ArtukSubpart = {
+  id: string;
+  code: string;
+  description: string | null;
+  family: string | null;
+  material: "GI" | "CRCA" | "BO" | null;
+  weight_kg: number | null;
+  unit_cost: number;
+  xls_cost: number | null;
+  source: string | null;
+  notes: string | null;
+  updated_at: string;
+};
+
+export type ArtukPartComponent = {
+  id: string;
+  parent_sku: string;
+  subpart_id: string;
+  qty: number;
+  sort_order: number;
+};

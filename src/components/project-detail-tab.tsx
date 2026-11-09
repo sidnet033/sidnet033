@@ -7,6 +7,11 @@ import { isGoogleDriveLink } from "@/lib/drive-link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import {
+  FALLBACK_STEEL_RATES,
+  getDefaultSteelRates,
+  type SteelRates,
+} from "@/lib/steel-rates";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { LookupSelect } from "@/components/lookup-select";
@@ -117,8 +122,8 @@ type ProjectPatch = {
   busbar_density_al: number;
   busbar_rate_cu: number;
   busbar_rate_al: number;
-  enclosure_rate_gi: number;
-  enclosure_rate_crca: number;
+  enclosure_rate_gi: number | null;
+  enclosure_rate_crca: number | null;
   site_altitude_m: number | null;
   site_ambient_temp_c: number | null;
 };
@@ -197,6 +202,18 @@ export function ProjectDetailTab({
   const canSyncRates =
     (isAdmin || isEstimationHead) && !["new", "wip"].includes(project.stage);
   const supabase = useMemo(() => createClient(), []);
+  // app-wide default steel rates, shown when the project has none of its own
+  const [defaultRates, setDefaultRates] =
+    useState<SteelRates>(FALLBACK_STEEL_RATES);
+  useEffect(() => {
+    let cancelled = false;
+    getDefaultSteelRates(supabase).then(
+      (r) => !cancelled && setDefaultRates(r),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
 
   const [savedSnapshot, setSavedSnapshot] = useState<ProjectPatch>(() =>
     snapshotOf(project),
@@ -1235,20 +1252,20 @@ export function ProjectDetailTab({
                   />
                 </Field>
                 <Field label="Enclosure Steel Rate — GI (INR/kg)">
-                  <DensityInput
+                  <RateOverrideInput
                     key={`rgi-${savedSnapshot.enclosure_rate_gi}`}
                     disabled={revisionArchived}
                     value={form.enclosure_rate_gi}
-                    allowZero
+                    defaultValue={defaultRates.GI}
                     onCommit={(v) => patch("enclosure_rate_gi", v)}
                   />
                 </Field>
                 <Field label="Enclosure Steel Rate — CRCA (INR/kg)">
-                  <DensityInput
+                  <RateOverrideInput
                     key={`rcrca-${savedSnapshot.enclosure_rate_crca}`}
                     disabled={revisionArchived}
                     value={form.enclosure_rate_crca}
-                    allowZero
+                    defaultValue={defaultRates.CRCA}
                     onCommit={(v) => patch("enclosure_rate_crca", v)}
                   />
                 </Field>
@@ -1976,6 +1993,48 @@ function DensityInput({
       }}
       className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low"
     />
+  );
+}
+
+// A per-project rate that falls back to the app default: blank = default
+// (shown greyed as the placeholder), a number = this project's own rate.
+function RateOverrideInput({
+  value,
+  defaultValue,
+  disabled,
+  onCommit,
+}: {
+  value: number | null;
+  defaultValue: number;
+  disabled: boolean;
+  onCommit: (v: number | null) => void;
+}) {
+  const [local, setLocal] = useState(value == null ? "" : String(value));
+  return (
+    <div>
+      <input
+        type="text"
+        inputMode="decimal"
+        disabled={disabled}
+        value={local}
+        placeholder={`${defaultValue} (default)`}
+        onChange={(e) => setLocal(e.target.value)}
+        onKeyDown={numericKeyGuard()}
+        onBlur={() => {
+          const t = local.trim();
+          if (t === "") return onCommit(null);
+          const n = Number(t);
+          if (Number.isFinite(n) && n >= 0) onCommit(n);
+          else setLocal(value == null ? "" : String(value));
+        }}
+        className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-space-sm py-1.5 text-body-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container-low"
+      />
+      <span className="mt-0.5 block text-[11px] text-secondary">
+        {value == null
+          ? `Using the default ₹${defaultValue}/kg`
+          : `Project rate (default ₹${defaultValue}/kg). Clear to use the default.`}
+      </span>
+    </div>
   );
 }
 

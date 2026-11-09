@@ -1,3 +1,9 @@
+import {
+  effectiveSteelRates,
+  getDefaultSteelRates,
+  subpartCost,
+  type SteelRates,
+} from "@/lib/steel-rates";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   BayType,
@@ -598,10 +604,10 @@ export type EnclosureTakeoff = {
 type ProjectSettings = {
   busbar_density_cu: number;
   busbar_density_al: number;
-  enclosure_rate_gi: number;
-  enclosure_rate_crca: number;
+  enclosure_rate_gi: number | null;
+  enclosure_rate_crca: number | null;
 };
-export type SteelRates = { GI: number; CRCA: number };
+export type { SteelRates };
 
 // Loads the GA and prices the ArTuK enclosure BOM from Item Master. Null
 // when the switchboard isn't ArTuK.
@@ -610,21 +616,23 @@ export async function loadEnclosureTakeoff(
   sb: Switchboard,
 ): Promise<EnclosureTakeoff | null> {
   if (sb.std !== "ArTuK") return null;
-  const [{ data: vRows }, { data: oRows }, { data: rev }] = await Promise.all([
-    supabase
-      .from("verticals")
-      .select("*")
-      .eq("switchboard_id", sb.id)
-      .order("sort_order"),
-    supabase.from("busbar_overrides").select("*").eq("switchboard_id", sb.id),
-    supabase
-      .from("revisions")
-      .select(
-        "project:projects(busbar_density_cu, busbar_density_al, enclosure_rate_gi, enclosure_rate_crca)",
-      )
-      .eq("id", sb.revision_id)
-      .single(),
-  ]);
+  const [{ data: vRows }, { data: oRows }, { data: rev }, defaultRates] =
+    await Promise.all([
+      supabase
+        .from("verticals")
+        .select("*")
+        .eq("switchboard_id", sb.id)
+        .order("sort_order"),
+      supabase.from("busbar_overrides").select("*").eq("switchboard_id", sb.id),
+      supabase
+        .from("revisions")
+        .select(
+          "project:projects(busbar_density_cu, busbar_density_al, enclosure_rate_gi, enclosure_rate_crca)",
+        )
+        .eq("id", sb.revision_id)
+        .single(),
+      getDefaultSteelRates(supabase),
+    ]);
   const verticals = (vRows ?? []) as Vertical[];
   const vIds = verticals.map((v) => v.id);
   const { data: pRows } = vIds.length
@@ -676,29 +684,56 @@ export async function loadEnclosureTakeoff(
     bom.warnings.push(
       "Double front: ABB's ICC parts for double-front (VC20xx-1DF) and the rear-side doors aren't listed automatically — add them below.",
     );
-  return priceEnclosure(supabase, bom, {
-    GI: Number(project?.enclosure_rate_gi ?? 0),
-    CRCA: Number(project?.enclosure_rate_crca ?? 0),
-  });
+  return priceEnclosure(
+    supabase,
+    bom,
+    effectiveSteelRates(project, defaultRates),
+  );
 }
 
-// A part's rate: GI / CRCA parts with a weight = weight x the project's
-// per-kg rate for that steel (when set); anything else, or a 0 rate, its
-// Item Master net rate.
+// A part's rate: an ABB part with a sub-part list = sum(qty x sub-part cost)
+// at the project's steel rates (project override, else the app default).
+// Otherwise GI / CRCA parts with a weight = weight x that rate; anything
+// else its Item Master net rate.
 export async function priceEnclosure(
   supabase: SupabaseClient,
   bom: { lines: EnclosureLine[]; warnings: string[] },
   steel: SteelRates,
 ): Promise<EnclosureTakeoff> {
   const codes = bom.lines.map((l) => l.code);
-  const { data: items } = codes.length
-    ? await supabase
-        .from("item_master")
-        .select(
-          "sku, description, unit_cost, list_price, discount_pct, material, weight_kg",
-        )
-        .in("sku", codes)
-    : { data: [] };
+  const [{ data: items }, { data: compRows }] = codes.length
+    ? await Promise.all([
+        supabase
+          .from("item_master")
+          .select(
+            "sku, description, unit_cost, list_price, discount_pct, material, weight_kg",
+          )
+          .in("sku", codes),
+        supabase
+          .from("artuk_part_components")
+          .select(
+            "parent_sku, qty, subpart:artuk_subparts(material, weight_kg, unit_cost)",
+          )
+          .in("parent_sku", codes),
+      ])
+    : [{ data: [] }, { data: [] }];
+  const fromSubparts = new Map<string, { rate: number; weight: number }>();
+  for (const c of (compRows ?? []) as unknown as {
+    parent_sku: string;
+    qty: number;
+    subpart: {
+      material: string | null;
+      weight_kg: number | null;
+      unit_cost: number;
+    } | null;
+  }[]) {
+    if (!c.subpart) continue;
+    const cur = fromSubparts.get(c.parent_sku) ?? { rate: 0, weight: 0 };
+    cur.rate += Number(c.qty) * subpartCost(c.subpart, steel);
+    if (c.subpart.material === "GI" || c.subpart.material === "CRCA")
+      cur.weight += Number(c.qty) * Number(c.subpart.weight_kg ?? 0);
+    fromSubparts.set(c.parent_sku, cur);
+  }
   type Row = {
     sku: string;
     description: string;
@@ -712,11 +747,22 @@ export async function priceEnclosure(
   const lines = bom.lines
     .map((l) => {
       const item = bySku.get(l.code);
+      const kit = fromSubparts.get(l.code);
+      if (item && kit)
+        return {
+          ...l,
+          description: item.description,
+          material: "Sub-parts",
+          weightKg: kit.weight || null,
+          rate: kit.rate,
+          amount: kit.rate * l.qty,
+          inItemMaster: true,
+          priced: kit.rate > 0,
+        };
       const material = item?.material ?? null;
       const weightKg = item?.weight_kg != null ? Number(item.weight_kg) : null;
-      // Pure GI / CRCA parts with a weight: weight x the project's per-kg
-      // rate -- but only once that rate is set; at 0 (the default) fall back
-      // to the Item Master cost so the part isn't priced at nothing.
+      // Pure GI / CRCA parts with a weight: weight x the steel rate; a 0
+      // rate falls back to the Item Master cost.
       const netRate = item
         ? effectiveNetRate({
             unit_cost: Number(item.unit_cost),
