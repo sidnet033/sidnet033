@@ -9,6 +9,10 @@ import {
   sheetImage,
   type ArtukBayConfig,
 } from "@/lib/artuk-bay-configs";
+import {
+  ARTUK_BAY_TEMPLATES,
+  type ArtukTemplateLine,
+} from "@/lib/artuk-bay-templates";
 
 // Pick a standard ABB ArTu-K vertical for a GA bay. Left: every config with
 // its key specs; right: the selected config's ABB sheet data -- the spec box
@@ -33,6 +37,7 @@ export function ArtukBayConfigDialog({
   const sel =
     ARTUK_BAY_CONFIGS.find((c) => c.id === selectedId) ?? ARTUK_BAY_CONFIGS[0];
   const selMisfits = misfitsFor(sel);
+  const [partsTab, setPartsTab] = useState<"parts" | "drawing">("parts");
 
   return (
     <Modal
@@ -57,13 +62,19 @@ export function ArtukBayConfigDialog({
                     : "border-surface-container-high hover:bg-surface-container-low"
                 }`}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={bayImage(c)}
-                  alt=""
-                  loading="lazy"
-                  className="h-20 w-20 shrink-0 rounded border border-surface-container-high bg-white object-contain"
-                />
+                {c.page > 0 ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={bayImage(c)}
+                    alt=""
+                    loading="lazy"
+                    className="h-20 w-20 shrink-0 rounded border border-surface-container-high bg-white object-contain"
+                  />
+                ) : (
+                  <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded border border-dashed border-surface-container-high bg-surface-container-low p-1 text-center text-[10px] text-secondary">
+                    Workbook parts list
+                  </span>
+                )}
                 <span className="min-w-0 flex-1">
                   <span className="block text-[12px] font-bold leading-tight text-on-surface">
                     {c.label}
@@ -97,8 +108,9 @@ export function ArtukBayConfigDialog({
                 {sel.label}
               </h4>
               <p className="text-[11px] text-secondary">
-                ABB · ArTu-K Assembly Guideline &amp; Standard Compartment Sizes
-                (ELSP/ARTUK/ENGG/WEL KIT, R3) · page {sel.page} of 17
+                {sel.page > 0
+                  ? `ABB · ArTu-K Assembly Guideline & Standard Compartment Sizes (ELSP/ARTUK/ENGG/WEL KIT, R3) · page ${sel.page} of 17`
+                  : "ArTuK fabrication BOM workbook (no ABB guideline drawing)"}
               </p>
             </div>
             <table className="border-collapse text-[12px]">
@@ -114,7 +126,13 @@ export function ArtukBayConfigDialog({
                 />
                 <SpecRow
                   k={sel.kind === "acb" ? "ACB Type" : "Breaker Type"}
-                  v={sel.kind === "acb" ? `Emax 2_${sel.frame}` : "MCCB"}
+                  v={
+                    sel.kind === "acb"
+                      ? `Emax 2_${sel.frame}`
+                      : sel.functions.length === 0
+                        ? "None (riser)"
+                        : "MCCB"
+                  }
                 />
                 <SpecRow
                   k="Access"
@@ -148,14 +166,18 @@ export function ArtukBayConfigDialog({
           )}
 
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-container-low px-3 py-2">
-            <a
-              href={sheetImage(sel)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[12px] text-primary hover:underline"
-            >
-              Open the full ABB sheet (with parts list) ↗
-            </a>
+            {sel.page > 0 ? (
+              <a
+                href={sheetImage(sel)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[12px] text-primary hover:underline"
+              >
+                Open the full ABB sheet ↗
+              </a>
+            ) : (
+              <span />
+            )}
             <div className="flex gap-2">
               <button onClick={onClose} className="btn btn-outline btn-sm">
                 Cancel
@@ -170,14 +192,36 @@ export function ArtukBayConfigDialog({
               </button>
             </div>
           </div>
-          <div className="rounded-lg border border-surface-container-high bg-white p-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={bayImage(sel)}
-              alt={`${sel.label} — front and side view`}
-              className="mx-auto max-h-[42vh] w-auto object-contain"
-            />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setPartsTab("parts")}
+              className={`btn btn-sm ${partsTab === "parts" ? "btn-primary" : "btn-outline"}`}
+            >
+              Parts list
+            </button>
+            {sel.page > 0 && (
+              <button
+                type="button"
+                onClick={() => setPartsTab("drawing")}
+                className={`btn btn-sm ${partsTab === "drawing" ? "btn-primary" : "btn-outline"}`}
+              >
+                Drawing
+              </button>
+            )}
           </div>
+          {partsTab === "drawing" && sel.page > 0 ? (
+            <div className="rounded-lg border border-surface-container-high bg-white p-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={bayImage(sel)}
+                alt={`${sel.label} — front and side view`}
+                className="mx-auto max-h-[42vh] w-auto object-contain"
+              />
+            </div>
+          ) : (
+            <PartsList keys={sel.workbookKeys ?? []} />
+          )}
 
           <p className="text-[11px] text-secondary">
             Applying sets the bay&apos;s width and depth (the whole panel takes
@@ -232,5 +276,103 @@ function Pill({
     <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${cls}`}>
       {children}
     </span>
+  );
+}
+
+const SECTIONS: { key: ArtukTemplateLine["section"]; title: string }[] = [
+  { key: "vertical", title: "Per vertical" },
+  { key: "panel", title: "Once per entire panel" },
+  { key: "arc_vertical", title: "Internal arc — per vertical" },
+  { key: "arc_panel", title: "Internal arc — once per panel" },
+];
+
+// The vertical's parts list from the fabrication-BOM workbook -- what the
+// enclosure costing uses for a bay of this type.
+function PartsList({ keys }: { keys: string[] }) {
+  const templates = keys
+    .map((k) => ARTUK_BAY_TEMPLATES.find((t) => t.key === k))
+    .filter((t): t is (typeof ARTUK_BAY_TEMPLATES)[number] => !!t);
+  if (templates.length === 0)
+    return (
+      <p className="rounded-lg bg-surface-container-low px-3 py-2 text-[12px] text-secondary">
+        No workbook parts list for this vertical — its enclosure parts come from
+        the ABB rules.
+      </p>
+    );
+  return (
+    <div className="max-h-[42vh] space-y-3 overflow-y-auto rounded-lg border border-surface-container-high p-2">
+      {templates.map((t) => (
+        <div key={t.key}>
+          {templates.length > 1 && (
+            <p className="mb-1 text-[12px] font-bold text-on-surface">
+              {t.title}
+            </p>
+          )}
+          {SECTIONS.map(({ key, title }) => {
+            const lines = t.lines.filter((l) => l.section === key);
+            if (lines.length === 0) return null;
+            const total = lines.reduce(
+              (s, l) => s + (l.unitCost ?? 0) * l.qty,
+              0,
+            );
+            return (
+              <table
+                key={key}
+                className="mb-2 w-full border-collapse text-[12px]"
+              >
+                <thead>
+                  <tr className="text-left text-[11px] uppercase tracking-wider text-secondary">
+                    <th className="py-1 pr-2" colSpan={2}>
+                      {title}
+                    </th>
+                    <th className="py-1 pr-2 text-center">Qty</th>
+                    <th className="py-1 text-right">Workbook cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lines.map((l, i) => (
+                    <tr
+                      key={`${l.code}-${i}`}
+                      className="border-t border-surface-container"
+                    >
+                      <td className="py-0.5 pr-2 font-bold whitespace-nowrap">
+                        {l.code}
+                      </td>
+                      <td className="py-0.5 pr-2">
+                        {l.description}
+                        {l.replaces && (
+                          <span className="block text-[11px] text-secondary">
+                            replaces {l.replaces}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-0.5 pr-2 text-center">{l.qty}</td>
+                      <td className="py-0.5 text-right">
+                        {l.unitCost != null
+                          ? `₹${Math.round(l.unitCost * l.qty).toLocaleString("en-IN")}`
+                          : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="border-t border-surface-container-high font-bold">
+                    <td colSpan={3} className="py-0.5 pr-2 text-right">
+                      Total
+                    </td>
+                    <td className="py-0.5 text-right">
+                      ₹{Math.round(total).toLocaleString("en-IN")}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            );
+          })}
+        </div>
+      ))}
+      <p className="text-[11px] text-secondary">
+        Workbook costs shown for reference; the enclosure costing prices each
+        part from Item Master / ArTuK Sub-parts at the project&apos;s enclosure
+        rates.
+      </p>
+    </div>
   );
 }

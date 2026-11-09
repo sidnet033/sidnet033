@@ -7,6 +7,11 @@ import type {
   Vertical,
 } from "@/types/database";
 import { suggestAcbFrame } from "@/lib/artuk-sizing";
+import {
+  ARTUK_BAY_TEMPLATES,
+  type ArtukBayTemplate,
+  type ArtukTemplateLine,
+} from "@/lib/artuk-bay-templates";
 import { effectiveNetRate } from "@/lib/feeder-cost";
 import {
   bayFunctionOf,
@@ -65,7 +70,14 @@ import {
 // ventilation (per incomer rating), IP31/IP41 finishing kits, corner sets,
 // double-front ICC.
 
-export type EnclosureLine = { code: string; qty: number; why: string[] };
+export type EnclosureLine = {
+  code: string;
+  qty: number;
+  why: string[];
+  /** workbook cost x qty, used when the part isn't in Item Master */
+  fallbackAmount?: number;
+  label?: string;
+};
 
 const WIDTH_PREFIX: Record<number, string> = {
   420: "VC30",
@@ -248,6 +260,7 @@ export type EnclosureInput = {
   material: BusbarMaterial;
   ka: number | null;
   internalArc: boolean;
+  doubleFront?: boolean;
 };
 
 // top/base sets ABB makes with an arc flap + gland plate (or flap only)
@@ -285,6 +298,112 @@ function flapSet(code: string): string | null {
   );
 }
 
+type BayKind = "acb" | "acb_bc" | "acb_2tier" | "mcc" | "alley";
+
+function bayKindOf(bay: VerticalWithFeeders): BayKind {
+  const acbs = bay.placed.filter((p) => p.feeder.device_type === "ACB");
+  const units = acbs.reduce((n, p) => n + (p.qty ?? 1), 0);
+  if (units >= 2) return "acb_2tier";
+  if (units === 1)
+    return acbs.some((p) => bayFunctionOf(p.feeder) === "bus_coupler")
+      ? "acb_bc"
+      : "acb";
+  return isAlley(bay.bay_type as BayType | null) ? "alley" : "mcc";
+}
+
+const sameDepth = (a: number, b: number) =>
+  depthSections(a).join("+") === depthSections(b).join("+");
+
+/** the workbook bay type for a vertical (or pair), left to right */
+export function matchBayTemplates(
+  bays: VerticalWithFeeders[],
+  ctx: { panelDepthMm: number; frontAccess: boolean; doubleFront: boolean },
+): {
+  template: ArtukBayTemplate;
+  bays: VerticalWithFeeders[];
+  note?: string;
+}[] {
+  const out: {
+    template: ArtukBayTemplate;
+    bays: VerticalWithFeeders[];
+    note?: string;
+  }[] = [];
+  const atDepth = ARTUK_BAY_TEMPLATES.filter((t) =>
+    sameDepth(t.depthMm, ctx.panelDepthMm),
+  );
+  for (let i = 0; i < bays.length; i++) {
+    const a = bays[i];
+    const b = bays[i + 1];
+    const ka = bayKindOf(a);
+    // pairs first
+    if (b) {
+      const kb = bayKindOf(b);
+      const ws = [a.width_mm, b.width_mm];
+      const pair = atDepth.find((t) => {
+        if (t.widthsMm.length !== 2) return false;
+        const [x, y] = t.widthsMm;
+        if (!((ws[0] === x && ws[1] === y) || (ws[0] === y && ws[1] === x)))
+          return false;
+        const hasAcb = (k: BayKind) => k.startsWith("acb");
+        if (t.kind === "acb_2tier")
+          return (
+            hasAcb(ka) &&
+            hasAcb(kb) &&
+            (ka === "acb_2tier" || kb === "acb_2tier")
+          );
+        if (t.kind === "mcc_front")
+          return (
+            ctx.frontAccess && !ctx.doubleFront && !hasAcb(ka) && !hasAcb(kb)
+          );
+        if (t.kind === "mcc_df")
+          return ctx.doubleFront && !hasAcb(ka) && !hasAcb(kb);
+        return false;
+      });
+      if (pair) {
+        out.push({ template: pair, bays: [a, b] });
+        i++;
+        continue;
+      }
+    }
+    const singles = atDepth.filter(
+      (t) => t.widthsMm.length === 1 && t.widthsMm[0] === a.width_mm,
+    );
+    const exact = singles.find((t) => {
+      if (t.kind === "any") return true;
+      if (t.kind === "mcc")
+        return ka === "mcc" && !ctx.frontAccess && !ctx.doubleFront;
+      return t.kind === ka;
+    });
+    if (exact) {
+      out.push({ template: exact, bays: [a] });
+      continue;
+    }
+    // a bus coupler / 2-tier bay with no own type at this width: use the
+    // plain ACB vertical and say so
+    const acb = ka.startsWith("acb") && singles.find((t) => t.kind === "acb");
+    if (acb)
+      out.push({
+        template: acb,
+        bays: [a],
+        note: `no workbook type for a ${ka === "acb_bc" ? "bus coupler" : "2-tier"} ${a.width_mm}mm vertical; priced as "${acb.title}" — check the parts.`,
+      });
+  }
+  return out;
+}
+
+/** a section's lines, with the internal-arc parts swapped / added in */
+export function withArc(
+  lines: ArtukTemplateLine[],
+  section: "vertical" | "panel",
+  internalArc: boolean,
+): ArtukTemplateLine[] {
+  const base = lines.filter((l) => l.section === section);
+  if (!internalArc) return base;
+  const arc = lines.filter((l) => l.section === `arc_${section}`);
+  const replaced = new Set(arc.map((l) => l.replaces).filter(Boolean));
+  return [...base.filter((l) => !replaced.has(l.code)), ...arc];
+}
+
 export function artukEnclosureBom(input: EnclosureInput): {
   lines: EnclosureLine[];
   warnings: string[];
@@ -295,13 +414,56 @@ export function artukEnclosureBom(input: EnclosureInput): {
   const H = String(input.modularHeightMm / 100).padStart(2, "0"); // 20 / 18 / 16
   const lines = new Map<string, EnclosureLine>();
   const warnings: string[] = [];
-  const add = (code: string | null | undefined, qty: number, why: string) => {
+  const add = (
+    code: string | null | undefined,
+    qty: number,
+    why: string,
+    unitCost?: number | null,
+    label?: string,
+  ) => {
     if (!code || qty <= 0) return;
     const l = lines.get(code) ?? { code, qty: 0, why: [] };
     l.qty += qty;
+    if (unitCost != null)
+      l.fallbackAmount = (l.fallbackAmount ?? 0) + unitCost * qty;
+    if (label && !l.label) l.label = label;
     if (!l.why.includes(why)) l.why.push(why);
     lines.set(code, l);
   };
+
+  // Verticals that match a workbook bay type take its parts list as-is
+  // (ArTuK fabrication BOM, one tab per vertical type); the rest fall back
+  // to the rules below.
+  const panelDepth = panelDepthOf(bays) ?? 1037;
+  const matches = matchBayTemplates(bays, {
+    panelDepthMm: panelDepth,
+    frontAccess: input.frontAccess,
+    doubleFront: !!input.doubleFront,
+  });
+  const templated = new Set(matches.flatMap((m) => m.bays.map((b) => b.id)));
+  const templatedNames = new Set(
+    matches.flatMap((m) => m.bays.map((b) => b.name)),
+  );
+  const panelParts = new Map<string, ArtukTemplateLine>();
+  for (const m of matches) {
+    const names = m.bays.map((b) => b.name).join(" + ");
+    const why = `${names}: ${m.template.title}${input.internalArc ? " (internal arc)" : ""}`;
+    for (const l of withArc(m.template.lines, "vertical", input.internalArc))
+      add(l.code, l.qty, why, l.unitCost, l.description);
+    for (const l of withArc(m.template.lines, "panel", input.internalArc)) {
+      const cur = panelParts.get(l.code);
+      if (!cur || l.qty > cur.qty) panelParts.set(l.code, l);
+    }
+    if (m.note) warnings.push(`${names}: ${m.note}`);
+  }
+  for (const l of panelParts.values())
+    add(
+      l.code,
+      l.qty,
+      "once per panel (side panels)",
+      l.unitCost,
+      l.description,
+    );
 
   // busbar supports, placed along the main busbar and droppers
   let left = 0;
@@ -329,19 +491,19 @@ export function artukEnclosureBom(input: EnclosureInput): {
     poles: input.poles,
   });
   warnings.push(...sup.warnings);
-  for (const s of sup.supports) {
+  for (const s of sup.supports.filter((x) => !templatedNames.has(x.bayName))) {
     const what = `${s.bayName}: ${s.kind === "hbb" ? "main" : "vertical"} busbar support (span ≤${s.spanMm}mm)`;
     add(s.code, 1, what);
     add(s.neutralCode, 1, what);
   }
-  if (input.internalArc) {
+  if (input.internalArc && templated.size < bays.length) {
     warnings.push(
       "Internal arc: use 2mm side panels and glass doors, recessed compartment doors (gap ≤3mm), APR14/20 + AD1090 fixings, M12 8.8 busbar bolts at 70Nm, and ACB/MCCB conductor anchoring per ABB ENGG/03 — confirm the 2mm door/side-panel part codes with ABB.",
     );
   }
 
-  const panelDepth = panelDepthOf(bays) ?? 1037;
   for (const bay of bays) {
+    if (templated.has(bay.id)) continue;
     const w = bay.width_mm ?? 0;
     const name = bay.name;
     const prefix = WIDTH_PREFIX[w];
@@ -550,8 +712,8 @@ export function artukEnclosureBom(input: EnclosureInput): {
     }
   }
 
-  // line-up
-  if (bays.length > 0) {
+  // line-up (rule-based; a workbook bay type brings its own side panels)
+  if (bays.length > 0 && matches.length === 0) {
     // side panels on the two line-up ends only (one N°2 pair), at the
     // panel's depth
     for (const d of depthSections(panelDepth))
@@ -668,8 +830,12 @@ export async function loadEnclosureTakeoff(
     material: sb.busbar ?? "Cu",
     ka: sb.ka,
     internalArc: sb.internal_arc,
+    doubleFront: sb.arrangement === "double_front",
   });
-  if (sb.arrangement === "double_front")
+  if (
+    sb.arrangement === "double_front" &&
+    !bom.lines.some((l) => l.why.some((w) => w.includes("DOUBLE FRONT")))
+  )
     bom.warnings.push(
       "Double front: ABB's ICC parts for double-front (VC20xx-1DF) and the rear-side doors aren't listed automatically — add them below.",
     );
@@ -744,10 +910,18 @@ export async function priceEnclosure(
             discount_pct: item.discount_pct,
           })
         : 0;
-      const rate = !item ? 0 : (projectCost.get(l.code) ?? netRate);
+      const rate = !item
+        ? l.fallbackAmount && l.qty
+          ? l.fallbackAmount / l.qty
+          : 0
+        : (projectCost.get(l.code) ?? netRate);
       return {
         ...l,
-        description: item?.description ?? "Not in Item Master",
+        description:
+          item?.description ??
+          (l.label
+            ? `${l.label} (workbook price — not in Item Master)`
+            : "Not in Item Master"),
         material,
         weightKg,
         rate,

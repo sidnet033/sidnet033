@@ -1608,18 +1608,26 @@ function DimensionsReference() {
             <tr className="border-b border-surface-container-high/60 align-top">
               <td className="py-1.5 pr-3 font-medium">Pricing</td>
               <td className="py-1.5 pr-3">
-                ABB parts with a sub-part list (Masters → ArTuK Sub-parts) cost
-                the sum of qty × sub-part cost. A fabricated sub-part costs
-                Punching/kg (Total Wt. × Punching or Laser) + Bending (Total Wt.
-                × Bending) + Fab (Total Wt. × Fabrication) + PC (PC area ×
-                Powder coating, or Total Wt. × Plating) + Material (Total Wt. ×
-                GI / CRCA) — the fabrication BOM&apos;s “Total Cost with KG
-                calculation”. Gaskets are length × Gasket/m; other bought-out
-                parts keep their price. Rates come from the Enclosure Rates
-                Master (app level); a project can override any rate from Project
-                Detail → Enclosure Rates Master…, which recalculates that
-                project&apos;s part costs. Other parts use their Item Master
-                price.
+                Parts per vertical: a bay (or pair) that matches a vertical type
+                in the ArTuK fabrication BOM workbook — by width, depth and
+                what&apos;s in it (ACB, bus coupler, 2-tier ACB, MCC rear /
+                front / double front, 420 riser, 510 standalone) — takes that
+                type&apos;s parts list as-is, plus its once-per-panel side
+                panels; with internal arc, the 2mm doors, rear panels and side
+                panels replace the standard ones and arc spacers are added.
+                Other bays fall back to the ABB rules. The lists are shown in
+                the GA Builder&apos;s ArTu-K bay config picker. ABB parts with a
+                sub-part list (Masters → ArTuK Sub-parts) cost the sum of qty ×
+                sub-part cost. A fabricated sub-part costs Punching/kg (Total
+                Wt. × Punching or Laser) + Bending (Total Wt. × Bending) + Fab
+                (Total Wt. × Fabrication) + PC (PC area × Powder coating, or
+                Total Wt. × Plating) + Material (Total Wt. × GI / CRCA) — the
+                fabrication BOM&apos;s “Total Cost with KG calculation”. Gaskets
+                are length × Gasket/m; other bought-out parts keep their price.
+                Rates come from the Enclosure Rates Master (app level); a
+                project can override any rate from Project Detail → Enclosure
+                Rates Master…, which recalculates that project&apos;s part
+                costs. Other parts use their Item Master price.
               </td>
             </tr>
             <tr className="border-b border-surface-container-high/60 align-top">

@@ -30,6 +30,8 @@ export type ArtukBayConfig = {
   /** a second bay that goes right next to it (cable chamber, 2nd tier...) */
   partner?: { widthMm: number; bayType: BayType; name: string };
   note?: string;
+  /** fabrication-BOM workbook tab(s) with this vertical's parts list */
+  workbookKeys?: string[];
 };
 
 export const ARTUK_HEIGHT_MM = 2231;
@@ -37,6 +39,7 @@ export const ARTUK_HEIGHT_MM = 2231;
 export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   {
     id: "e12-720-io",
+    workbookKeys: ["720W"],
     page: 1,
     label: "ArTu-K Emax 2 720w E1.2 WITHDRAW ACB Incomer / Outgoing",
     kind: "acb",
@@ -50,6 +53,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "e22-720-io",
+    workbookKeys: ["720W"],
     page: 2,
     label: "ArTu-K Emax 2 720w E2.2 WITHDRAW ACB Incomer / Outgoing",
     kind: "acb",
@@ -63,6 +67,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "e22-920-io",
+    workbookKeys: ["920W"],
     page: 3,
     label: "ArTu-K Emax 2 920w E2.2 WITHDRAW ACB Incomer / Outgoing",
     kind: "acb",
@@ -77,6 +82,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "e42-920-io",
+    workbookKeys: ["920W"],
     page: 4,
     label: "ArTu-K Emax 2 920w E4.2 WITHDRAW ACB Incomer / Outgoing",
     kind: "acb",
@@ -90,6 +96,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "e12-920-bc",
+    workbookKeys: ["920W WITH BC"],
     page: 5,
     label: "ArTu-K Emax 2 920w E1.2 WITHDRAW ACB BC With Internal Bus Riser",
     kind: "acb",
@@ -103,6 +110,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "e22-920-420-bc",
+    workbookKeys: ["920W", "420WX1037D"],
     page: 6,
     label: "ArTu-K Emax 2 920+420 E2.2 w ACB BC With External Cable Chamber",
     kind: "acb",
@@ -117,6 +125,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "e62-1120-in",
+    workbookKeys: ["1120WX1037+437D"],
     page: 7,
     label: "ArTu-K Emax 2 1120w E6.2 WITHDRAW ACB INCOMER",
     kind: "acb",
@@ -132,6 +141,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "e62-1320-in",
+    workbookKeys: ["1320WX1037+437D"],
     page: 8,
     label: "ArTu-K Emax 2 1320w E6.2 WITHDRAW ACB INCOMER",
     kind: "acb",
@@ -147,6 +157,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "mcc-920-1120-fa",
+    workbookKeys: ["1120+920W X 637D FRONT ACCESS"],
     page: 9,
     label: "ArTu-K 920+1120mm MCC VERTICAL FRONT ACCESS",
     kind: "mcc",
@@ -166,6 +177,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "mcc-720-ra",
+    workbookKeys: ["720W MCC"],
     page: 10,
     label: "ArTu-K 720mm WIDTH MCC VERTICAL REAR ACCESS",
     kind: "mcc",
@@ -179,6 +191,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "e12-920-720-2t",
+    workbookKeys: ["720+920W X 1037+437D 2 TIER"],
     page: 11,
     label: "ArTu-K 920+720mm Emax 2 E1.2 2 Tier ACB Outgoing",
     kind: "acb",
@@ -196,6 +209,120 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
       name: "Outgoing (E1.2 2-Tier, 2)",
     },
     note: "Two E1.2 ACBs stacked per bay, 4 ACBs across the pair.",
+  },
+
+  // vertical types from the fabrication-BOM workbook with no ABB guideline
+  // sheet (page 0 = no drawing)
+  {
+    id: "wb-720-acb-1467",
+    workbookKeys: ["720W X(1037+437)D"],
+    page: 0,
+    label:
+      "ArTu-K Emax 2 720w E1.2/2.2 WITHDRAW ACB Incomer / Outgoing (1037+437 deep)",
+    kind: "acb",
+    frame: "E1.2",
+    functions: ["incomer", "outgoing"],
+    access: "rear",
+    widthMm: 720,
+    depthMm: 1467,
+    depthNote: "1030+437",
+    ip: 54,
+    form: "4B",
+  },
+  {
+    id: "wb-920-acb-1467",
+    workbookKeys: ["920WX(1037+437)W"],
+    page: 0,
+    label:
+      "ArTu-K Emax 2 920w E2.2/4.2 WITHDRAW ACB Incomer / Outgoing (1037+437 deep)",
+    kind: "acb",
+    frame: "E2.2",
+    functions: ["incomer", "outgoing"],
+    access: "rear",
+    widthMm: 920,
+    depthMm: 1467,
+    depthNote: "1030+437",
+    ip: 54,
+    form: "4B",
+  },
+  {
+    id: "wb-920-2t",
+    workbookKeys: ["920W X 1037+437D 2 TIER"],
+    page: 0,
+    label: "ArTu-K 920mm Emax 2 E1.2 2 Tier ACB Outgoing",
+    kind: "acb",
+    frame: "E1.2",
+    functions: ["outgoing"],
+    access: "rear",
+    widthMm: 920,
+    depthMm: 1467,
+    depthNote: "1030+437",
+    ip: 54,
+    form: "4B",
+    note: "Two E1.2 ACBs stacked in one 920mm bay.",
+  },
+  {
+    id: "wb-720-mcc-837",
+    workbookKeys: ["720W X 837D MCC"],
+    page: 0,
+    label: "ArTu-K 720mm WIDTH MCC VERTICAL REAR ACCESS WITH 837mm DEPTH",
+    kind: "mcc",
+    frame: null,
+    functions: ["incomer", "outgoing"],
+    access: "rear",
+    widthMm: 720,
+    depthMm: 837,
+    ip: 54,
+    form: "4B",
+  },
+  {
+    id: "wb-920-1120-df",
+    workbookKeys: ["1120+920W X 637D DOUBLE FRONT A"],
+    page: 0,
+    label: "ArTu-K 920+1120mm MCC VERTICAL DOUBLE FRONT ACCESS",
+    kind: "mcc",
+    frame: null,
+    functions: ["incomer", "outgoing"],
+    access: "rear",
+    widthMm: 920,
+    depthMm: 1037,
+    ip: 54,
+    form: "3B",
+    partner: {
+      widthMm: 1120,
+      bayType: "outgoing",
+      name: "MCC Double Front (2)",
+    },
+    note: "Set the switchboard's arrangement to double front.",
+  },
+  {
+    id: "wb-420-bc",
+    workbookKeys: ["420WX1037D"],
+    page: 0,
+    label: "ArTu-K 420w Vertical for Bus coupler",
+    kind: "mcc",
+    frame: null,
+    functions: [],
+    access: "rear",
+    widthMm: 420,
+    depthMm: 1037,
+    ip: 54,
+    form: "4B",
+    note: "Riser / cable chamber next to a bus coupler bay.",
+  },
+  {
+    id: "wb-510-sa",
+    workbookKeys: ["510WX1037D"],
+    page: 0,
+    label: "ArTu-K 510w Vertical for Standalone Breaker",
+    kind: "mcc",
+    frame: null,
+    functions: ["incomer", "outgoing"],
+    access: "rear",
+    widthMm: 510,
+    depthMm: 1037,
+    ip: 54,
+    form: "4B",
   },
 ];
 
@@ -270,7 +397,7 @@ export function configMisfits(
       out.push(
         `The bay's ACB is a${badFn[0] === "incomer" || badFn[0] === "outgoing" ? "n" : ""} ${badFn.map((f) => FN_LABEL[f]).join(" / ")}; this config is for ${c.functions.map((f) => FN_LABEL[f]).join(" / ")}.`,
       );
-    const perBay = c.id === "e12-920-720-2t" ? 2 : 1;
+    const perBay = c.id.endsWith("-2t") ? 2 : 1;
     if (acbUnits > perBay)
       out.push(
         `${acbUnits} ACBs are in this bay; this config takes ${perBay}.`,
