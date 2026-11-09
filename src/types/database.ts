@@ -167,8 +167,6 @@ export type Project = {
   busbar_density_al: number;
   busbar_rate_cu: number;
   busbar_rate_al: number;
-  enclosure_rate_gi: number | null; // null = app default (app_settings)
-  enclosure_rate_crca: number | null;
   site_altitude_m: number | null;
   quote_required_by: string | null;
   drive_links: string[];
@@ -339,6 +337,24 @@ export type ArtukSubpart = {
   material: "GI" | "CRCA" | "BO" | null;
   weight_kg: number | null;
   unit_cost: number;
+  length_mm: number | null;
+  width_mm: number | null;
+  thickness_mm: number | null;
+  qty_per: number;
+  weight_fixed: boolean;
+  punch: "PUNCHING" | "LASER" | null;
+  bending: boolean;
+  fab: boolean;
+  finish: "PC" | "PLATING" | null;
+  punch_strokes: number | null;
+  gasket_m: number | null;
+  pc_area_sqft: number | null;
+  punch_cost: number | null;
+  bending_cost: number | null;
+  fab_cost: number | null;
+  pc_cost: number | null;
+  material_cost: number | null;
+  cost: number | null;
   xls_cost: number | null;
   source: string | null;
   notes: string | null;

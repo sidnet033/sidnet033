@@ -1,9 +1,3 @@
-import {
-  effectiveSteelRates,
-  getDefaultSteelRates,
-  subpartCost,
-  type SteelRates,
-} from "@/lib/steel-rates";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   BayType,
@@ -584,7 +578,7 @@ export function artukEnclosureBom(input: EnclosureInput): {
 
 export type EnclosureTakeoffLine = EnclosureLine & {
   description: string;
-  // GI / CRCA parts are priced by weight x the project's per-kg rate (when set)
+  // "Sub-parts" for ABB parts costed from their sub-part list
   material: string | null;
   weightKg: number | null;
   rate: number;
@@ -604,10 +598,7 @@ export type EnclosureTakeoff = {
 type ProjectSettings = {
   busbar_density_cu: number;
   busbar_density_al: number;
-  enclosure_rate_gi: number | null;
-  enclosure_rate_crca: number | null;
 };
-export type { SteelRates };
 
 // Loads the GA and prices the ArTuK enclosure BOM from Item Master. Null
 // when the switchboard isn't ArTuK.
@@ -616,23 +607,21 @@ export async function loadEnclosureTakeoff(
   sb: Switchboard,
 ): Promise<EnclosureTakeoff | null> {
   if (sb.std !== "ArTuK") return null;
-  const [{ data: vRows }, { data: oRows }, { data: rev }, defaultRates] =
-    await Promise.all([
-      supabase
-        .from("verticals")
-        .select("*")
-        .eq("switchboard_id", sb.id)
-        .order("sort_order"),
-      supabase.from("busbar_overrides").select("*").eq("switchboard_id", sb.id),
-      supabase
-        .from("revisions")
-        .select(
-          "project:projects(busbar_density_cu, busbar_density_al, enclosure_rate_gi, enclosure_rate_crca)",
-        )
-        .eq("id", sb.revision_id)
-        .single(),
-      getDefaultSteelRates(supabase),
-    ]);
+  const [{ data: vRows }, { data: oRows }, { data: rev }] = await Promise.all([
+    supabase
+      .from("verticals")
+      .select("*")
+      .eq("switchboard_id", sb.id)
+      .order("sort_order"),
+    supabase.from("busbar_overrides").select("*").eq("switchboard_id", sb.id),
+    supabase
+      .from("revisions")
+      .select(
+        "project_id, project:projects(busbar_density_cu, busbar_density_al)",
+      )
+      .eq("id", sb.revision_id)
+      .single(),
+  ]);
   const verticals = (vRows ?? []) as Vertical[];
   const vIds = verticals.map((v) => v.id);
   const { data: pRows } = vIds.length
@@ -684,24 +673,24 @@ export async function loadEnclosureTakeoff(
     bom.warnings.push(
       "Double front: ABB's ICC parts for double-front (VC20xx-1DF) and the rear-side doors aren't listed automatically — add them below.",
     );
-  return priceEnclosure(
-    supabase,
-    bom,
-    effectiveSteelRates(project, defaultRates),
-  );
+  const projectId =
+    (rev as unknown as { project_id: string | null } | null)?.project_id ??
+    null;
+  return priceEnclosure(supabase, bom, projectId);
 }
 
-// A part's rate: an ABB part with a sub-part list = sum(qty x sub-part cost)
-// at the project's steel rates (project override, else the app default).
-// Otherwise GI / CRCA parts with a weight = weight x that rate; anything
-// else its Item Master net rate.
+// A part's rate: an ABB part with a sub-part list (Masters -> ArTuK
+// Sub-parts) costs sum(qty x sub-part "Total Cost with KG calculation").
+// That cost is persisted: in Item Master at the app's Enclosure Rates Master,
+// and per project (project_artuk_part_costs) when the project has its own
+// rates. Anything else uses its Item Master net rate.
 export async function priceEnclosure(
   supabase: SupabaseClient,
   bom: { lines: EnclosureLine[]; warnings: string[] },
-  steel: SteelRates,
+  projectId: string | null = null,
 ): Promise<EnclosureTakeoff> {
   const codes = bom.lines.map((l) => l.code);
-  const [{ data: items }, { data: compRows }] = codes.length
+  const [{ data: items }, { data: kitRows }, { data: projRows }] = codes.length
     ? await Promise.all([
         supabase
           .from("item_master")
@@ -711,29 +700,26 @@ export async function priceEnclosure(
           .in("sku", codes),
         supabase
           .from("artuk_part_components")
-          .select(
-            "parent_sku, qty, subpart:artuk_subparts(material, weight_kg, unit_cost)",
-          )
+          .select("parent_sku")
           .in("parent_sku", codes),
+        projectId
+          ? supabase
+              .from("project_artuk_part_costs")
+              .select("parent_sku, cost")
+              .eq("project_id", projectId)
+              .in("parent_sku", codes)
+          : Promise.resolve({ data: [] }),
       ])
-    : [{ data: [] }, { data: [] }];
-  const fromSubparts = new Map<string, { rate: number; weight: number }>();
-  for (const c of (compRows ?? []) as unknown as {
-    parent_sku: string;
-    qty: number;
-    subpart: {
-      material: string | null;
-      weight_kg: number | null;
-      unit_cost: number;
-    } | null;
-  }[]) {
-    if (!c.subpart) continue;
-    const cur = fromSubparts.get(c.parent_sku) ?? { rate: 0, weight: 0 };
-    cur.rate += Number(c.qty) * subpartCost(c.subpart, steel);
-    if (c.subpart.material === "GI" || c.subpart.material === "CRCA")
-      cur.weight += Number(c.qty) * Number(c.subpart.weight_kg ?? 0);
-    fromSubparts.set(c.parent_sku, cur);
-  }
+    : [{ data: [] }, { data: [] }, { data: [] }];
+  const kits = new Set(
+    ((kitRows ?? []) as { parent_sku: string }[]).map((r) => r.parent_sku),
+  );
+  const projectCost = new Map(
+    ((projRows ?? []) as { parent_sku: string; cost: number }[]).map((r) => [
+      r.parent_sku,
+      Number(r.cost),
+    ]),
+  );
   type Row = {
     sku: string;
     description: string;
@@ -747,22 +733,10 @@ export async function priceEnclosure(
   const lines = bom.lines
     .map((l) => {
       const item = bySku.get(l.code);
-      const kit = fromSubparts.get(l.code);
-      if (item && kit)
-        return {
-          ...l,
-          description: item.description,
-          material: "Sub-parts",
-          weightKg: kit.weight || null,
-          rate: kit.rate,
-          amount: kit.rate * l.qty,
-          inItemMaster: true,
-          priced: kit.rate > 0,
-        };
-      const material = item?.material ?? null;
+      const material = kits.has(l.code)
+        ? "Sub-parts"
+        : (item?.material ?? null);
       const weightKg = item?.weight_kg != null ? Number(item.weight_kg) : null;
-      // Pure GI / CRCA parts with a weight: weight x the steel rate; a 0
-      // rate falls back to the Item Master cost.
       const netRate = item
         ? effectiveNetRate({
             unit_cost: Number(item.unit_cost),
@@ -770,12 +744,7 @@ export async function priceEnclosure(
             discount_pct: item.discount_pct,
           })
         : 0;
-      const steelRate =
-        material === "GI" || material === "CRCA"
-          ? steel[material as keyof SteelRates]
-          : 0;
-      const byWeight = steelRate > 0 && weightKg != null && weightKg > 0;
-      const rate = !item ? 0 : byWeight ? weightKg! * steelRate : netRate;
+      const rate = !item ? 0 : (projectCost.get(l.code) ?? netRate);
       return {
         ...l,
         description: item?.description ?? "Not in Item Master",

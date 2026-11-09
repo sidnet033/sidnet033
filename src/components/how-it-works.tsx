@@ -1609,12 +1609,17 @@ function DimensionsReference() {
               <td className="py-1.5 pr-3 font-medium">Pricing</td>
               <td className="py-1.5 pr-3">
                 ABB parts with a sub-part list (Masters → ArTuK Sub-parts) cost
-                the sum of qty × sub-part cost: GI / CRCA sub-parts are Total
-                Wt. × the steel rate, bought-out sub-parts their own cost. Other
-                GI / CRCA parts with a weight are weight × rate; the rest use
-                their Item Master price. Steel rates: the project&apos;s own GI
-                / CRCA rate (Project Detail), else the app default (GI ₹90/kg,
-                CRCA ₹71/kg, admin-editable on the ArTuK Sub-parts page).
+                the sum of qty × sub-part cost. A fabricated sub-part costs
+                Punching/kg (Total Wt. × Punching or Laser) + Bending (Total Wt.
+                × Bending) + Fab (Total Wt. × Fabrication) + PC (PC area ×
+                Powder coating, or Total Wt. × Plating) + Material (Total Wt. ×
+                GI / CRCA) — the fabrication BOM&apos;s “Total Cost with KG
+                calculation”. Gaskets are length × Gasket/m; other bought-out
+                parts keep their price. Rates come from the Enclosure Rates
+                Master (app level); a project can override any rate from Project
+                Detail → Enclosure Rates Master…, which recalculates that
+                project&apos;s part costs. Other parts use their Item Master
+                price.
               </td>
             </tr>
             <tr className="border-b border-surface-container-high/60 align-top">

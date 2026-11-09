@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth";
 import { ArtukSubpartsWorkspace } from "@/components/artuk-subparts-workspace";
-import { getDefaultSteelRates } from "@/lib/steel-rates";
+import { loadRateMaster, ratesFrom } from "@/lib/enclosure-rates";
 import { fetchAllRows } from "@/lib/fetch-all";
 import type { ArtukPartComponent, ArtukSubpart } from "@/types/database";
 
@@ -12,7 +12,7 @@ export default async function ArtukSubpartsPage() {
   const current = await getCurrentUser();
   const isAdmin = current?.profile?.role === "admin";
 
-  const [subparts, components, rates] = await Promise.all([
+  const [subparts, components, master] = await Promise.all([
     fetchAllRows<ArtukSubpart>((from, to) =>
       supabase.from("artuk_subparts").select("*").order("code").range(from, to),
     ),
@@ -25,7 +25,7 @@ export default async function ArtukSubpartsPage() {
         .order("id")
         .range(from, to),
     ),
-    getDefaultSteelRates(supabase),
+    loadRateMaster(supabase),
   ]);
   const parentSkus = Array.from(new Set(components.map((c) => c.parent_sku)));
   const { data: items } = parentSkus.length
@@ -40,7 +40,7 @@ export default async function ArtukSubpartsPage() {
       <ArtukSubpartsWorkspace
         initialSubparts={subparts}
         initialComponents={components}
-        initialRates={rates}
+        initialRates={ratesFrom(master)}
         items={
           (items ?? []) as {
             sku: string;
