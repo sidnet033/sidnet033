@@ -34,6 +34,11 @@ const NAV: NavEntry[] = [
         activeMatch: (p) => p.startsWith("/feeders"),
       },
       {
+        href: "/artuk-enclosure-master",
+        label: "ArTuK Enclosure Master",
+        activeMatch: (p) => p.startsWith("/artuk-enclosure-master"),
+      },
+      {
         href: "/artuk-subparts",
         label: "ArTuK Sub-parts",
         activeMatch: (p) => p.startsWith("/artuk-subparts"),
