@@ -8,6 +8,7 @@ import { BomBuilder } from "@/components/bom-builder";
 import { GaCanvas } from "@/components/ga-canvas";
 import { CostingMatrix } from "@/components/costing-matrix";
 import type { RevisionContext } from "@/lib/revision-context";
+import type { ProjectSummary } from "@/lib/project-summary";
 import type { ItemMaster } from "@/types/database";
 import { useSwitchboardHeartbeat } from "@/lib/switchboard-presence";
 
@@ -38,12 +39,14 @@ const TABS: {
 
 export function RevisionWorkspace({
   ctx,
+  summary,
   currentUserId,
   isAdmin,
   isEstimationHead = false,
   allItems,
 }: {
   ctx: RevisionContext;
+  summary: ProjectSummary;
   currentUserId: string;
   isAdmin: boolean;
   isEstimationHead?: boolean;
@@ -174,6 +177,7 @@ export function RevisionWorkspace({
             revisionArchived={archived}
             onOpenSwitchboard={openSwitchboard}
             onSwitchboardDeleted={handleSwitchboardDeleted}
+            summary={summary}
           />
         )}
 
@@ -208,6 +212,7 @@ export function RevisionWorkspace({
               breakdown: s.breakdown,
             }))}
             archived={archived}
+            summary={summary}
           />
         )}
       </div>

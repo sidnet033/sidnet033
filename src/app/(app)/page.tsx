@@ -9,6 +9,7 @@ import {
   type SwitchboardNode,
 } from "@/components/projects-tree";
 import { Icon } from "@/components/icon";
+import { fmtDateTime, latestUpdate } from "@/lib/project-summary";
 import type {
   Customer,
   Project,
@@ -80,7 +81,14 @@ export default async function DashboardPage() {
         .filter((v): v is string => !!v),
     ),
   );
-  const profileIds = Array.from(new Set([...lockedByIds, ...createdByIds]));
+  const updatedByIds = [
+    ...((projects ?? []) as Project[]).map((p) => p.updated_by),
+    ...((revisions ?? []) as Revision[]).map((r) => r.updated_by),
+    ...switchboardRows.map((sb) => sb.updated_by),
+  ].filter((v): v is string => !!v);
+  const profileIds = Array.from(
+    new Set([...lockedByIds, ...createdByIds, ...updatedByIds]),
+  );
   const { data: profileRows } = profileIds.length
     ? await supabase
         .from("profiles")
@@ -127,6 +135,11 @@ export default async function DashboardPage() {
           ? (profileNames.get(sb.locked_by) ?? "locked")
           : null,
         lockedById: sb.locked_by,
+        updatedAt: sb.updated_at,
+        updatedLabel: fmtDateTime(sb.updated_at),
+        updatedByName: sb.updated_by
+          ? (profileNames.get(sb.updated_by) ?? null)
+          : null,
       }));
 
   const revisionNodes = (projectId: string): RevisionNode[] =>
@@ -151,7 +164,26 @@ export default async function DashboardPage() {
       .filter((p) => p.customer_id === customerId)
       .map((p) => {
         const revs = revisionNodes(p.id);
+        const projRevs = ((revisions ?? []) as Revision[]).filter(
+          (r) => r.project_id === p.id,
+        );
+        const last = latestUpdate(
+          [
+            { at: p.updated_at, by: p.updated_by },
+            ...projRevs.map((r) => ({ at: r.updated_at, by: r.updated_by })),
+            ...revs.flatMap((r) =>
+              r.switchboards.map((b) => ({
+                at: b.updatedAt,
+                by: switchboardRows.find((x) => x.id === b.id)?.updated_by,
+              })),
+            ),
+          ],
+          profileNames,
+        );
         return {
+          lastUpdatedAt: last?.at ?? null,
+          lastUpdatedLabel: last ? fmtDateTime(last.at) : "—",
+          lastUpdatedBy: last?.by ?? null,
           id: p.id,
           code: p.code,
           title: p.title,

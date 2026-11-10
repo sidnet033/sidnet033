@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getRevisionContext } from "@/lib/revision-context";
 import { fetchAllItemMaster } from "@/lib/item-display";
 import { RevisionWorkspace } from "@/components/revision-workspace";
+import { buildProjectSummary } from "@/lib/project-summary";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,7 @@ export default async function RevisionPage({
     <Suspense fallback={null}>
       <RevisionWorkspace
         ctx={ctx}
+        summary={buildProjectSummary(ctx)}
         currentUserId={current?.userId ?? ""}
         isAdmin={isAdmin}
         isEstimationHead={estimationHead === true}

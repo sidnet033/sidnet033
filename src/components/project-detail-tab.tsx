@@ -35,7 +35,12 @@ import { ampsViolations, nextStandardAmps } from "@/lib/amps-check";
 import { numericKeyGuard } from "@/lib/numeric-input";
 import { siteDeratingReasons } from "@/lib/breaker-derating";
 import type { SwitchboardListItem } from "@/lib/revision-context";
-import { fmtUpdate, latestUpdate } from "@/lib/project-summary";
+import {
+  fmtUpdate,
+  latestUpdate,
+  type ProjectSummary,
+} from "@/lib/project-summary";
+import { ProjectPdfButtons } from "@/components/project-pdf-buttons";
 import type {
   Customer,
   Feeder,
@@ -170,6 +175,7 @@ export function ProjectDetailTab({
   revisionArchived,
   onOpenSwitchboard,
   onSwitchboardDeleted,
+  summary,
 }: {
   project: Project;
   revision: Revision;
@@ -188,6 +194,7 @@ export function ProjectDetailTab({
   revisionArchived: boolean;
   onOpenSwitchboard: (switchboardId: string, tab?: Tab) => void;
   onSwitchboardDeleted: (switchboardId: string) => void;
+  summary: ProjectSummary;
 }) {
   const router = useRouter();
   const [rateSyncOpen, setRateSyncOpen] = useState(false);
@@ -865,15 +872,7 @@ export function ProjectDetailTab({
               onClose={() => setRateSyncOpen(false)}
             />
           )}
-          <a
-            href={`/m/r/${revisionId}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Phone-friendly project summary with Internal and Customer PDFs (opens in a new tab)"
-            className="flex items-center gap-1 rounded bg-surface-container-low px-space-md py-space-sm font-label-md text-label-md text-on-surface hover:bg-surface-container"
-          >
-            <Icon name="picture_as_pdf" size={16} /> Summary &amp; PDF
-          </a>
+          <ProjectPdfButtons summary={summary} />
           {!revisionArchived && (
             <button
               onClick={handleSave}

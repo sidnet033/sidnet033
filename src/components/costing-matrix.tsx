@@ -10,6 +10,8 @@ import { numericKeyGuard } from "@/lib/numeric-input";
 import { CURRENCIES } from "@/lib/currencies";
 import type { CostBreakdown } from "@/lib/switchboard-cost";
 import type { Customer, Project, Revision, Switchboard } from "@/types/database";
+import type { ProjectSummary } from "@/lib/project-summary";
+import { ProjectPdfButtons } from "@/components/project-pdf-buttons";
 
 export type SwitchboardColumn = {
   switchboard: Switchboard;
@@ -47,12 +49,14 @@ export function CostingMatrix({
   customer,
   columns: initialColumns,
   archived,
+  summary,
 }: {
   revision: Revision;
   project: Project;
   customer: Customer | null;
   columns: SwitchboardColumn[];
   archived: boolean;
+  summary: ProjectSummary;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
@@ -161,15 +165,7 @@ export function CostingMatrix({
         <div className="flex items-center gap-space-sm">
           {!archived && dirty && <span className="font-body-sm text-body-sm text-amber-600">Unsaved changes</span>}
           {!archived && !dirty && <span className="font-body-sm text-body-sm text-tertiary">Saved</span>}
-          <a
-            href={`/m/r/${revision.id}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Project summary with Internal and Customer PDFs (opens in a new tab)"
-            className="flex items-center gap-1 rounded bg-surface-container-low px-space-md py-space-sm font-label-md text-label-md text-on-surface hover:bg-surface-container"
-          >
-            <Icon name="picture_as_pdf" size={16} /> Summary &amp; PDF
-          </a>
+          <ProjectPdfButtons summary={summary} />
           {!archived && (
             <button
               onClick={handleSave}

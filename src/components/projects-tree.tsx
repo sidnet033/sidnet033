@@ -19,6 +19,9 @@ export type SwitchboardNode = {
   cost: number;
   lockedByName: string | null;
   lockedById: string | null;
+  updatedAt: string;
+  updatedLabel: string;
+  updatedByName: string | null;
 };
 export type RevisionNode = {
   id: string;
@@ -36,6 +39,10 @@ export type ProjectNode = {
   stage: ProjectStage;
   engineer: string | null;
   createdAtLabel: string;
+  /** latest change to the project, any revision or switchboard */
+  lastUpdatedAt: string | null;
+  lastUpdatedLabel: string;
+  lastUpdatedBy: string | null;
   revisions: RevisionNode[];
   cost: number;
   currency: string;
@@ -362,6 +369,7 @@ export function ProjectsTree({
                 <th className="px-3 py-2.5 text-right">Switchboards</th>
                 <th className="px-3 py-2.5">Engineer</th>
                 <th className="px-3 py-2.5">Created</th>
+                <th className="px-3 py-2.5">Last updated</th>
                 <th className="px-3 py-2.5 text-right">Latest cost</th>
               </tr>
             </thead>
@@ -435,6 +443,16 @@ export function ProjectsTree({
                       <td className="px-3 py-2.5 text-on-surface-variant">
                         {p.createdAtLabel}
                       </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <span className="block text-on-surface">
+                          {p.lastUpdatedLabel}
+                        </span>
+                        {p.lastUpdatedBy && (
+                          <span className="block text-[11px] text-secondary">
+                            {p.lastUpdatedBy}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3 py-2.5 text-right font-bold tabular-nums">
                         {latest
                           ? moneyDual(latest.cost, p.currency, p.exchangeRate)
@@ -444,7 +462,7 @@ export function ProjectsTree({
                     {isOpen && (
                       <tr>
                         <td />
-                        <td colSpan={8} className="px-3 pb-3 pt-0">
+                        <td colSpan={9} className="px-3 pb-3 pt-0">
                           <div className="flex flex-col gap-space-sm border-l-2 border-surface-container-high pl-space-md">
                             {p.revisions.map((r) => (
                               <RevisionBlock
@@ -470,7 +488,7 @@ export function ProjectsTree({
               {visible.length === 0 && (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     className="px-3 py-10 text-center text-secondary"
                   >
                     {rows.length === 0
@@ -577,6 +595,7 @@ function RevisionBlock({
               <th className="py-1 pr-3 font-bold">Switchboard</th>
               <th className="px-3 py-1 font-bold">Spec</th>
               <th className="px-3 py-1 font-bold">Bays</th>
+              <th className="px-3 py-1 font-bold">Updated</th>
               <th className="px-3 py-1 text-right font-bold">Cost</th>
               <th className="py-1 pl-3" />
             </tr>
@@ -603,6 +622,15 @@ function RevisionBlock({
                   </td>
                   <td className="px-3 py-1.5 text-on-surface-variant">
                     {sb.bayCount}
+                  </td>
+                  <td className="px-3 py-1.5 whitespace-nowrap text-on-surface-variant">
+                    {sb.updatedLabel}
+                    {sb.updatedByName && (
+                      <span className="text-secondary">
+                        {" "}
+                        · {sb.updatedByName}
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-1.5 text-right tabular-nums">
                     {money(sb.cost)}
