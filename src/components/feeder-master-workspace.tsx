@@ -4,7 +4,8 @@ import { fetchAllRows } from "@/lib/fetch-all";
 import { ColorLegend } from "@/components/color-legend";
 import { FilterSelect, filterHit } from "@/components/multi-filter";
 import { PastePricesDialog } from "@/components/paste-prices-dialog";
-import { searchByPhrases, searchItems } from "@/lib/item-search";
+import { queryGroups, searchByPhrases, searchItems } from "@/lib/item-search";
+import { Highlight, hasTerm } from "@/components/highlight";
 import { ItemSearchHelp } from "@/components/search-help";
 import { CategoryFilter } from "@/components/category-multi-select";
 import { useMemo, useState } from "react";
@@ -160,6 +161,19 @@ export function FeederMasterWorkspace({
         .join(" \u0000 "),
     feeders.length,
   );
+
+  // every searched phrase, for highlighting why a feeder matched
+  const searchTerms = queryGroups(feederSearch).flat();
+  const lineMatches = (l: { item: ItemMaster | null }) =>
+    !!l.item &&
+    [
+      itemCode(l.item),
+      l.item.sku,
+      l.item.vendor_cat,
+      l.item.make,
+      l.item.category,
+      l.item.description,
+    ].some((t) => hasTerm(t, searchTerms));
 
   const itemCategories = Array.from(
     new Set(items.map((i) => i.category).filter((c): c is string => !!c)),
@@ -702,29 +716,72 @@ export function FeederMasterWorkspace({
                       <div className="flex flex-col">
                         <div className="flex flex-wrap items-center gap-space-sm">
                           <span className="font-telemetry-md text-telemetry-md font-bold text-on-surface">
-                            {f.tag || "—"}
+                            <Highlight
+                              text={f.tag || "—"}
+                              terms={searchTerms}
+                            />
                           </span>
                           {f.category && (
                             <span className="rounded bg-surface-container-high px-space-xs py-space-2xs font-label-sm text-label-sm font-semibold text-primary">
-                              {f.category.toUpperCase()}
+                              <Highlight
+                                text={f.category.toUpperCase()}
+                                terms={searchTerms}
+                              />
                             </span>
                           )}
                           {(f.pole_config || f.breaking_capacity) && (
                             <span className="rounded bg-surface-container px-space-xs py-space-2xs font-label-sm text-label-sm text-on-surface-variant">
-                              {[f.pole_config, f.breaking_capacity]
-                                .filter(Boolean)
-                                .join(" • ")}
+                              <Highlight
+                                text={[f.pole_config, f.breaking_capacity]
+                                  .filter(Boolean)
+                                  .join(" • ")}
+                                terms={searchTerms}
+                              />
                             </span>
                           )}
                         </div>
                         <span className="mt-space-2xs font-body-md text-body-md text-on-surface">
-                          {f.name}
+                          <Highlight text={f.name} terms={searchTerms} />
                         </span>
                         {f.description && (
                           <span className="font-label-sm text-label-sm text-on-surface-variant">
-                            {f.description}
+                            <Highlight
+                              text={f.description}
+                              terms={searchTerms}
+                            />
                           </span>
                         )}
+                        {searchTerms.length > 0 &&
+                          (() => {
+                            const hits = lines.filter(lineMatches);
+                            if (!hits.length) return null;
+                            return (
+                              <span className="mt-space-2xs font-label-sm text-label-sm text-on-surface-variant">
+                                Matched in contents:{" "}
+                                {hits.slice(0, 4).map((l, i) => (
+                                  <span key={l.id}>
+                                    {i > 0 && ", "}
+                                    <Highlight
+                                      text={
+                                        [
+                                          l.item.sku,
+                                          l.item.vendor_cat,
+                                          l.item.make,
+                                          l.item.category,
+                                          l.item.description,
+                                        ].find((t) =>
+                                          hasTerm(t, searchTerms),
+                                        ) ?? l.item.sku
+                                      }
+                                      terms={searchTerms}
+                                    />
+                                  </span>
+                                ))}
+                                {hits.length > 4 &&
+                                  ` and ${hits.length - 4} more`}
+                              </span>
+                            );
+                          })()}
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center justify-between gap-space-lg md:justify-end">
@@ -816,19 +873,34 @@ export function FeederMasterWorkspace({
                                 className={`border-t border-surface-container ${itemRowClass(line.item)}`}
                               >
                                 <td className="py-space-xs pl-space-lg pr-space-xs font-telemetry-md font-bold text-primary">
-                                  {line.item.sku || "—"}
+                                  <Highlight
+                                    text={line.item.sku || "—"}
+                                    terms={searchTerms}
+                                  />
                                 </td>
                                 <td className="px-space-sm py-space-xs text-on-surface-variant">
-                                  {line.item.vendor_cat || "—"}
+                                  <Highlight
+                                    text={line.item.vendor_cat || "—"}
+                                    terms={searchTerms}
+                                  />
                                 </td>
                                 <td className="px-space-sm py-space-xs text-on-surface-variant">
-                                  {line.item.make || "—"}
+                                  <Highlight
+                                    text={line.item.make || "—"}
+                                    terms={searchTerms}
+                                  />
                                 </td>
                                 <td className="px-space-sm py-space-xs text-on-surface-variant">
-                                  {line.item.category || "—"}
+                                  <Highlight
+                                    text={line.item.category || "—"}
+                                    terms={searchTerms}
+                                  />
                                 </td>
                                 <td className="px-space-sm py-space-xs">
-                                  {line.item.description}
+                                  <Highlight
+                                    text={line.item.description}
+                                    terms={searchTerms}
+                                  />
                                 </td>
                                 <td className="px-space-sm py-space-xs text-center tabular-nums">
                                   {line.qty}
