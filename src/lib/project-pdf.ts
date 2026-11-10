@@ -20,32 +20,71 @@ const BLUE: [number, number, number] = [21, 75, 145];
 const GREY: [number, number, number] = [110, 116, 125];
 const LINE: [number, number, number] = [215, 219, 225];
 
+// Company letterhead (TQ Offer Letterhead R0): TrueQuote logo left,
+// company name centred in purple, Pai Kane Group logo right; address footer.
+export type Letterhead = { tqLogo: string; groupLogo: string };
+const LH_COMPANY = "POWER ENGINEERING INDIA PVT LTD";
+const LH_ADDRESS =
+  "Regd Address: 58A, Tuem Industrial Estate, Tuem, Goa – 403521 | sales@paikane.com";
+const LH_PURPLE: [number, number, number] = [0x70, 0x30, 0xa0];
+const LH_TOP = 30; // content starts below the letterhead header, mm
+
+async function loadImage(src: string): Promise<string> {
+  const res = await fetch(src);
+  if (!res.ok) throw new Error(`Could not load ${src}`);
+  const blob = await res.blob();
+  return await new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as string);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+
+export async function loadLetterhead(): Promise<Letterhead> {
+  const [tqLogo, groupLogo] = await Promise.all([
+    loadImage("/letterhead/tq-logo.png"),
+    loadImage("/letterhead/paikane-group.png"),
+  ]);
+  return { tqLogo, groupLogo };
+}
+
 class Doc {
   y = M;
+  top = M;
   constructor(
     public pdf: JsPDF,
     private footer: string,
-  ) {}
+    private letterhead: Letterhead | null = null,
+  ) {
+    if (letterhead) this.y = this.top = LH_TOP;
+  }
+  get accent(): [number, number, number] {
+    return this.letterhead ? LH_PURPLE : BLUE;
+  }
   get W() {
     return this.pdf.internal.pageSize.getWidth();
   }
   get H() {
     return this.pdf.internal.pageSize.getHeight();
   }
+  get bottom() {
+    return this.letterhead ? this.H - 18 : this.H - M - 6;
+  }
   ensure(h: number) {
-    if (this.y + h > this.H - M - 6) {
+    if (this.y + h > this.bottom) {
       this.pdf.addPage();
-      this.y = M;
+      this.y = this.top;
     }
   }
   heading(t: string) {
     this.ensure(14);
     this.y += 3;
     this.pdf.setFont("helvetica", "bold").setFontSize(11.5);
-    this.pdf.setTextColor(...BLUE);
+    this.pdf.setTextColor(...this.accent);
     this.pdf.text(t, M, this.y);
     this.y += 1.8;
-    this.pdf.setDrawColor(...BLUE).setLineWidth(0.4);
+    this.pdf.setDrawColor(...this.accent).setLineWidth(0.4);
     this.pdf.line(M, this.y, this.W - M, this.y);
     this.y += 4.5;
     this.pdf.setTextColor(20, 20, 20);
@@ -80,8 +119,13 @@ class Doc {
   table(
     cols: Col[],
     rows: string[][],
-    opts: { boldRows?: Set<number>; shadeRows?: Set<number> } = {},
+    opts: {
+      boldRows?: Set<number>;
+      shadeRows?: Set<number>;
+      keepTogether?: boolean;
+    } = {},
   ) {
+    if (opts.keepTogether) this.ensure(8 + rows.length * 6.5);
     const total = cols.reduce((s, c) => s + c.w, 0);
     const scale = (this.W - 2 * M) / total;
     const ws = cols.map((c) => c.w * scale);
@@ -109,9 +153,9 @@ class Doc {
           this.pdf.splitTextToSize(t ?? "", ws[i] - 2 * pad) as string[],
       );
       const h = Math.max(...wrapped.map((w) => w.length)) * 3.8 + 2;
-      if (this.y + h > this.H - M - 6) {
+      if (this.y + h > this.bottom) {
         this.pdf.addPage();
-        this.y = M;
+        this.y = this.top;
         drawHeader();
         this.pdf.setFontSize(8.5);
         this.pdf.setFont(
@@ -149,10 +193,47 @@ class Doc {
       this.pdf.text(t, x + w / 2, y, { align: "center" });
     else this.pdf.text(t, x + pad, y);
   }
+  private drawLetterhead(lh: Letterhead) {
+    const p = this.pdf;
+    const W = this.W;
+    const H = this.H;
+    p.addImage(lh.tqLogo, "PNG", 8, 6, 14, 14, "lh-tq", "FAST");
+    p.addImage(
+      lh.groupLogo,
+      "PNG",
+      W - 8 - 15.8,
+      6.2,
+      15.8,
+      13.8,
+      "lh-group",
+      "FAST",
+    );
+    p.setFont("helvetica", "normal")
+      .setFontSize(18)
+      .setTextColor(...LH_PURPLE);
+    p.text(LH_COMPANY, W / 2, 15.5, { align: "center" });
+    p.setDrawColor(191, 191, 191).setLineWidth(0.3);
+    p.line(8, 22.5, W - 8, 22.5);
+    p.line(8, H - 14, W - 8, H - 14);
+    p.setFontSize(9).setTextColor(150, 150, 150);
+    p.text(LH_ADDRESS, W / 2, H - 9.5, { align: "center" });
+  }
   finish() {
     const n = this.pdf.getNumberOfPages();
     for (let i = 1; i <= n; i++) {
       this.pdf.setPage(i);
+      if (this.letterhead) {
+        this.drawLetterhead(this.letterhead);
+        this.pdf
+          .setFont("helvetica", "normal")
+          .setFontSize(7)
+          .setTextColor(...GREY);
+        this.pdf.text(this.footer, M, this.H - 4.5);
+        this.pdf.text(`Page ${i} of ${n}`, this.W - M, this.H - 4.5, {
+          align: "right",
+        });
+        continue;
+      }
       this.pdf.setFont("helvetica", "normal").setFontSize(7.5);
       this.pdf.setTextColor(...GREY);
       this.pdf.text(this.footer, M, this.H - 7);
@@ -173,18 +254,20 @@ export async function buildProjectPdf(
   const cur = internal ? "INR" : s.currency;
   const money = (n: number) => moneyText(n, cur, s.exchangeRate);
   const generated = fmtDate(s.generatedAt);
+  const letterhead = internal ? null : await loadLetterhead();
   const d = new Doc(
     pdf,
     internal
       ? `INTERNAL — contains costs and margins. Do not share outside the company. ${s.code} Rev ${s.revisionNumber} · ${generated}`
       : `${s.code} Rev ${s.revisionNumber} · ${generated}`,
+    letterhead,
   );
 
   // title block
   pdf
     .setFont("helvetica", "bold")
     .setFontSize(16)
-    .setTextColor(...BLUE);
+    .setTextColor(...d.accent);
   pdf.text(internal ? "Project Summary" : "Price Summary", M, d.y + 2);
   if (internal) {
     pdf.setFillColor(200, 30, 30);
@@ -297,7 +380,7 @@ export async function buildProjectPdf(
     ]);
     d.table(
       [
-        { title: "#", w: 6, align: "center" },
+        { title: "#", w: 8, align: "center" },
         { title: "Switchboard", w: 38 },
         { title: "Specification", w: 52 },
         { title: "Qty", w: 9, align: "center" },
@@ -330,7 +413,7 @@ export async function buildProjectPdf(
     ]);
     d.table(
       [
-        { title: "#", w: 6, align: "center" },
+        { title: "#", w: 8, align: "center" },
         { title: "Switchboard", w: 46 },
         { title: "Specification", w: 60 },
         { title: "Qty", w: 10, align: "center" },
@@ -347,6 +430,7 @@ export async function buildProjectPdf(
 
   // costing / price summary
   if (internal) {
+    d.ensure(22 + (12 + s.logistics.length) * 6.5);
     d.heading("Costing summary");
     const h = s.totals.heads;
     const rows: string[][] = [
@@ -408,6 +492,8 @@ export async function buildProjectPdf(
       );
     }
   } else {
+    // heading + table on the same page
+    d.ensure(22 + (2 + s.logistics.filter((l) => l.amount > 0).length) * 6.5);
     d.heading("Price summary");
     const rows: string[][] = [
       ["Switchboards (supply)", money(s.totals.tender)],
