@@ -1,4 +1,5 @@
-// Project summary PDFs, built on the phone / browser with jsPDF.
+// Project summary PDFs, built on the phone / browser with jsPDF, both on
+// the company letterhead.
 //  - internal: everything on the summary page, with costs and margins
 //  - customer: project details, switchboards with spec / qty / price,
 //    logistics and final price -- no costs, margins, rates or people
@@ -7,6 +8,8 @@ import {
   STAGE_LABEL,
   boardSpec,
   fmtDate,
+  fmtDateTime,
+  fmtUpdate,
   moneyText,
   type ProjectSummary,
 } from "@/lib/project-summary";
@@ -224,10 +227,10 @@ class Doc {
       this.pdf.setPage(i);
       if (this.letterhead) {
         this.drawLetterhead(this.letterhead);
-        this.pdf
-          .setFont("helvetica", "normal")
-          .setFontSize(7)
-          .setTextColor(...GREY);
+        this.pdf.setFont("helvetica", "normal").setFontSize(7);
+        if (this.footer.startsWith("INTERNAL"))
+          this.pdf.setTextColor(200, 30, 30);
+        else this.pdf.setTextColor(...GREY);
         this.pdf.text(this.footer, M, this.H - 4.5);
         this.pdf.text(`Page ${i} of ${n}`, this.W - M, this.H - 4.5, {
           align: "right",
@@ -254,7 +257,7 @@ export async function buildProjectPdf(
   const cur = internal ? "INR" : s.currency;
   const money = (n: number) => moneyText(n, cur, s.exchangeRate);
   const generated = fmtDate(s.generatedAt);
-  const letterhead = internal ? null : await loadLetterhead();
+  const letterhead = await loadLetterhead();
   const d = new Doc(
     pdf,
     internal
@@ -314,6 +317,8 @@ export async function buildProjectPdf(
           ["Project code", s.code],
           ["Revision", `Rev ${s.revisionNumber} (${fmtDate(s.revisionDate)})`],
           ["Stage", STAGE_LABEL[s.stage]],
+          ["Last updated", fmtUpdate(s.lastUpdated)],
+          ["Archived", s.archived ? "Yes (read-only)" : "No"],
           ["CRM enquiry no.", i.crmEnquiryNumber ?? "—"],
           ["Enquiry date", fmtDate(i.crmEnquiryDate)],
           ["Quote required by", fmtDate(i.quoteRequiredBy)],
@@ -353,7 +358,7 @@ export async function buildProjectPdf(
   if (internal) {
     const rows = s.boards.map((b, n) => [
       String(n + 1),
-      `${b.tag}${b.title ? `: ${b.title}` : ""}${b.description ? `\n${b.description}` : ""}`,
+      `${b.tag}${b.title ? `: ${b.title}` : ""}${b.description ? `\n${b.description}` : ""}\nUpdated ${fmtDateTime(b.updatedAt)}${b.updatedByName ? ` · ${b.updatedByName}` : ""}`,
       [
         boardSpec(b),
         [

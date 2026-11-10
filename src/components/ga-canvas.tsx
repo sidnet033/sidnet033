@@ -1925,7 +1925,9 @@ export function GaCanvas({
         paramPatch.panel_height_mm = storedPanel;
       if (busbarHeight !== savedBusbarHeight)
         paramPatch.busbar_chamber_height_mm = busbarHeight;
-      if (Object.keys(paramPatch).length > 0) {
+      // always: a save marks the switchboard as updated (time + who)
+      paramPatch.updated_at = new Date().toISOString();
+      {
         const { error } = await supabase
           .from("switchboards")
           .update(paramPatch)

@@ -4,7 +4,13 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { queryGroups } from "@/lib/item-search";
 import { Highlight } from "@/components/highlight";
-import { STAGE_LABEL, STAGE_TONE, fmtDate } from "@/lib/project-summary";
+import {
+  STAGE_LABEL,
+  STAGE_TONE,
+  fmtDate,
+  fmtUpdate,
+  type LastUpdate,
+} from "@/lib/project-summary";
 import type { ProjectStage } from "@/types/database";
 
 export type MobileProjectRow = {
@@ -12,7 +18,7 @@ export type MobileProjectRow = {
   revisionId: string;
   revisionNumber: number;
   archived: boolean;
-  updatedAt: string;
+  lastUpdated: LastUpdate | null;
   code: string;
   title: string;
   customer: string | null;
@@ -67,7 +73,8 @@ export function MobileProjectList({ rows }: { rows: MobileProjectRow[] }) {
       .filter((x) => x.score > 0)
       .sort(
         (a, b) =>
-          b.score - a.score || b.r.updatedAt.localeCompare(a.r.updatedAt),
+          b.score - a.score ||
+          (b.r.lastUpdated?.at ?? "").localeCompare(a.r.lastUpdated?.at ?? ""),
       )
       .map((x) => x.r);
   }, [rows, groups, stage, showArchived]);
@@ -148,10 +155,13 @@ export function MobileProjectList({ rows }: { rows: MobileProjectRow[] }) {
                 )}
               </p>
               <p className="text-[12px] text-secondary">
-                Updated {fmtDate(r.updatedAt)}
-                {r.quoteRequiredBy &&
-                  ` · Quote by ${fmtDate(r.quoteRequiredBy)}`}
+                Updated {fmtUpdate(r.lastUpdated)}
               </p>
+              {r.quoteRequiredBy && (
+                <p className="text-[12px] text-secondary">
+                  Quote required by {fmtDate(r.quoteRequiredBy)}
+                </p>
+              )}
             </Link>
           </li>
         ))}

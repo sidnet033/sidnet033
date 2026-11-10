@@ -52,8 +52,28 @@ export type SummaryBoard = {
   totalPrice: number;
 };
 
+export type LastUpdate = { at: string; by: string | null };
+
+/** the latest of several (time, user id) changes, with the user's name */
+export function latestUpdate(
+  candidates: {
+    at: string | null | undefined;
+    by: string | null | undefined;
+  }[],
+  names: Map<string, string | null>,
+): LastUpdate | null {
+  let best: { at: string; by: string | null | undefined } | null = null;
+  for (const c of candidates)
+    if (c.at && (!best || new Date(c.at) > new Date(best.at)))
+      best = { at: c.at, by: c.by };
+  if (!best) return null;
+  return { at: best.at, by: best.by ? (names.get(best.by) ?? null) : null };
+}
+
 export type ProjectSummary = {
   revisionId: string;
+  /** latest change to the project, this revision or its switchboards */
+  lastUpdated: LastUpdate | null;
   generatedAt: string;
   code: string;
   projectName: string;
@@ -156,8 +176,23 @@ export function buildProjectSummary(ctx: RevisionContext): ProjectSummary {
   const mfg = sum((b) => b.unitCost * b.qty);
   const tender = sum((b) => b.totalPrice);
   const logi = logistics.reduce((s, l) => s + l.amount, 0);
+  const names = new Map(
+    ctx.allUsers.map((u) => [u.id, u.full_name ?? u.email]),
+  );
+  const lastUpdated = latestUpdate(
+    [
+      { at: project.updated_at, by: project.updated_by },
+      { at: revision.updated_at, by: revision.updated_by },
+      ...ctx.switchboards.map((x) => ({
+        at: x.switchboard.updated_at,
+        by: x.switchboard.updated_by,
+      })),
+    ],
+    names,
+  );
   return {
     revisionId: revision.id,
+    lastUpdated,
     generatedAt: new Date().toISOString(),
     code: project.code,
     projectName: project.title,
@@ -240,6 +275,27 @@ export function fmtDate(iso: string | null | undefined): string {
     month: "short",
     year: "numeric",
   });
+}
+
+/** date + time in India time, e.g. "10 Nov 2026, 3:45 pm" */
+export function fmtDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/** "10 Nov 2026, 3:45 pm · Ravi Kumar" */
+export function fmtUpdate(u: LastUpdate | null): string {
+  if (!u) return "—";
+  return `${fmtDateTime(u.at)}${u.by ? ` · ${u.by}` : ""}`;
 }
 
 /** plain-text money (PDF fonts have no ₹ glyph): "INR 1,23,456" */

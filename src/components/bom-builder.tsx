@@ -1340,15 +1340,14 @@ export function BomBuilder({
         laborPatch.labor_assembly_pct = draft.laborAssembly;
       if (draft.laborTesting !== saved.laborTesting)
         laborPatch.labor_testing_pct = draft.laborTesting;
-      if (Object.keys(laborPatch).length) {
-        await updateChecked(
-          supabase,
-          "switchboards",
-          sb.id,
-          laborPatch,
-          "switchboard",
-        );
-      }
+      // always: a save marks the switchboard as updated (time + who)
+      await updateChecked(
+        supabase,
+        "switchboards",
+        sb.id,
+        { ...laborPatch, updated_at: new Date().toISOString() },
+        "switchboard",
+      );
 
       await saveLineTable(
         supabase,

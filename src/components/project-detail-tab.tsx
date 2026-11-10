@@ -35,6 +35,7 @@ import { ampsViolations, nextStandardAmps } from "@/lib/amps-check";
 import { numericKeyGuard } from "@/lib/numeric-input";
 import { siteDeratingReasons } from "@/lib/breaker-derating";
 import type { SwitchboardListItem } from "@/lib/revision-context";
+import { fmtUpdate, latestUpdate } from "@/lib/project-summary";
 import type {
   Customer,
   Feeder,
@@ -791,6 +792,24 @@ export function ProjectDetailTab({
           <p className="mt-1 font-body-sm text-body-sm text-secondary">
             {boards.length} Switchboard{boards.length === 1 ? "" : "s"} ·
             Currency: {currencyLabel} · Client: {customerLabel || "—"}
+          </p>
+          <p className="font-body-sm text-body-sm text-secondary">
+            Last updated:{" "}
+            <span className="font-medium text-on-surface">
+              {fmtUpdate(
+                latestUpdate(
+                  [
+                    { at: project.updated_at, by: project.updated_by },
+                    { at: revision.updated_at, by: revision.updated_by },
+                    ...switchboards.map((x) => ({
+                      at: x.switchboard.updated_at,
+                      by: x.switchboard.updated_by,
+                    })),
+                  ],
+                  new Map(allUsers.map((u) => [u.id, u.full_name ?? u.email])),
+                ),
+              )}
+            </span>
           </p>
         </div>
         <div className="flex items-center gap-space-sm">

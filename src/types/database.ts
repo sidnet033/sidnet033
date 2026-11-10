@@ -172,6 +172,9 @@ export type Project = {
   drive_links: string[];
   nature: "bidding" | "purchase" | null;
   site_ambient_temp_c: number | null;
+  /** set by trigger on every change (migration 0051) */
+  updated_at: string;
+  updated_by: string | null;
 };
 
 export type Consultant = {
@@ -215,6 +218,8 @@ export type Revision = {
   commissioning_description: string | null;
   created_at: string;
   updated_at: string;
+  /** set by trigger on every change (migration 0051) */
+  updated_by: string | null;
 };
 
 // A physical switchboard within a revision — the unit that has its own

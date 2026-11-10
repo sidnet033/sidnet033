@@ -9,6 +9,8 @@ import {
   STAGE_TONE,
   boardSpec,
   fmtDate,
+  fmtDateTime,
+  fmtUpdate,
   type ProjectSummary,
 } from "@/lib/project-summary";
 import type { PdfKind } from "@/lib/project-pdf";
@@ -113,6 +115,12 @@ export function MobileProjectSummary({
           )}
           {s.archived && <span>· Archived</span>}
         </div>
+        <p className="mt-1 text-[12px] text-secondary">
+          Last updated{" "}
+          <span className="font-semibold text-on-surface">
+            {fmtUpdate(s.lastUpdated)}
+          </span>
+        </p>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <Kpi label="Final price" value={money(s.totals.final)} strong />
           <Kpi
@@ -262,7 +270,7 @@ export function MobileProjectSummary({
                 <Info k="Total price" v={money(b.totalPrice)} strong />
                 <Info
                   k="Updated"
-                  v={`${fmtDate(b.updatedAt)}${b.updatedByName ? ` · ${b.updatedByName}` : ""}`}
+                  v={`${fmtDateTime(b.updatedAt)}${b.updatedByName ? ` · ${b.updatedByName}` : ""}`}
                 />
               </dl>
             </li>
