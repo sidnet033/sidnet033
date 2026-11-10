@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/icon";
 import { formatMoney, formatMoneyDual } from "@/lib/money";
 import { NewProjectModal } from "@/components/new-project-modal";
+import { ProjectPdfMenu } from "@/components/project-pdf-buttons";
 import { useOnlineSwitchboards } from "@/lib/switchboard-presence";
 import type { Customer, ProjectStage } from "@/types/database";
 
@@ -371,6 +372,7 @@ export function ProjectsTree({
                 <th className="px-3 py-2.5">Created</th>
                 <th className="px-3 py-2.5">Last updated</th>
                 <th className="px-3 py-2.5 text-right">Latest cost</th>
+                <th className="w-20 px-3 py-2.5" />
               </tr>
             </thead>
             <tbody>
@@ -458,11 +460,14 @@ export function ProjectsTree({
                           ? moneyDual(latest.cost, p.currency, p.exchangeRate)
                           : "—"}
                       </td>
+                      <td className="px-3 py-2.5 text-right">
+                        {latest && <ProjectPdfMenu revisionId={latest.id} />}
+                      </td>
                     </tr>
                     {isOpen && (
                       <tr>
                         <td />
-                        <td colSpan={9} className="px-3 pb-3 pt-0">
+                        <td colSpan={10} className="px-3 pb-3 pt-0">
                           <div className="flex flex-col gap-space-sm border-l-2 border-surface-container-high pl-space-md">
                             {p.revisions.map((r) => (
                               <RevisionBlock
@@ -488,7 +493,7 @@ export function ProjectsTree({
               {visible.length === 0 && (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={11}
                     className="px-3 py-10 text-center text-secondary"
                   >
                     {rows.length === 0
