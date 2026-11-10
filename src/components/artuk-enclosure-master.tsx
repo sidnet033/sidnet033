@@ -6,6 +6,9 @@ import { createClient } from "@/lib/supabase/client";
 import { formatMoney } from "@/lib/money";
 import { subpartBreakdown, type Rates } from "@/lib/enclosure-rates";
 import { filterTerms } from "@/components/multi-filter";
+import { Icon } from "@/components/icon";
+import { Modal } from "@/components/modal";
+import { partImageOf, type PartImage } from "@/lib/artuk-part-images";
 import type { ArtukPartComponent, ArtukSubpart } from "@/types/database";
 
 // ArTuK Enclosure Master: pick an ABB enclosure part on the left, see what
@@ -212,6 +215,7 @@ export function ArtukEnclosureMaster({
     [parts],
   );
   const [selected, setSelected] = useState<string | null>(null);
+  const [picture, setPicture] = useState<PartImage | null>(null);
   const terms = filterTerms(q).map((t) => t.toLowerCase());
   const shown = parts.filter(
     (p) =>
@@ -292,11 +296,16 @@ export function ArtukEnclosureMaster({
                   {shown
                     .filter((p) => p.family === f)
                     .map((p) => (
-                      <button
+                      <div
                         key={p.sku}
-                        type="button"
+                        role="button"
+                        tabIndex={0}
                         onClick={() => setSelected(p.sku)}
-                        className={`block w-full border-b border-surface-container px-3 py-2 text-left ${
+                        onKeyDown={(e) =>
+                          (e.key === "Enter" || e.key === " ") &&
+                          setSelected(p.sku)
+                        }
+                        className={`block w-full cursor-pointer border-b border-surface-container px-3 py-2 text-left ${
                           p.sku === part?.sku
                             ? "bg-primary/10"
                             : "hover:bg-surface-container-low"
@@ -307,6 +316,22 @@ export function ArtukEnclosureMaster({
                             className={`text-[13px] ${p.rows.length ? "font-bold" : "font-normal"} ${p.sku === part?.sku ? "text-primary" : "text-on-surface"}`}
                           >
                             {p.sku}
+                            {(() => {
+                              const img = partImageOf(p.sku, p.description);
+                              return img ? (
+                                <button
+                                  type="button"
+                                  title="View picture of this part"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPicture(img);
+                                  }}
+                                  className="ml-1.5 inline-flex align-middle text-primary hover:text-primary/70"
+                                >
+                                  <Icon name="image" size={16} />
+                                </button>
+                              ) : null;
+                            })()}
                           </span>
                           <span className="text-[12px] text-secondary">
                             {formatMoney(p.total)}
@@ -315,7 +340,7 @@ export function ArtukEnclosureMaster({
                         <span className="block truncate text-[11px] text-secondary">
                           {p.description ?? "Not in Item Master"}
                         </span>
-                      </button>
+                      </div>
                     ))}
                 </div>
               ))}
@@ -476,6 +501,28 @@ export function ArtukEnclosureMaster({
           )}
         </div>
       </div>
+      {picture && (
+        <Modal
+          title={picture.caption}
+          onClose={() => setPicture(null)}
+          width="max-w-4xl"
+        >
+          <div className="rounded-lg bg-white p-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={picture.src}
+              alt={picture.caption}
+              className="mx-auto max-h-[75vh] w-auto object-contain"
+            />
+          </div>
+          {picture.typical && (
+            <p className="mt-2 text-[12px] text-secondary">
+              Typical view — the kit for this ACB frame / width looks the same
+              but its dimensions differ.
+            </p>
+          )}
+        </Modal>
+      )}
     </div>
   );
 }
