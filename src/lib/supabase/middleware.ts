@@ -50,5 +50,31 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Phones opening the dashboard go to the phone-friendly view (/m).
+  // "Desktop site" (/?desktop=1) remembers the choice; opening /m again
+  // clears it.
+  if (user) {
+    const path = request.nextUrl.pathname;
+    if (path === "/" && request.nextUrl.searchParams.get("desktop") === "1") {
+      response.cookies.set("prefer_desktop", "1", {
+        path: "/",
+        maxAge: 60 * 60 * 24 * 180,
+      });
+    } else if (
+      path === "/" &&
+      request.cookies.get("prefer_desktop")?.value !== "1" &&
+      /Mobi|Android|iPhone|iPod/i.test(request.headers.get("user-agent") ?? "")
+    ) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/m";
+      url.search = "";
+      const redirect = NextResponse.redirect(url);
+      response.cookies.getAll().forEach((c) => redirect.cookies.set(c));
+      return redirect;
+    } else if (path === "/m" && request.cookies.get("prefer_desktop")) {
+      response.cookies.delete("prefer_desktop");
+    }
+  }
+
   return response;
 }

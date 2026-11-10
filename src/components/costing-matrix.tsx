@@ -161,13 +161,15 @@ export function CostingMatrix({
         <div className="flex items-center gap-space-sm">
           {!archived && dirty && <span className="font-body-sm text-body-sm text-amber-600">Unsaved changes</span>}
           {!archived && !dirty && <span className="font-body-sm text-body-sm text-tertiary">Saved</span>}
-          <button
-            disabled
-            title="Export coming soon"
-            className="flex items-center gap-1 rounded bg-surface-container-low px-space-md py-space-sm font-label-md text-label-md text-on-surface-variant opacity-60"
+          <a
+            href={`/m/r/${revision.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Project summary with Internal and Customer PDFs (opens in a new tab)"
+            className="flex items-center gap-1 rounded bg-surface-container-low px-space-md py-space-sm font-label-md text-label-md text-on-surface hover:bg-surface-container"
           >
-            <Icon name="file_save" size={16} /> Export Costing (XLSX/PDF)
-          </button>
+            <Icon name="picture_as_pdf" size={16} /> Summary &amp; PDF
+          </a>
           {!archived && (
             <button
               onClick={handleSave}
