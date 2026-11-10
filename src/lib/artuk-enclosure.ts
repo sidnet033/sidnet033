@@ -8,7 +8,8 @@ import type {
 } from "@/types/database";
 import { suggestAcbFrame } from "@/lib/artuk-sizing";
 import {
-  ARTUK_BAY_TEMPLATES,
+  loadBayTemplates,
+  withArc,
   type ArtukBayTemplate,
   type ArtukTemplateLine,
 } from "@/lib/artuk-bay-templates";
@@ -261,6 +262,8 @@ export type EnclosureInput = {
   ka: number | null;
   internalArc: boolean;
   doubleFront?: boolean;
+  /** workbook bay parts lists (loadBayTemplates); none = rules only */
+  templates?: ArtukBayTemplate[];
 };
 
 // top/base sets ABB makes with an arc flap + gland plate (or flap only)
@@ -317,7 +320,12 @@ const sameDepth = (a: number, b: number) =>
 /** the workbook bay type for a vertical (or pair), left to right */
 export function matchBayTemplates(
   bays: VerticalWithFeeders[],
-  ctx: { panelDepthMm: number; frontAccess: boolean; doubleFront: boolean },
+  ctx: {
+    panelDepthMm: number;
+    frontAccess: boolean;
+    doubleFront: boolean;
+    templates: ArtukBayTemplate[];
+  },
 ): {
   template: ArtukBayTemplate;
   bays: VerticalWithFeeders[];
@@ -328,7 +336,7 @@ export function matchBayTemplates(
     bays: VerticalWithFeeders[];
     note?: string;
   }[] = [];
-  const atDepth = ARTUK_BAY_TEMPLATES.filter((t) =>
+  const atDepth = ctx.templates.filter((t) =>
     sameDepth(t.depthMm, ctx.panelDepthMm),
   );
   for (let i = 0; i < bays.length; i++) {
@@ -391,18 +399,7 @@ export function matchBayTemplates(
   return out;
 }
 
-/** a section's lines, with the internal-arc parts swapped / added in */
-export function withArc(
-  lines: ArtukTemplateLine[],
-  section: "vertical" | "panel",
-  internalArc: boolean,
-): ArtukTemplateLine[] {
-  const base = lines.filter((l) => l.section === section);
-  if (!internalArc) return base;
-  const arc = lines.filter((l) => l.section === `arc_${section}`);
-  const replaced = new Set(arc.map((l) => l.replaces).filter(Boolean));
-  return [...base.filter((l) => !replaced.has(l.code)), ...arc];
-}
+export { withArc };
 
 export function artukEnclosureBom(input: EnclosureInput): {
   lines: EnclosureLine[];
@@ -439,6 +436,7 @@ export function artukEnclosureBom(input: EnclosureInput): {
     panelDepthMm: panelDepth,
     frontAccess: input.frontAccess,
     doubleFront: !!input.doubleFront,
+    templates: input.templates ?? [],
   });
   const templated = new Set(matches.flatMap((m) => m.bays.map((b) => b.id)));
   const templatedNames = new Set(
@@ -769,21 +767,23 @@ export async function loadEnclosureTakeoff(
   sb: Switchboard,
 ): Promise<EnclosureTakeoff | null> {
   if (sb.std !== "ArTuK") return null;
-  const [{ data: vRows }, { data: oRows }, { data: rev }] = await Promise.all([
-    supabase
-      .from("verticals")
-      .select("*")
-      .eq("switchboard_id", sb.id)
-      .order("sort_order"),
-    supabase.from("busbar_overrides").select("*").eq("switchboard_id", sb.id),
-    supabase
-      .from("revisions")
-      .select(
-        "project_id, project:projects(busbar_density_cu, busbar_density_al)",
-      )
-      .eq("id", sb.revision_id)
-      .single(),
-  ]);
+  const [{ data: vRows }, { data: oRows }, { data: rev }, templates] =
+    await Promise.all([
+      supabase
+        .from("verticals")
+        .select("*")
+        .eq("switchboard_id", sb.id)
+        .order("sort_order"),
+      supabase.from("busbar_overrides").select("*").eq("switchboard_id", sb.id),
+      supabase
+        .from("revisions")
+        .select(
+          "project_id, project:projects(busbar_density_cu, busbar_density_al)",
+        )
+        .eq("id", sb.revision_id)
+        .single(),
+      loadBayTemplates(supabase).catch(() => [] as ArtukBayTemplate[]),
+    ]);
   const verticals = (vRows ?? []) as Vertical[];
   const vIds = verticals.map((v) => v.id);
   const { data: pRows } = vIds.length
@@ -831,6 +831,7 @@ export async function loadEnclosureTakeoff(
     ka: sb.ka,
     internalArc: sb.internal_arc,
     doubleFront: sb.arrangement === "double_front",
+    templates,
   });
   if (
     sb.arrangement === "double_front" &&

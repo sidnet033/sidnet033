@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Modal } from "@/components/modal";
+import { ArtukBayConfigDialog } from "@/components/artuk-bay-config-dialog";
 import {
   loadProjectOverrides,
   loadRateMaster,
@@ -35,6 +36,7 @@ export function EnclosureRatesDialog({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showBays, setShowBays] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -128,6 +130,9 @@ export function EnclosureRatesDialog({
     }
   }
 
+  if (showBays)
+    return <ArtukBayConfigDialog onClose={() => setShowBays(false)} />;
+
   return (
     <Modal
       title={
@@ -196,7 +201,14 @@ export function EnclosureRatesDialog({
           </table>
         )}
         {error && <p className="text-[12px] text-error">{error}</p>}
-        <div className="flex justify-end gap-2 border-t border-surface-container pt-3">
+        <div className="flex items-center justify-end gap-2 border-t border-surface-container pt-3">
+          <button
+            type="button"
+            onClick={() => setShowBays(true)}
+            className="mr-auto text-[12px] text-primary hover:underline"
+          >
+            View ArTu-K bay configs &amp; costs →
+          </button>
           <button onClick={onClose} className="btn btn-outline btn-sm">
             {canEdit ? "Cancel" : "Close"}
           </button>
