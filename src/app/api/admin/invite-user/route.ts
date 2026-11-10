@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/auth";
+import { ALLOWED_DOMAIN, isAllowedEmail } from "@/lib/auth-policy";
 
 // Invites a new user by email (Supabase sends the invite email itself).
 // This is the one admin action that needs the service-role key -- every
@@ -20,6 +21,9 @@ export async function POST(request: Request) {
   if (!email || !email.trim()) {
     return NextResponse.json({ error: "Email is required." }, { status: 400 });
   }
+  if (!isAllowedEmail(email.trim())) {
+    return NextResponse.json({ error: `Only @${ALLOWED_DOMAIN} email addresses can be invited.` }, { status: 400 });
+  }
 
   const { NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = process.env;
   if (!NEXT_PUBLIC_SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -33,7 +37,7 @@ export async function POST(request: Request) {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const redirectTo = `${new URL(request.url).origin}/set-password`;
+  const redirectTo = `${new URL(request.url).origin}/login`;
   const { data, error } = await admin.auth.admin.inviteUserByEmail(email.trim(), {
     data: { full_name: fullName?.trim() || undefined },
     redirectTo,

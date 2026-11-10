@@ -195,23 +195,6 @@ export function UsersTab({
     showToast("Invitation Resent", `A fresh activation link was sent to ${profile.email}.`);
   }
 
-  async function handleResetPassword(profile: Profile) {
-    if (!profile.email) {
-      alert("This user has no email on file.");
-      return;
-    }
-    setBusyId(profile.id);
-    const { error } = await supabase.auth.resetPasswordForEmail(profile.email, {
-      redirectTo: `${window.location.origin}/set-password`,
-    });
-    setBusyId(null);
-    if (error) {
-      alert(error.message);
-      return;
-    }
-    showToast("Reset Link Sent", `Password reset email sent to ${profile.email}.`);
-  }
-
   async function setDisabled(ids: string[], disabled: boolean) {
     for (const id of ids) {
       if (id === currentUserId) continue;
@@ -273,7 +256,7 @@ export function UsersTab({
         onClose={closeInvite}
         icon="person_add"
         title="Invite / Add User"
-        description="Send an activation link so they can sign in and set their own password."
+        description="Only @paikane.com emails. They'll get an invite email, then sign in with their Pai Kane Google account."
       >
         <form onSubmit={handleInvite} className="space-y-space-md">
           <div className="space-y-1">
@@ -484,14 +467,6 @@ export function UsersTab({
                           Resend
                         </button>
                       )}
-                      <button
-                        onClick={() => handleResetPassword(p)}
-                        disabled={busyId === p.id}
-                        title="Reset Password"
-                        className="rounded p-1 text-secondary transition-colors hover:bg-surface-container-high hover:text-primary disabled:opacity-50"
-                      >
-                        <Icon name="mail" size={18} />
-                      </button>
                       <button
                         onClick={() => handleToggleDisabled(p)}
                         disabled={busyId === p.id || p.id === currentUserId}

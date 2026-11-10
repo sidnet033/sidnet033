@@ -1,12 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isAllowedEmail, signedInWithGoogle } from "@/lib/auth-policy";
 
-// /set-password is where invite and password-reset email links land. At
-// that point the browser hasn't established a session cookie yet (the
-// tokens arrive in the URL fragment, which supabase-js only picks up
-// client-side), so this route must not be gated the normal way or the
-// middleware would redirect the user away before that happens.
-const PUBLIC_PATHS = ["/login", "/set-password"];
+// /auth/callback is where Google sign-in lands before a session exists.
+const PUBLIC_PATHS = ["/login", "/set-password", "/auth/callback"];
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -41,6 +38,28 @@ export async function updateSession(request: NextRequest) {
     url.pathname = "/login";
     url.searchParams.set("next", request.nextUrl.pathname);
     return NextResponse.redirect(url);
+  }
+
+  // Google-only, @paikane.com-only: any other session (old password login,
+  // an invite email link, a non-company account) is signed out.
+  if (user && !isPublic) {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const reason = !isAllowedEmail(user.email)
+      ? "domain"
+      : !signedInWithGoogle(session?.access_token)
+        ? "google"
+        : null;
+    if (reason) {
+      await supabase.auth.signOut();
+      const url = request.nextUrl.clone();
+      url.pathname = "/login";
+      url.search = `?error=${reason}`;
+      const redirect = NextResponse.redirect(url);
+      response.cookies.getAll().forEach((c) => redirect.cookies.set(c));
+      return redirect;
+    }
   }
 
   if (user && request.nextUrl.pathname === "/login") {
