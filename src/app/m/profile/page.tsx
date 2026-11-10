@@ -6,8 +6,7 @@ import type { Profile } from "@/types/database";
 export const dynamic = "force-dynamic";
 
 // The signed-in user's profile (phone view): who they are, their role,
-// sign-in details and log out. Passwords live in Google (sign-in is
-// Google only), so "change password" links to the Google account.
+// sign-in details and log out.
 export default async function MobileProfilePage() {
   const supabase = await createClient();
   const {
@@ -96,18 +95,6 @@ export default async function MobileProfilePage() {
       </section>
 
       <section className="space-y-2 rounded-xl bg-surface-container-lowest p-4 shadow-sm">
-        <a
-          href="https://myaccount.google.com/security"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block rounded-lg border border-surface-container-high px-3 py-2.5 text-center text-[14px] font-semibold text-primary"
-        >
-          Change password (Google account) ↗
-        </a>
-        <p className="text-[11px] text-secondary">
-          You sign in with your Pai Kane Google account, so your password and
-          2-step verification are managed by Google, not this app.
-        </p>
         <SignOutButton />
       </section>
     </div>
