@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { formatMoney } from "@/lib/money";
@@ -100,6 +100,8 @@ function isFixedPrice(s: ArtukSubpart) {
   return !steel && s.gasket_m == null;
 }
 
+const BUCKET = "artuk-part-images";
+
 export function ArtukEnclosureMaster({
   subparts: initialSubparts,
   components: initialComponents,
@@ -121,6 +123,89 @@ export function ArtukEnclosureMaster({
     setMsg({ ok, text });
     setTimeout(() => setMsg(null), 4000);
   };
+
+  // pictures uploaded by admins (Supabase Storage); built-in ones otherwise
+  const [uploaded, setUploaded] = useState<
+    Map<string, { path: string; caption: string | null }>
+  >(new Map());
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    supabase
+      .from("artuk_part_images")
+      .select("sku, path, caption")
+      .then(({ data }) =>
+        setUploaded(
+          new Map(
+            (
+              (data ?? []) as {
+                sku: string;
+                path: string;
+                caption: string | null;
+              }[]
+            ).map((r) => [r.sku, { path: r.path, caption: r.caption }]),
+          ),
+        ),
+      );
+  }, [supabase]);
+  const imageFor = (
+    sku: string,
+    description: string | null | undefined,
+  ): PartImage | null => {
+    const u = uploaded.get(sku);
+    if (u)
+      return {
+        src: supabase.storage.from(BUCKET).getPublicUrl(u.path).data.publicUrl,
+        caption: u.caption ?? `${sku}${description ? ` — ${description}` : ""}`,
+      };
+    return partImageOf(sku, description);
+  };
+  async function uploadPicture(sku: string, file: File) {
+    if (!file.type.startsWith("image/"))
+      return flash(false, "Pick an image file (PNG, JPG, WEBP or GIF).");
+    if (file.size > 5 * 1024 * 1024)
+      return flash(false, "The picture must be 5 MB or smaller.");
+    setUploading(true);
+    const ext = (file.name.split(".").pop() || "png").toLowerCase();
+    const path = `${sku.replace(/[^A-Za-z0-9_-]+/g, "_")}-${Date.now()}.${ext}`;
+    const { error: upErr } = await supabase.storage
+      .from(BUCKET)
+      .upload(path, file, { contentType: file.type });
+    if (upErr) {
+      setUploading(false);
+      return flash(false, upErr.message);
+    }
+    const { error } = await supabase
+      .from("artuk_part_images")
+      .upsert({ sku, path, updated_at: new Date().toISOString() });
+    if (error) {
+      await supabase.storage.from(BUCKET).remove([path]);
+      setUploading(false);
+      return flash(false, error.message);
+    }
+    const old = uploaded.get(sku)?.path;
+    if (old) await supabase.storage.from(BUCKET).remove([old]);
+    setUploaded((m) => new Map(m).set(sku, { path, caption: null }));
+    setUploading(false);
+    flash(true, `Picture saved for ${sku}.`);
+  }
+  async function removePicture(sku: string) {
+    const u = uploaded.get(sku);
+    if (!u) return;
+    if (!window.confirm(`Remove the uploaded picture of ${sku}?`)) return;
+    const { error } = await supabase
+      .from("artuk_part_images")
+      .delete()
+      .eq("sku", sku);
+    if (error) return flash(false, error.message);
+    await supabase.storage.from(BUCKET).remove([u.path]);
+    setUploaded((m) => {
+      const n = new Map(m);
+      n.delete(sku);
+      return n;
+    });
+    flash(true, `Uploaded picture of ${sku} removed.`);
+  }
   async function saveQty(lineId: string, qty: number) {
     const { error } = await supabase
       .from("artuk_part_components")
@@ -317,7 +402,7 @@ export function ArtukEnclosureMaster({
                           >
                             {p.sku}
                             {(() => {
-                              const img = partImageOf(p.sku, p.description);
+                              const img = imageFor(p.sku, p.description);
                               return img ? (
                                 <button
                                   type="button"
@@ -364,6 +449,58 @@ export function ArtukEnclosureMaster({
                   <p className="text-body-sm text-on-surface-variant">
                     {part.description ?? "Not in Item Master"}
                   </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {(() => {
+                    const img = imageFor(part.sku, part.description);
+                    return img ? (
+                      <button
+                        type="button"
+                        onClick={() => setPicture(img)}
+                        className="btn btn-outline btn-sm"
+                      >
+                        <Icon name="image" size={16} /> Picture
+                      </button>
+                    ) : null;
+                  })()}
+                  {canEdit && (
+                    <>
+                      <input
+                        ref={fileRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          e.target.value = "";
+                          if (f) uploadPicture(part.sku, f);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        disabled={uploading}
+                        onClick={() => fileRef.current?.click()}
+                        className="btn btn-outline btn-sm"
+                        title="Admins: upload a picture of this part (PNG, JPG, WEBP or GIF, up to 5 MB)"
+                      >
+                        <Icon name="upload" size={16} />
+                        {uploading
+                          ? "Uploading…"
+                          : uploaded.has(part.sku)
+                            ? "Replace picture"
+                            : "Upload picture"}
+                      </button>
+                      {uploaded.has(part.sku) && (
+                        <button
+                          type="button"
+                          onClick={() => removePicture(part.sku)}
+                          className="btn btn-outline btn-sm text-error"
+                        >
+                          Remove upload
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
                 <p className="text-[15px] font-bold">
                   Unit cost {formatMoney(part.total)}
