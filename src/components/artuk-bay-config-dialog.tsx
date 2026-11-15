@@ -182,7 +182,7 @@ export function ArtukBayConfigDialog({
             <p className="text-[13px] text-on-surface-variant">
               Use this when the bay isn&apos;t one of ABB&apos;s standard ArTu-K
               verticals. The bay keeps its current size; set its width and depth
-              yourself in <b>Bay Details</b> (right-hand panel). The front view
+              yourself in <b>Bay Details</b> (Feeder details tab, left panel). The front view
               shows &quot;Custom&quot; with the size in the bay&apos;s left
               strip.
             </p>

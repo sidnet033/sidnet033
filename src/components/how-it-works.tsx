@@ -457,7 +457,9 @@ export function HowItWorks() {
                 TOP&rdquo;), and the form and standard.
               </>,
               <>
-                Click a feeder in a bay to open its panel on the right (the
+                The left-hand panel has two tabs, <b>Feeder list</b> and{" "}
+                <b>Feeder details</b> (Ctrl+D / ⌘D opens and closes it).
+                Click a feeder in a bay, then open Feeder details for its panel (the
                 bay&apos;s own name/width/depth stay below it): change that
                 unit&apos;s <b>height</b> (each unit has its own — other units
                 of the same feeder are unaffected — and it&apos;s remembered if

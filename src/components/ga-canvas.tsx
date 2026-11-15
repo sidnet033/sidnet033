@@ -642,7 +642,8 @@ export function GaCanvas({
   // Selecting one of its busbars keeps it; deselecting the bay (Esc, click
   // off) clears it -- and with no bay, the side view shows no busbars.
   const [sideBayId, setSideBayId] = useState<string | null>(null);
-  const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
+  // the one left-hand panel: Feeder list / Feeder details tabs
+  const [leftTab, setLeftTab] = useState<"list" | "details">("list");
   // Double-front panels: which face GA Builder is showing / editing. Bays,
   // busbars and the enclosure are shared; feeders belong to one face. The
   // rear is drawn as seen from behind (bays in reverse order); bays are
@@ -699,7 +700,7 @@ export function GaCanvas({
       return !c;
     });
   }
-  const [sizingLogicOpen, setSizingLogicOpen] = useState(true);
+  const [sizingLogicOpen, setSizingLogicOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const fullscreenRef = useRef<HTMLDivElement>(null);
   const drawingRef = useRef<HTMLDivElement>(null);
@@ -1331,7 +1332,8 @@ export function GaCanvas({
     setConfigBayId(null);
     setSelectedBayId(bayId);
     setSideBayId(bayId);
-    setRightSidebarCollapsed(false);
+    setSidebarCollapsed(false);
+    setLeftTab("details");
   }
 
   // right-click menu on a bay: set its cable entry / exit
@@ -2327,7 +2329,7 @@ export function GaCanvas({
   // while typing in a field).
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      // Cmd+D (Mac) / Ctrl+D (Windows): open / close the right-hand panel
+      // Cmd+D (Mac) / Ctrl+D (Windows): open / close the left-hand panel
       // (instead of the browser's bookmark shortcut), even while typing
       if (
         e.key.toLowerCase() === "d" &&
@@ -2336,7 +2338,7 @@ export function GaCanvas({
         !e.shiftKey
       ) {
         e.preventDefault();
-        setRightSidebarCollapsed((c) => !c);
+        setSidebarCollapsed((c) => !c);
         return;
       }
       const tag = (document.activeElement?.tagName ?? "").toLowerCase();
@@ -2711,25 +2713,62 @@ export function GaCanvas({
         >
           <aside
             className={`shrink-0 overflow-y-auto rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-xs transition-[width] ${
-              sidebarCollapsed ? "w-11 p-2" : "w-72 p-3"
+              sidebarCollapsed ? "w-11 p-2" : "w-80 p-3"
             }`}
           >
-            <button
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              title={
-                sidebarCollapsed
-                  ? "Expand available feeders"
-                  : "Collapse available feeders"
-              }
-              className={`mb-2 flex items-center justify-center rounded p-1 text-secondary hover:bg-surface-container-low ${
-                sidebarCollapsed ? "w-full" : ""
-              }`}
-            >
-              <Icon
-                name={sidebarCollapsed ? "chevron_right" : "chevron_left"}
-                size={16}
-              />
-            </button>
+            <div className="mb-2 flex items-center gap-1">
+              {!sidebarCollapsed && (
+                <div
+                  role="tablist"
+                  className="flex flex-1 overflow-hidden rounded-md border border-surface-container-high text-[12px] font-semibold"
+                >
+                  {(
+                    [
+                      ["list", "Feeder list"],
+                      ["details", "Feeder details"],
+                    ] as const
+                  ).map(([t, label]) => (
+                    <button
+                      key={t}
+                      type="button"
+                      role="tab"
+                      aria-selected={leftTab === t}
+                      onClick={() => setLeftTab(t)}
+                      className={`flex flex-1 items-center justify-center gap-1 px-2 py-1.5 ${leftTab === t ? "bg-primary text-on-primary" : "bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container-low"}`}
+                    >
+                      {label}
+                      {t === "details" &&
+                        leftTab !== "details" &&
+                        (selectedBayId ||
+                          selectedPlacedId ||
+                          selectedSegmentKey ||
+                          busbarSelected) && (
+                          <span
+                            className="h-1.5 w-1.5 rounded-full bg-primary"
+                            title="Something is selected — details here"
+                          />
+                        )}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button
+                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                title={
+                  sidebarCollapsed
+                    ? "Expand feeder list / details (Ctrl+D / ⌘D)"
+                    : "Collapse feeder list / details (Ctrl+D / ⌘D)"
+                }
+                className={`flex items-center justify-center rounded p-1 text-secondary hover:bg-surface-container-low ${
+                  sidebarCollapsed ? "w-full" : ""
+                }`}
+              >
+                <Icon
+                  name={sidebarCollapsed ? "chevron_right" : "chevron_left"}
+                  size={16}
+                />
+              </button>
+            </div>
 
             {sidebarCollapsed ? (
               filteredUnits.length > 0 && (
@@ -2739,6 +2778,171 @@ export function GaCanvas({
                   </span>
                 </div>
               )
+            ) : leftTab === "details" ? (
+              <>
+                {selectedSegment ? (
+                  <BusbarSegmentPanel
+                    key={`${selectedSegment.key}-${resetKey}`}
+                    segment={selectedSegment}
+                    material={busbarMaterial}
+                    density={densities[busbarMaterial]}
+                    neutralPct={sb.neutral_size_pct ?? 100}
+                    hasNeutral={(sb.poles ?? 4) >= 4}
+                    readOnly={readOnly}
+                    onPatch={(patch) =>
+                      patchSegmentOverrides([selectedSegment], patch)
+                    }
+                    onReset={() => resetSegmentOverrides([selectedSegment.key])}
+                    onClose={() => setSelectedSegmentKey(null)}
+                  />
+                ) : busbarSelected ? (
+                  <BusbarDetailsPanel
+                    key={`busbar-${resetKey}`}
+                    height={busbarHeight}
+                    abbHeight={abbChamberMm}
+                    mainBarLabel={
+                      mainBar
+                        ? `${mainBar.widthMm}×${mainBar.thicknessMm}`
+                        : null
+                    }
+                    readOnly={readOnly}
+                    onHeightChange={(h) => {
+                      setBusbarHeight(h);
+                      setChamberAuto(h === abbChamberMm);
+                    }}
+                    onClose={() => setBusbarSelected(false)}
+                  />
+                ) : (
+                  <>
+                    {/* a clicked feeder / blank space gets its own panel; the
+                      bay's own details (name, width, depth) stay below it */}
+                    {selectedBay && selectedPlacedId && (
+                      <PlacedItemPanel
+                        key={`${selectedPlacedId}-${selectedUnitIndex}-${resetKey}`}
+                        bay={selectedBay}
+                        placedId={selectedPlacedId}
+                        unitIndex={selectedUnitIndex}
+                        panelHeightMm={panelHeight}
+                        blankFirst={blankFirst}
+                        readOnly={readOnly}
+                        onUnitHeight={(h) =>
+                          setUnitHeight(
+                            selectedBay.id,
+                            selectedPlacedId,
+                            selectedUnitIndex,
+                            h,
+                          )
+                        }
+                        onDummyHeight={(h) => setDummyHeight(selectedBay.id, h)}
+                        onRemove={() =>
+                          removeUnitFromBay(
+                            selectedBay.id,
+                            selectedPlacedId,
+                            selectedUnitIndex,
+                          )
+                        }
+                        onClose={() => setSelectedPlacedId(null)}
+                      />
+                    )}
+                    <BayDetailsPanel
+                      key={
+                        selectedBay
+                          ? `${selectedBay.id}-${selectedBay.width_mm}-${selectedBay.depth_mm}`
+                          : "none"
+                      }
+                      vertical={selectedBay}
+                      readOnly={readOnly || rearView}
+                      onChooseConfig={
+                        isArtuk &&
+                        selectedBay &&
+                        !isAlley(selectedBay.bay_type) &&
+                        !readOnly &&
+                        !rearView
+                          ? () => setConfigBayId(selectedBay.id)
+                          : undefined
+                      }
+                      onRename={(name) =>
+                        selectedBay && renameBay(selectedBay.id, name)
+                      }
+                      onDimChange={(field, val) =>
+                        selectedBay && setBayDim(selectedBay.id, field, val)
+                      }
+                      busductEntries={
+                        hasBusduct && selectedBay
+                          ? (selectedBay.busduct_entries ?? 0)
+                          : null
+                      }
+                      onBusductChange={(n) =>
+                        selectedBay &&
+                        setVerticals(
+                          verticals.map((v) =>
+                            v.id === selectedBay.id
+                              ? { ...v, busduct_entries: Math.max(0, n) }
+                              : v,
+                          ),
+                        )
+                      }
+                      onDelete={() => {
+                        if (!selectedBay) return;
+                        deleteBay(selectedBay.id);
+                        setSelectedBayId(null);
+                        setSideBayId(null);
+                        setSelectedPlacedId(null);
+                      }}
+                      onClose={() => {
+                        setSelectedBayId(null);
+                        setSideBayId(null);
+                        setSelectedPlacedId(null);
+                      }}
+                    />
+                  </>
+                )}
+
+                <div className="mt-4 border-t border-surface-container-high pt-3">
+                  <button
+                    onClick={() => setSizingLogicOpen((v) => !v)}
+                    className="flex w-full items-center justify-between text-left font-label-sm text-label-sm uppercase tracking-wide text-secondary"
+                  >
+                    Sizing Logic
+                    <Icon
+                      name={sizingLogicOpen ? "expand_less" : "expand_more"}
+                      size={16}
+                    />
+                  </button>
+                  {sizingLogicOpen && (
+                    <div className="mt-2 space-y-2">
+                      <p className="font-body-sm text-[11px] leading-snug text-on-surface-variant">
+                        How each bay&rsquo;s width and height were worked out,
+                        based on its placed feeders. See How it works →
+                        Dimensions for the underlying ArTuK data.
+                      </p>
+                      {bays.length === 0 && (
+                        <p className="font-body-sm text-body-sm text-on-surface-variant">
+                          No bays yet.
+                        </p>
+                      )}
+                      {bays.map((v) => (
+                        <div
+                          key={v.id}
+                          className="rounded border border-surface-container-high p-2"
+                        >
+                          <p className="font-body-sm text-body-sm font-semibold text-on-surface">
+                            {v.name}
+                          </p>
+                          {explainBay(v).map((line, i) => (
+                            <p
+                              key={i}
+                              className="mt-1 text-[11px] leading-snug text-on-surface-variant"
+                            >
+                              {line}
+                            </p>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
             ) : (
               <>
                 <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-secondary">
@@ -3617,195 +3821,6 @@ export function GaCanvas({
             </div>
           </div>
 
-          <aside
-            className={`shrink-0 overflow-y-auto rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-xs transition-[width] ${
-              rightSidebarCollapsed ? "w-11 p-2" : "w-80 p-3"
-            }`}
-          >
-            <button
-              onClick={() => setRightSidebarCollapsed(!rightSidebarCollapsed)}
-              title={
-                rightSidebarCollapsed
-                  ? "Expand bay details (Ctrl+D / ⌘D)"
-                  : "Collapse bay details (Ctrl+D / ⌘D)"
-              }
-              className={`mb-2 flex items-center justify-center rounded p-1 text-secondary hover:bg-surface-container-low ${
-                rightSidebarCollapsed ? "w-full" : ""
-              }`}
-            >
-              <Icon
-                name={rightSidebarCollapsed ? "chevron_left" : "chevron_right"}
-                size={16}
-              />
-            </button>
-
-            {!rightSidebarCollapsed && (
-              <>
-                {selectedSegment ? (
-                  <BusbarSegmentPanel
-                    key={`${selectedSegment.key}-${resetKey}`}
-                    segment={selectedSegment}
-                    material={busbarMaterial}
-                    density={densities[busbarMaterial]}
-                    neutralPct={sb.neutral_size_pct ?? 100}
-                    hasNeutral={(sb.poles ?? 4) >= 4}
-                    readOnly={readOnly}
-                    onPatch={(patch) =>
-                      patchSegmentOverrides([selectedSegment], patch)
-                    }
-                    onReset={() => resetSegmentOverrides([selectedSegment.key])}
-                    onClose={() => setSelectedSegmentKey(null)}
-                  />
-                ) : busbarSelected ? (
-                  <BusbarDetailsPanel
-                    key={`busbar-${resetKey}`}
-                    height={busbarHeight}
-                    abbHeight={abbChamberMm}
-                    mainBarLabel={
-                      mainBar
-                        ? `${mainBar.widthMm}×${mainBar.thicknessMm}`
-                        : null
-                    }
-                    readOnly={readOnly}
-                    onHeightChange={(h) => {
-                      setBusbarHeight(h);
-                      setChamberAuto(h === abbChamberMm);
-                    }}
-                    onClose={() => setBusbarSelected(false)}
-                  />
-                ) : (
-                  <>
-                    {/* a clicked feeder / blank space gets its own panel; the
-                      bay's own details (name, width, depth) stay below it */}
-                    {selectedBay && selectedPlacedId && (
-                      <PlacedItemPanel
-                        key={`${selectedPlacedId}-${selectedUnitIndex}-${resetKey}`}
-                        bay={selectedBay}
-                        placedId={selectedPlacedId}
-                        unitIndex={selectedUnitIndex}
-                        panelHeightMm={panelHeight}
-                        blankFirst={blankFirst}
-                        readOnly={readOnly}
-                        onUnitHeight={(h) =>
-                          setUnitHeight(
-                            selectedBay.id,
-                            selectedPlacedId,
-                            selectedUnitIndex,
-                            h,
-                          )
-                        }
-                        onDummyHeight={(h) => setDummyHeight(selectedBay.id, h)}
-                        onRemove={() =>
-                          removeUnitFromBay(
-                            selectedBay.id,
-                            selectedPlacedId,
-                            selectedUnitIndex,
-                          )
-                        }
-                        onClose={() => setSelectedPlacedId(null)}
-                      />
-                    )}
-                    <BayDetailsPanel
-                      key={
-                        selectedBay
-                          ? `${selectedBay.id}-${selectedBay.width_mm}-${selectedBay.depth_mm}`
-                          : "none"
-                      }
-                      vertical={selectedBay}
-                      readOnly={readOnly || rearView}
-                      onChooseConfig={
-                        isArtuk &&
-                        selectedBay &&
-                        !isAlley(selectedBay.bay_type) &&
-                        !readOnly &&
-                        !rearView
-                          ? () => setConfigBayId(selectedBay.id)
-                          : undefined
-                      }
-                      onRename={(name) =>
-                        selectedBay && renameBay(selectedBay.id, name)
-                      }
-                      onDimChange={(field, val) =>
-                        selectedBay && setBayDim(selectedBay.id, field, val)
-                      }
-                      busductEntries={
-                        hasBusduct && selectedBay
-                          ? (selectedBay.busduct_entries ?? 0)
-                          : null
-                      }
-                      onBusductChange={(n) =>
-                        selectedBay &&
-                        setVerticals(
-                          verticals.map((v) =>
-                            v.id === selectedBay.id
-                              ? { ...v, busduct_entries: Math.max(0, n) }
-                              : v,
-                          ),
-                        )
-                      }
-                      onDelete={() => {
-                        if (!selectedBay) return;
-                        deleteBay(selectedBay.id);
-                        setSelectedBayId(null);
-                        setSideBayId(null);
-                        setSelectedPlacedId(null);
-                      }}
-                      onClose={() => {
-                        setSelectedBayId(null);
-                        setSideBayId(null);
-                        setSelectedPlacedId(null);
-                      }}
-                    />
-                  </>
-                )}
-
-                <div className="mt-4 border-t border-surface-container-high pt-3">
-                  <button
-                    onClick={() => setSizingLogicOpen((v) => !v)}
-                    className="flex w-full items-center justify-between text-left font-label-sm text-label-sm uppercase tracking-wide text-secondary"
-                  >
-                    Sizing Logic
-                    <Icon
-                      name={sizingLogicOpen ? "expand_less" : "expand_more"}
-                      size={16}
-                    />
-                  </button>
-                  {sizingLogicOpen && (
-                    <div className="mt-2 space-y-2">
-                      <p className="font-body-sm text-[11px] leading-snug text-on-surface-variant">
-                        How each bay&rsquo;s width and height were worked out,
-                        based on its placed feeders. See How it works →
-                        Dimensions for the underlying ArTuK data.
-                      </p>
-                      {bays.length === 0 && (
-                        <p className="font-body-sm text-body-sm text-on-surface-variant">
-                          No bays yet.
-                        </p>
-                      )}
-                      {bays.map((v) => (
-                        <div
-                          key={v.id}
-                          className="rounded border border-surface-container-high p-2"
-                        >
-                          <p className="font-body-sm text-body-sm font-semibold text-on-surface">
-                            {v.name}
-                          </p>
-                          {explainBay(v).map((line, i) => (
-                            <p
-                              key={i}
-                              className="mt-1 text-[11px] leading-snug text-on-surface-variant"
-                            >
-                              {line}
-                            </p>
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </aside>
         </div>
       </div>
 
