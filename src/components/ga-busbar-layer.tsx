@@ -404,6 +404,7 @@ export function BusbarSideOverlay({
   bay,
   selectedKey,
   onSelect,
+  doubleFront = false,
 }: {
   plan: BusbarPlan | null;
   widthPx: number;
@@ -418,6 +419,8 @@ export function BusbarSideOverlay({
   bay: SideBay | null;
   selectedKey: string | null;
   onSelect: (key: string) => void;
+  /** double-front panel: the main busbar runs mid-depth */
+  doubleFront?: boolean;
 }) {
   const xScale = depthMm > 0 ? widthPx / depthMm : 0;
   // depth measured from the panel front, which is drawn on the right
@@ -444,9 +447,11 @@ export function BusbarSideOverlay({
   // ---- one bay -----------------------------------------------------------
   // Across the depth (mm from the front): each device occupies the front
   // part, as deep as that device is; the horizontal main busbar runs in the
-  // front part of the chamber; the vertical droppers -- and the feeder links
+  // front part of the chamber (mid-depth on a double-front panel); the vertical droppers -- and the feeder links
   // to them -- are at the rear, behind the devices.
-  const mainX = depthMm * 0.22;
+  // double front: the main busbar runs in the middle of the depth, equally
+  // far from the front and rear feeders
+  const mainX = depthMm * (doubleFront ? 0.5 : 0.22);
   const dropX = depthMm * 0.85;
   const devDepth = (placedId: string | undefined) =>
     Math.min(bay.compartments.find((c) => c.placedId === placedId)?.deviceDepthMm ?? depthMm * 0.35, depthMm * 0.6);

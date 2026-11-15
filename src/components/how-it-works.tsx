@@ -522,6 +522,9 @@ export function HowItWorks() {
                 double front board the busbars can&apos;t run behind the
                 switchgear, so an MCCB / DOL vertical is 200mm wider to carry
                 them in line with it (720mm single front → 920mm double front).
+                Each face has its own vertical busbars, in line with its own
+                switchgear; the main horizontal busbar runs in the middle of
+                the panel depth, equally far from the front and rear feeders.
                 Front-access and double-front ArTu-K are type-tested to 50kA 1s
                 and Form 3b (double front up to 2500A) — the checks warn beyond
                 that. <b>Internal Arc</b> (tick box next to Arrangement)

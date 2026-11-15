@@ -3458,6 +3458,7 @@ export function GaCanvas({
                       )}
                       {sideBay && (
                         <BusbarSideOverlay
+                          doubleFront={isDoubleFront}
                           plan={busbarPlan}
                           widthPx={sideViewWidthPx}
                           heightPx={chamberPx + panelPx}
