@@ -323,6 +323,10 @@ export type Vertical = {
   // ArTu-K bay config chosen in GA Builder: a config id, "<id>#2" for the
   // second bay of a paired config, or "custom"; null = not chosen yet
   bay_config?: string | null;
+  // double-front panels: the rear face's blank (DUMMY) space -- position
+  // among the rear units and height set by hand (null = fills what's left)
+  rear_dummy_slot?: number | null;
+  rear_dummy_height_mm?: number | null;
 };
 
 // a feeder placed inside a bay, stacked into a tier
@@ -338,7 +342,12 @@ export type PlacedFeeder = {
   // GA Builder: user-set height (mm) of each unit of this row, by unit
   // index; null / missing = the standard height
   unit_heights?: (number | null)[] | null;
+  // double-front panels: which face of its bay the feeder sits on
+  // (always "front" in the unassigned bucket and on single-front boards)
+  face?: Face;
 };
+
+export type Face = "front" | "rear";
 
 // Minimal placeholder so @supabase/ssr's generic client type-checks.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

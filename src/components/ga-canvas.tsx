@@ -32,7 +32,9 @@ import type {
   PlacedFeeder,
   Switchboard,
   Vertical,
+  Face,
 } from "@/types/database";
+import { faceView } from "@/lib/faces";
 import { Icon } from "@/components/icon";
 import { SavingOverlay } from "@/components/saving-overlay";
 import { numericKeyGuard } from "@/lib/numeric-input";
@@ -627,6 +629,26 @@ export function GaCanvas({
   // off) clears it -- and with no bay, the side view shows no busbars.
   const [sideBayId, setSideBayId] = useState<string | null>(null);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
+  // Double-front panels: which face GA Builder is showing / editing. Bays,
+  // busbars and the enclosure are shared; feeders belong to one face. The
+  // rear is drawn as seen from behind (bays in reverse order); bays are
+  // added / moved / resized on the front view only.
+  const [face, setFace] = useState<Face>("front");
+  const faceRef = useRef<Face>("front");
+  // placements on the face not being shown (kept when saving overrides)
+  const otherFacePlacedIds = useRef<Set<string>>(new Set());
+  function viewOf(all: VerticalWithFeeders[]) {
+    const f = faceRef.current;
+    const shown = new Set(
+      faceView(all, f).flatMap((v) => v.placed.map((p) => p.id)),
+    );
+    otherFacePlacedIds.current = new Set(
+      all
+        .flatMap((v) => v.placed.map((p) => p.id))
+        .filter((id) => !shown.has(id)),
+    );
+    return faceView(all, f);
+  }
   // "Switchboard Master Parameters" strip: collapsible for more canvas
   // space; the choice is remembered on this browser
   const [paramsCollapsed, setParamsCollapsed] = useState(false);
@@ -754,7 +776,7 @@ export function GaCanvas({
   }
 
   function downloadFileName(ext: string) {
-    return `${(sb?.tag || "switchboard").replace(/[^a-z0-9-]+/gi, "-")}-GA.${ext}`;
+    return `${(sb?.tag || "switchboard").replace(/[^a-z0-9-]+/gi, "-")}-GA${rearView ? "-rear" : ""}.${ext}`;
   }
 
   async function exportPng() {
@@ -814,8 +836,9 @@ export function GaCanvas({
     const data = await loadGaData(supabase, switchboardId);
     if (!data) return;
     setSb(data.switchboard);
-    setVerticals(data.verticals);
-    setSavedVerticals(data.verticals);
+    const view = viewOf(data.verticals);
+    setVerticals(view);
+    setSavedVerticals(view);
     const plinth = data.switchboard.plinth_height_mm ?? 100;
     const panel = data.switchboard.panel_height_mm ?? 2100;
     const busbar =
@@ -854,8 +877,9 @@ export function GaCanvas({
       const data = await loadGaData(supabase, switchboardId);
       if (cancelled || !data) return;
       setSb(data.switchboard);
-      setVerticals(data.verticals);
-      setSavedVerticals(data.verticals);
+      const view = viewOf(data.verticals);
+      setVerticals(view);
+      setSavedVerticals(view);
       const plinth = data.switchboard.plinth_height_mm ?? 100;
       const panel = data.switchboard.panel_height_mm ?? 2100;
       const busbar =
@@ -911,9 +935,13 @@ export function GaCanvas({
     JSON.stringify(busbarOverrides) !== JSON.stringify(savedBusbarOverrides);
   useWarnOnUnload(dirty);
 
-  const bays = verticals
+  const baysInOrder = verticals
     .filter((v) => v.bay_type !== "unassigned")
     .sort((a, b) => a.sort_order - b.sort_order);
+  // the rear face is seen from behind: right-hand bay first
+  const bays = face === "rear" ? [...baysInOrder].reverse() : baysInOrder;
+  const rearView = face === "rear";
+  const isDoubleFront = isArtuk && savedArrangement === "double_front";
   // ArTu-K 920+1120 front-access MCC pairs: cable alleys + shared VBB inside the bays
   const innerLayouts = frontAccessPairLayouts(bays);
   const busductTotal = bays.reduce((s, v) => s + (v.busduct_entries ?? 0), 0);
@@ -982,7 +1010,7 @@ export function GaCanvas({
   // every render so it always follows the bays/feeders as they're edited;
   // only the user's deliberate overrides are stored.
   const busbarMaterial: "Cu" | "Al" = sb?.busbar ?? "Cu";
-  const busbarPlan: BusbarPlan | null = sb
+  const facePlan: BusbarPlan | null = sb
     ? planForSwitchboard({
         params: sb,
         verticals: bays,
@@ -992,6 +1020,18 @@ export function GaCanvas({
         chamberHeightMm: busbarHeight,
       })
     : null;
+  // the plan is laid out left-to-right as seen from the front; the rear view
+  // is drawn from behind, so mirror it across the line-up
+  const busbarPlan: BusbarPlan | null =
+    facePlan && rearView
+      ? {
+          ...facePlan,
+          segments: facePlan.segments.map((seg) => ({
+            ...seg,
+            path: seg.path.map((pt) => ({ ...pt, x: totalWidth - pt.x })),
+          })),
+        }
+      : facePlan;
   const selectedSegment =
     busbarPlan?.segments.find((seg) => seg.key === selectedSegmentKey) ?? null;
 
@@ -1180,9 +1220,11 @@ export function GaCanvas({
     const bay = bays[i];
     if (!bay || !needsBayConfig(bay)) return null;
     if (bay.bay_config) return bay.bay_config;
-    const own = currentConfigOf(bay, bays[i + 1] ?? null);
+    // neighbours in the real line-up order (the rear view is mirrored)
+    const k = baysInOrder.indexOf(bay);
+    const own = currentConfigOf(bay, baysInOrder[k + 1] ?? null);
     if (own) return own.id;
-    const prev = bays[i - 1];
+    const prev = baysInOrder[k - 1];
     const pair = prev ? currentConfigOf(prev, bay) : null;
     if (pair?.partner) return `${pair.id}#2`;
     return null;
@@ -1206,6 +1248,24 @@ export function GaCanvas({
     const cfg = i >= 0 ? effectiveBayConfig(i) : null;
     return cfg ? { ...v, bay_config: cfg } : v;
   });
+  function switchFace(next: Face) {
+    if (next === face) return;
+    if (dirty) {
+      alert(
+        `Save or cancel your changes before switching to the ${next} side.`,
+      );
+      return;
+    }
+    faceRef.current = next;
+    setFace(next);
+    setSelectedBayId(null);
+    setSideBayId(null);
+    setSelectedPlacedId(null);
+    setSelectedSegmentKey(null);
+    setBusbarSelected(false);
+    refreshGaData();
+  }
+
   function setCustomBayConfig(bayId: string) {
     setVerticals((vs) =>
       vs.map((v) => (v.id === bayId ? { ...v, bay_config: "custom" } : v)),
@@ -1277,6 +1337,7 @@ export function GaCanvas({
   }
 
   function deleteBay(id: string) {
+    if (faceRef.current === "rear") return; // bays are edited on the front view
     if (
       !confirm(
         "Delete this bay? Anything placed in it goes back to the available feeders list.",
@@ -1540,6 +1601,7 @@ export function GaCanvas({
   // two sort_orders: after bays are deleted/added, two can share a
   // sort_order, and swapping equal values would never move anything.
   function moveBay(bayId: string, direction: "left" | "right") {
+    if (faceRef.current === "rear") return; // bays move on the front view
     const idx = bays.findIndex((v) => v.id === bayId);
     const swapIdx = direction === "left" ? idx - 1 : idx + 1;
     if (idx === -1 || swapIdx < 0 || swapIdx >= bays.length) return;
@@ -1876,10 +1938,15 @@ export function GaCanvas({
         if (v.width_mm !== prev.width_mm) fieldPatch.width_mm = v.width_mm;
         if (depthToSave(v) !== prev.depth_mm)
           fieldPatch.depth_mm = depthToSave(v);
-        if (v.dummy_slot !== prev.dummy_slot)
-          fieldPatch.dummy_slot = v.dummy_slot;
-        if (v.dummy_height_mm !== prev.dummy_height_mm)
-          fieldPatch.dummy_height_mm = v.dummy_height_mm;
+        // on the rear view the bay's blank space is the rear face's
+        if (v.dummy_slot !== prev.dummy_slot) {
+          if (rearView) fieldPatch.rear_dummy_slot = v.dummy_slot;
+          else fieldPatch.dummy_slot = v.dummy_slot;
+        }
+        if (v.dummy_height_mm !== prev.dummy_height_mm) {
+          if (rearView) fieldPatch.rear_dummy_height_mm = v.dummy_height_mm;
+          else fieldPatch.dummy_height_mm = v.dummy_height_mm;
+        }
         if ((v.busduct_entries ?? 0) !== (prev.busduct_entries ?? 0))
           fieldPatch.busduct_entries = v.busduct_entries ?? 0;
         if ((v.cable_entry ?? null) !== (prev.cable_entry ?? null))
@@ -1937,6 +2004,8 @@ export function GaCanvas({
                 sort_order: p.sort_order,
                 tier_number: p.tier_number,
                 unit_heights: p.unit_heights ?? null,
+                // the face being edited (the unassigned bucket has none)
+                face: v.bay_type === "unassigned" ? "front" : face,
               })
               .select("id")
               .single();
@@ -1951,8 +2020,10 @@ export function GaCanvas({
           );
           const prev = prevVertical?.placed.find((sp) => sp.id === p.id);
           const fieldPatch: Partial<PlacedFeeder> = {};
-          if (!prevVertical || prevVertical.id !== v.id)
+          if (!prevVertical || prevVertical.id !== v.id) {
             fieldPatch.vertical_id = realVerticalId;
+            fieldPatch.face = v.bay_type === "unassigned" ? "front" : face;
+          }
           if (!prev || prev.sort_order !== p.sort_order)
             fieldPatch.sort_order = p.sort_order;
           if (!prev || prev.tier_number !== p.tier_number)
@@ -2000,9 +2071,11 @@ export function GaCanvas({
         JSON.stringify(busbarOverrides) !== JSON.stringify(savedBusbarOverrides)
       ) {
         const liveVerticalIds = new Set(verticals.map((v) => v.id));
-        const livePlacedIds = new Set(
-          verticals.flatMap((v) => v.placed.map((p) => p.id)),
-        );
+        // the other face's feeders aren't in this view -- keep their overrides
+        const livePlacedIds = new Set([
+          ...verticals.flatMap((v) => v.placed.map((p) => p.id)),
+          ...otherFacePlacedIds.current,
+        ]);
         const rows = Object.values(busbarOverrides)
           .filter(
             (o) =>
@@ -2627,7 +2700,39 @@ export function GaCanvas({
           </aside>
 
           <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="mb-2 flex justify-end">
+            <div className="mb-2 flex items-center justify-end gap-2">
+              {isDoubleFront && (
+                <div
+                  role="group"
+                  aria-label="Panel face"
+                  className="mr-auto flex items-center gap-2"
+                >
+                  <div className="flex overflow-hidden rounded-md border border-surface-container-high text-[12px] font-semibold">
+                    {(["front", "rear"] as const).map((f) => (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => switchFace(f)}
+                        title={
+                          f === "front"
+                            ? "Front side of the double-front panel"
+                            : "Rear side of the double-front panel (seen from behind)"
+                        }
+                        className={`px-3 py-1.5 ${face === f ? "bg-primary text-on-primary" : "bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container-low"}`}
+                      >
+                        {f === "front" ? "Front side" : "Rear side"}
+                      </button>
+                    ))}
+                  </div>
+                  {rearView && (
+                    <span className="text-[11px] text-on-surface-variant">
+                      Rear side, seen from behind (right-hand bay first). Drag
+                      feeders into the bays; add, move or resize bays on the
+                      front side.
+                    </span>
+                  )}
+                </div>
+              )}
               <button
                 onClick={toggleFullscreen}
                 title={isFullscreen ? "Exit fullscreen" : "Fullscreen canvas"}
@@ -2671,6 +2776,12 @@ export function GaCanvas({
                   {!readOnly && sb?.std === "ArTuK" && (
                     <button
                       onClick={autoGenerateGa}
+                      disabled={rearView}
+                      title={
+                        rearView
+                          ? "Update GA sizes bays from the front side"
+                          : undefined
+                      }
                       className="btn btn-primary btn-sm"
                     >
                       <Icon name="auto_awesome" size={14} /> Update GA
@@ -2790,16 +2901,17 @@ export function GaCanvas({
                 )}
                 {!readOnly && (
                   <div className="mb-3 flex flex-wrap gap-2">
-                    {BAY_TEMPLATES.map((t) => (
-                      <button
-                        key={t.bay_type}
-                        onClick={() => addBay(t)}
-                        className="rounded-md border border-dashed border-surface-container-high px-2.5 py-1 text-xs font-medium text-on-surface-variant hover:border-primary/40 hover:text-primary"
-                      >
-                        {t.label}
-                      </button>
-                    ))}
-                    {sb?.std === "ArTuK" && (
+                    {!rearView &&
+                      BAY_TEMPLATES.map((t) => (
+                        <button
+                          key={t.bay_type}
+                          onClick={() => addBay(t)}
+                          className="rounded-md border border-dashed border-surface-container-high px-2.5 py-1 text-xs font-medium text-on-surface-variant hover:border-primary/40 hover:text-primary"
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    {!rearView && sb?.std === "ArTuK" && (
                       <>
                         <button
                           onClick={add2TierOutgoingE12}
@@ -2864,7 +2976,11 @@ export function GaCanvas({
                         }}
                       />
                       <div style={{ width: Math.max(totalWidth * pxPerMm, 1) }}>
-                        <ViewLabel>Front View</ViewLabel>
+                        <ViewLabel>
+                          {rearView
+                            ? "Rear View (seen from behind)"
+                            : "Front View"}
+                        </ViewLabel>
                       </div>
                     </div>
 
@@ -3039,7 +3155,9 @@ export function GaCanvas({
                                     }
                                     selectedUnitIndex={selectedUnitIndex}
                                     onContextMenu={
-                                      readOnly || v.bay_type === "unassigned"
+                                      readOnly ||
+                                      rearView ||
+                                      v.bay_type === "unassigned"
                                         ? undefined
                                         : (x, y) =>
                                             setBayMenu({ bayId: v.id, x, y })
@@ -3059,8 +3177,11 @@ export function GaCanvas({
                                       setBusbarSelected(false);
                                       setSelectedSegmentKey(null);
                                     }}
-                                    onMoveBay={(direction) =>
-                                      moveBay(v.id, direction)
+                                    onMoveBay={
+                                      rearView
+                                        ? undefined
+                                        : (direction) =>
+                                            moveBay(v.id, direction)
                                     }
                                     onMoveFeeder={(
                                       placedId,
@@ -3500,12 +3621,13 @@ export function GaCanvas({
                           : "none"
                       }
                       vertical={selectedBay}
-                      readOnly={readOnly}
+                      readOnly={readOnly || rearView}
                       onChooseConfig={
                         isArtuk &&
                         selectedBay &&
                         !isAlley(selectedBay.bay_type) &&
-                        !readOnly
+                        !readOnly &&
+                        !rearView
                           ? () => setConfigBayId(selectedBay.id)
                           : undefined
                       }
@@ -4105,7 +4227,8 @@ function BayColumn({
   onContextMenu?: (x: number, y: number) => void;
   onSelectBay: () => void;
   onSelectFeeder: (placedId: string, unitIndex: number) => void;
-  onMoveBay: (direction: "left" | "right") => void;
+  /** none on the rear view (bays move on the front side) */
+  onMoveBay?: (direction: "left" | "right") => void;
   onMoveFeeder: (
     placedId: string,
     unitIndex: number,
@@ -4161,7 +4284,7 @@ function BayColumn({
       className={`relative shrink-0 cursor-pointer border bg-neutral-100 ${isOver ? "border-primary" : isSelected ? "border-2 border-primary" : "border-black/70"}`}
       style={{ width: Math.max(widthPx, 2), height: Math.max(heightPx, 2) }}
     >
-      {isSelected && !readOnly && (
+      {isSelected && !readOnly && onMoveBay && (
         <>
           <button
             onClick={(e) => {

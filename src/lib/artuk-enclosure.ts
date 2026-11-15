@@ -21,6 +21,7 @@ import {
   type BusbarPlan,
 } from "@/lib/busbar-plan";
 import { planBusbarSupports } from "@/lib/busbar-supports";
+import { faceOf, faceView } from "@/lib/faces";
 import {
   ARTUK_FIXED_MM,
   BUSBAR_CHAMBER_HEIGHT_MM,
@@ -549,16 +550,17 @@ export function artukEnclosureBom(input: EnclosureInput): {
     }
 
     // switchgear bay: frames, door, rear, hinges
-    add(`SK${H}02-1`, 1, `${name}: functional frames`);
-    add(
+    // double front: feeders on the rear face too -> a glass door there as
+    // well, in place of the rear door / cover
+    const rearFeeders = bay.placed.some((p) => faceOf(p) === "rear");
+    const glassDoor =
       inner === 1200
         ? H === "20"
           ? "PV2012/2-1"
           : `PV${H}81/2-1`
-        : `PV${H}${DOOR_W[inner] ?? "61"}-1`,
-      1,
-      `${name}: glass door`,
-    );
+        : `PV${H}${DOOR_W[inner] ?? "61"}-1`;
+    add(`SK${H}02-1`, 1, `${name}: functional frames`);
+    add(glassDoor, 1, `${name}: glass door`);
     const arcRear =
       input.internalArc && H === "20" && [600, 800].includes(inner)
         ? `RF20${REAR_W[inner]}-2H DML SPL`
@@ -567,17 +569,28 @@ export function artukEnclosureBom(input: EnclosureInput): {
       warnings.push(
         `${name}: no 2mm ABB rear panel listed for ${inner}mm — check with ABB.`,
       );
-    add(
-      arcRear ??
-        (inner === 1200 && H === "20" && !input.frontAccess
-          ? "RF2012-2H"
-          : `RF${H}${REAR_W[inner] ?? "60"}-1${input.frontAccess || inner === 1200 ? "" : "H"}`),
-      1,
-      `${name}: rear ${input.frontAccess ? "cover" : "door"}${arcRear ? " (2mm, internal arc)" : ""}`,
-    );
+    if (rearFeeders) {
+      add(glassDoor, 1, `${name}: rear glass door (double front)`);
+    } else {
+      add(
+        arcRear ??
+          (inner === 1200 && H === "20" && !input.frontAccess
+            ? "RF2012-2H"
+            : `RF${H}${REAR_W[inner] ?? "60"}-1${input.frontAccess || inner === 1200 ? "" : "H"}`),
+        1,
+        `${name}: rear ${input.frontAccess ? "cover" : "door"}${arcRear ? " (2mm, internal arc)" : ""}`,
+      );
+    }
     add("AD1090", 1, `${name}: internal door hinges`);
 
-    const compartments = computeCompartments(bay, input.panelHeightMm);
+    // each face's compartments (the rear only when it has feeders)
+    const compartments = (
+      rearFeeders ? (["front", "rear"] as const) : (["front"] as const)
+    ).flatMap((f) =>
+      computeCompartments(faceView([bay], f)[0], input.panelHeightMm).map(
+        (c) => ({ ...c, face: f }),
+      ),
+    );
     const feederOf = (placedId?: string) =>
       bay.placed.find((p) => p.id === placedId)?.feeder as Feeder | undefined;
     const acbs = compartments
@@ -661,6 +674,7 @@ export function artukEnclosureBom(input: EnclosureInput): {
 
     // compartments other than ACBs
     for (const c of compartments) {
+      const where = c.face === "rear" ? `${name} (rear)` : name;
       const f = feederOf(c.placedId);
       if (f?.device_type === "ACB") continue;
       const h = Math.round(c.heightMm / 100) * 100;
@@ -668,12 +682,12 @@ export function artukEnclosureBom(input: EnclosureInput): {
         add(
           MCCB_KIT[Math.min(600, Math.max(200, h))],
           1,
-          `${name}: MCCB mounting kit ${h}mm`,
+          `${where}: MCCB mounting kit ${h}mm`,
         );
         add(
           segKits[Math.min(800, Math.max(200, h))],
           1,
-          `${name}: MCCB segregation kit ${h}mm`,
+          `${where}: MCCB segregation kit ${h}mm`,
         );
         continue;
       }
@@ -686,25 +700,25 @@ export function artukEnclosureBom(input: EnclosureInput): {
         const bp = blindPanel(part, inner, !!device);
         if (!bp) {
           warnings.push(
-            `${name}: no ABB blind panel for ${part}x${inner}mm — add it by hand.`,
+            `${where}: no ABB blind panel for ${part}x${inner}mm — add it by hand.`,
           );
           continue;
         }
         add(
           bp.panel,
           1,
-          `${name}: ${device ? `${f!.name} front plate` : "blank cover"}`,
+          `${where}: ${device ? `${f!.name} front plate` : "blank cover"}`,
         );
         add(
           bp.plate,
           1,
-          `${name}: ${device ? `${f!.name} mounting plate` : "blank back plate"}`,
+          `${where}: ${device ? `${f!.name} mounting plate` : "blank back plate"}`,
         );
         if (device)
           add(
             segKits[Math.min(800, Math.max(200, part))],
             1,
-            `${name}: ${f!.name} segregation kit`,
+            `${where}: ${f!.name} segregation kit`,
           );
       }
     }

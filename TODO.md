@@ -33,11 +33,17 @@ Open items for the switchboard estimation app. Newest at the top.
       rest of the line-up (e.g. incomer 1237+437 with a rear busduct
       chamber, the rest at 1237). Today every bay takes the deepest bay's
       depth.
-- [ ] **Build the rear side of a double-front panel**: GA Builder only
-      builds the front face today. Let the user lay out the rear face's
-      feeders too (rear front view, its own compartments / feeders,
-      sharing the line-up's bays and vertical busbars), with the BOM,
-      costing and GA export covering both sides.
+- [x] **Build the rear side of a double-front panel** — first version
+      done: Front side / Rear side switch in GA Builder (double-front
+      ArTu-K boards), rear feeders + blank space per bay, rear drawn from
+      behind, busbars / supports / enclosure costed for both faces, rear
+      export. Still to do:
+  - [ ] Update GA (bay sizing) to consider rear-face feeders too.
+  - [ ] Bay-width checks that look at both faces (a bay only fits one
+        width; the wider face decides).
+  - [ ] Phone summary / PDFs: list front and rear feeders per bay.
+  - [ ] Double-front workbook parts lists (ICC, rear doors) instead of the
+        general rules.
 - [ ] Busbar routing: incomer fed by **top busduct straight down to the
       ACB** (busduct riser in the bay / rear chamber) with the ACB output
       up to the main busbar chamber (BBC).
