@@ -320,6 +320,9 @@ export type Vertical = {
   // null = none (e.g. outgoings taken out through a cable / busbar alley)
   cable_entry?: "Top" | "Bottom" | null;
   cable_exit?: "Top" | "Bottom" | null;
+  // ArTu-K bay config chosen in GA Builder: a config id, "<id>#2" for the
+  // second bay of a paired config, or "custom"; null = not chosen yet
+  bay_config?: string | null;
 };
 
 // a feeder placed inside a bay, stacked into a tier

@@ -30,19 +30,28 @@ export function ArtukBayConfigDialog({
   currentId = null,
   misfitsFor,
   onApply,
+  onCustom,
   onClose,
 }: {
   bayName?: string;
+  /** a config id, or "custom" */
   currentId?: string | null;
   misfitsFor?: (c: ArtukBayConfig) => string[];
   onApply?: (c: ArtukBayConfig) => void;
+  /** GA Builder: mark the bay as Custom (any width / depth) */
+  onCustom?: () => void;
   onClose: () => void;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const browse = !onApply;
   const [selectedId, setSelectedId] = useState(
-    currentId ?? ARTUK_BAY_CONFIGS[0].id,
+    currentId === "custom" && onCustom
+      ? "custom"
+      : ARTUK_BAY_CONFIGS.some((c) => c.id === currentId)
+        ? currentId!
+        : ARTUK_BAY_CONFIGS[0].id,
   );
+  const customSelected = selectedId === "custom" && !!onCustom;
   const sel =
     ARTUK_BAY_CONFIGS.find((c) => c.id === selectedId) ?? ARTUK_BAY_CONFIGS[0];
   const selMisfits = misfitsFor ? misfitsFor(sel) : [];
@@ -83,9 +92,37 @@ export function ArtukBayConfigDialog({
       <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
         {/* list */}
         <div className="max-h-[70vh] space-y-2 overflow-y-auto pr-1">
+          {onCustom && (
+            <button
+              type="button"
+              onClick={() => setSelectedId("custom")}
+              className={`flex w-full gap-2.5 rounded-lg border p-2 text-left transition-colors ${
+                customSelected
+                  ? "border-primary bg-primary/5 ring-1 ring-primary"
+                  : "border-surface-container-high hover:bg-surface-container-low"
+              }`}
+            >
+              <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded border border-dashed border-surface-container-high bg-surface-container-low text-center text-[11px] font-bold text-secondary">
+                Custom
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[12px] font-bold leading-tight text-on-surface">
+                  Custom bay
+                </span>
+                <span className="mt-0.5 block text-[11px] text-secondary">
+                  Not a standard ABB vertical — set any width and depth
+                </span>
+                {currentId === "custom" && (
+                  <span className="mt-0.5 flex">
+                    <Pill tone="blue">Current</Pill>
+                  </span>
+                )}
+              </span>
+            </button>
+          )}
           {ARTUK_BAY_CONFIGS.map((c) => {
             const misfits = misfitsFor ? misfitsFor(c) : [];
-            const active = c.id === sel.id;
+            const active = !customSelected && c.id === sel.id;
             return (
               <button
                 key={c.id}
@@ -137,147 +174,180 @@ export function ArtukBayConfigDialog({
         </div>
 
         {/* detail */}
-        <div className="min-w-0 space-y-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h4 className="text-[15px] font-bold text-on-surface">
-                {sel.label}
-              </h4>
-              <p className="text-[11px] text-secondary">
-                {sel.page > 0
-                  ? `ABB · ArTu-K Assembly Guideline & Standard Compartment Sizes (ELSP/ARTUK/ENGG/WEL KIT, R3) · page ${sel.page} of 17`
-                  : "ArTuK fabrication BOM workbook (no ABB guideline drawing)"}
-              </p>
-            </div>
-            <table className="border-collapse text-[12px]">
-              <tbody>
-                <SpecRow k="Panel Width" v={`${widthText(sel)}mm`} />
-                <SpecRow k="Panel Depth" v={`${depthText(sel)}mm`} />
-                <SpecRow k="Panel Height" v={`${ARTUK_HEIGHT_MM}mm`} />
-                <SpecRow k="Ingress Protection" v={`IP${sel.ip}`} />
-                <SpecRow k="Form of Separation" v={`Form ${sel.form}`} />
-                <SpecRow
-                  k="Overall Dimension"
-                  v={`${overallWidth(sel)}×${sel.depthMm}×${ARTUK_HEIGHT_MM} mm`}
-                />
-                <SpecRow
-                  k={sel.kind === "acb" ? "ACB Type" : "Breaker Type"}
-                  v={
-                    sel.kind === "acb"
-                      ? `Emax 2_${sel.frame}`
-                      : sel.functions.length === 0
-                        ? "None (riser)"
-                        : "MCCB"
-                  }
-                />
-                <SpecRow
-                  k="Access"
-                  v={sel.access === "front" ? "Front access" : "Rear access"}
-                />
-              </tbody>
-            </table>
-          </div>
-
-          {sel.note && (
-            <p className="text-[12px] text-on-surface-variant">{sel.note}</p>
-          )}
-          {sel.partner && (
-            <p className="text-[12px] text-on-surface-variant">
-              Two bays: this bay becomes {sel.widthMm}mm and a{" "}
-              {sel.partner.widthMm}mm{" "}
-              {sel.partner.bayType === "cable_alley" ? "cable chamber" : "bay"}{" "}
-              (&quot;{sel.partner.name}&quot;) is added right next to it.
+        {customSelected ? (
+          <div className="min-w-0 space-y-3">
+            <h4 className="text-[15px] font-bold text-on-surface">
+              Custom bay
+            </h4>
+            <p className="text-[13px] text-on-surface-variant">
+              Use this when the bay isn&apos;t one of ABB&apos;s standard ArTu-K
+              verticals. The bay keeps its current size; set its width and depth
+              yourself in <b>Bay Details</b> (right-hand panel). The front view
+              shows &quot;Custom&quot; with the size in the bay&apos;s left
+              strip.
             </p>
-          )}
-
-          {selMisfits.length > 0 && (
-            <div className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-3 py-2 text-[12px] text-amber-900">
-              <b>May not suit this bay</b> — you can still apply it:
-              <ul className="mt-0.5 list-disc pl-5">
-                {selMisfits.map((m) => (
-                  <li key={m}>{m}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-container-low px-3 py-2">
-            {sel.page > 0 ? (
-              <a
-                href={sheetImage(sel)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[12px] text-primary hover:underline"
-              >
-                Open the full ABB sheet ↗
-              </a>
-            ) : (
-              <span />
-            )}
-            <div className="flex gap-2">
+            <p className="text-[12px] text-secondary">
+              The enclosure parts for a custom bay come from the general ABB
+              rules, not a workbook parts list — check them in BOM Builder.
+            </p>
+            <div className="flex justify-end gap-2 rounded-lg bg-surface-container-low px-3 py-2">
               <button onClick={onClose} className="btn btn-outline btn-sm">
-                {browse ? "Close" : "Cancel"}
+                Cancel
               </button>
-              {onApply && (
-                <button
-                  onClick={() => onApply(sel)}
-                  className="btn btn-primary btn-sm"
+              <button
+                onClick={() => onCustom?.()}
+                className="btn btn-primary btn-sm"
+              >
+                {currentId === "custom" ? "Keep as custom" : "Set as custom"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="min-w-0 space-y-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h4 className="text-[15px] font-bold text-on-surface">
+                  {sel.label}
+                </h4>
+                <p className="text-[11px] text-secondary">
+                  {sel.page > 0
+                    ? `ABB · ArTu-K Assembly Guideline & Standard Compartment Sizes (ELSP/ARTUK/ENGG/WEL KIT, R3) · page ${sel.page} of 17`
+                    : "ArTuK fabrication BOM workbook (no ABB guideline drawing)"}
+                </p>
+              </div>
+              <table className="border-collapse text-[12px]">
+                <tbody>
+                  <SpecRow k="Panel Width" v={`${widthText(sel)}mm`} />
+                  <SpecRow k="Panel Depth" v={`${depthText(sel)}mm`} />
+                  <SpecRow k="Panel Height" v={`${ARTUK_HEIGHT_MM}mm`} />
+                  <SpecRow k="Ingress Protection" v={`IP${sel.ip}`} />
+                  <SpecRow k="Form of Separation" v={`Form ${sel.form}`} />
+                  <SpecRow
+                    k="Overall Dimension"
+                    v={`${overallWidth(sel)}×${sel.depthMm}×${ARTUK_HEIGHT_MM} mm`}
+                  />
+                  <SpecRow
+                    k={sel.kind === "acb" ? "ACB Type" : "Breaker Type"}
+                    v={
+                      sel.kind === "acb"
+                        ? `Emax 2_${sel.frame}`
+                        : sel.functions.length === 0
+                          ? "None (riser)"
+                          : "MCCB"
+                    }
+                  />
+                  <SpecRow
+                    k="Access"
+                    v={sel.access === "front" ? "Front access" : "Rear access"}
+                  />
+                </tbody>
+              </table>
+            </div>
+
+            {sel.note && (
+              <p className="text-[12px] text-on-surface-variant">{sel.note}</p>
+            )}
+            {sel.partner && (
+              <p className="text-[12px] text-on-surface-variant">
+                Two bays: this bay becomes {sel.widthMm}mm and a{" "}
+                {sel.partner.widthMm}mm{" "}
+                {sel.partner.bayType === "cable_alley"
+                  ? "cable chamber"
+                  : "bay"}{" "}
+                (&quot;{sel.partner.name}&quot;) is added right next to it.
+              </p>
+            )}
+
+            {selMisfits.length > 0 && (
+              <div className="rounded-lg border border-amber-300/70 bg-amber-50/70 px-3 py-2 text-[12px] text-amber-900">
+                <b>May not suit this bay</b> — you can still apply it:
+                <ul className="mt-0.5 list-disc pl-5">
+                  {selMisfits.map((m) => (
+                    <li key={m}>{m}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-container-low px-3 py-2">
+              {sel.page > 0 ? (
+                <a
+                  href={sheetImage(sel)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[12px] text-primary hover:underline"
                 >
-                  {sel.id === currentId
-                    ? "Re-apply this config"
-                    : "Apply to this bay"}
+                  Open the full ABB sheet ↗
+                </a>
+              ) : (
+                <span />
+              )}
+              <div className="flex gap-2">
+                <button onClick={onClose} className="btn btn-outline btn-sm">
+                  {browse ? "Close" : "Cancel"}
+                </button>
+                {onApply && (
+                  <button
+                    onClick={() => onApply(sel)}
+                    className="btn btn-primary btn-sm"
+                  >
+                    {sel.id === currentId
+                      ? "Re-apply this config"
+                      : "Apply to this bay"}
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPartsTab("parts")}
+                className={`btn btn-sm ${partsTab === "parts" ? "btn-primary" : "btn-outline"}`}
+              >
+                Parts list
+              </button>
+              {sel.page > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPartsTab("drawing")}
+                  className={`btn btn-sm ${partsTab === "drawing" ? "btn-primary" : "btn-outline"}`}
+                >
+                  Drawing
                 </button>
               )}
             </div>
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setPartsTab("parts")}
-              className={`btn btn-sm ${partsTab === "parts" ? "btn-primary" : "btn-outline"}`}
-            >
-              Parts list
-            </button>
-            {sel.page > 0 && (
-              <button
-                type="button"
-                onClick={() => setPartsTab("drawing")}
-                className={`btn btn-sm ${partsTab === "drawing" ? "btn-primary" : "btn-outline"}`}
-              >
-                Drawing
-              </button>
+            {partsTab === "drawing" && sel.page > 0 ? (
+              <div className="rounded-lg border border-surface-container-high bg-white p-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={bayImage(sel)}
+                  alt={`${sel.label} — front and side view`}
+                  className="mx-auto max-h-[42vh] w-auto object-contain"
+                />
+              </div>
+            ) : (
+              <PartsList
+                keys={sel.workbookKeys ?? []}
+                templates={templates}
+                prices={prices}
+                loadError={loadError}
+                canEdit={browse && isAdmin}
+                supabase={supabase}
+                onChanged={reload}
+              />
+            )}
+
+            {!browse && (
+              <p className="text-[11px] text-secondary">
+                Applying sets the bay&apos;s width and depth (the whole panel
+                takes the deepest bay&apos;s depth), adds a partner bay where
+                the config has one, and redraws the busbars, busbar supports and
+                enclosure parts from the new layout. Feeders stay where they
+                are.
+              </p>
             )}
           </div>
-          {partsTab === "drawing" && sel.page > 0 ? (
-            <div className="rounded-lg border border-surface-container-high bg-white p-2">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={bayImage(sel)}
-                alt={`${sel.label} — front and side view`}
-                className="mx-auto max-h-[42vh] w-auto object-contain"
-              />
-            </div>
-          ) : (
-            <PartsList
-              keys={sel.workbookKeys ?? []}
-              templates={templates}
-              prices={prices}
-              loadError={loadError}
-              canEdit={browse && isAdmin}
-              supabase={supabase}
-              onChanged={reload}
-            />
-          )}
-
-          {!browse && (
-            <p className="text-[11px] text-secondary">
-              Applying sets the bay&apos;s width and depth (the whole panel
-              takes the deepest bay&apos;s depth), adds a partner bay where the
-              config has one, and redraws the busbars, busbar supports and
-              enclosure parts from the new layout. Feeders stay where they are.
-            </p>
-          )}
-        </div>
+        )}
       </div>
     </Modal>
   );

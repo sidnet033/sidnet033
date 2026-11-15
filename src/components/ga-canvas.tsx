@@ -2,6 +2,7 @@
 
 import { ArtukBayConfigDialog } from "@/components/artuk-bay-config-dialog";
 import {
+  ARTUK_BAY_CONFIGS,
   configMisfits,
   currentConfigOf,
   frontAccessPairLayouts,
@@ -1169,16 +1170,50 @@ export function GaCanvas({
   // the ArTu-K bay config a bay matches (by size / ACB frame / partner bay),
   // written vertically in the bay's left 60mm strip; the second bay of a
   // paired config shows the pair's name
-  function bayConfigLabel(i: number): string | null {
-    const strip = (l: string) => l.replace(/^ArTu-K\s+/i, "");
+  // every ArTu-K bay except cable / busbar alleys needs a bay config (a
+  // standard one or Custom) before the GA can be saved
+  const needsBayConfig = (v: VerticalWithFeeders) =>
+    isArtuk && v.bay_type !== "unassigned" && !isAlley(v.bay_type);
+  // the bay's chosen config; for bays saved before configs were recorded,
+  // the standard config its size matches
+  function effectiveBayConfig(i: number): string | null {
     const bay = bays[i];
-    if (!bay || bay.bay_type === "unassigned") return null;
+    if (!bay || !needsBayConfig(bay)) return null;
+    if (bay.bay_config) return bay.bay_config;
     const own = currentConfigOf(bay, bays[i + 1] ?? null);
-    if (own) return strip(own.label);
+    if (own) return own.id;
     const prev = bays[i - 1];
     const pair = prev ? currentConfigOf(prev, bay) : null;
-    if (pair?.partner) return `${strip(pair.label)} (2nd bay)`;
+    if (pair?.partner) return `${pair.id}#2`;
     return null;
+  }
+  function bayConfigLabel(i: number): string | null {
+    const cfg = effectiveBayConfig(i);
+    if (!cfg) return null;
+    const bay = bays[i];
+    if (cfg === "custom")
+      return `Custom ${bay.width_mm ?? "—"} × ${bay.depth_mm ?? "—"}`;
+    const [id, second] = cfg.split("#");
+    const c = ARTUK_BAY_CONFIGS.find((x) => x.id === id);
+    if (!c) return null;
+    const label = c.label.replace(/^ArTu-K\s+/i, "");
+    return second ? `${label} (2nd bay)` : label;
+  }
+  // what Save writes: chosen configs, plus the matched one for older bays
+  const verticalsForSave = verticals.map((v) => {
+    if (v.bay_config || !needsBayConfig(v)) return v;
+    const i = bays.findIndex((b) => b.id === v.id);
+    const cfg = i >= 0 ? effectiveBayConfig(i) : null;
+    return cfg ? { ...v, bay_config: cfg } : v;
+  });
+  function setCustomBayConfig(bayId: string) {
+    setVerticals((vs) =>
+      vs.map((v) => (v.id === bayId ? { ...v, bay_config: "custom" } : v)),
+    );
+    setConfigBayId(null);
+    setSelectedBayId(bayId);
+    setSideBayId(bayId);
+    setRightSidebarCollapsed(false);
   }
 
   // right-click menu on a bay: set its cable entry / exit
@@ -1220,7 +1255,23 @@ export function GaCanvas({
           field === "width_mm" && num != null && isAlley(v.bay_type)
             ? Math.max(num, ALLEY_MIN_WIDTH_MM)
             : num;
-        return { ...v, [field]: val };
+        // a width typed off the chosen standard config makes the bay Custom
+        const std =
+          v.bay_config && v.bay_config !== "custom"
+            ? ARTUK_BAY_CONFIGS.find(
+                (c) => c.id === v.bay_config!.split("#")[0],
+              )
+            : null;
+        const stdWidth = std
+          ? v.bay_config!.includes("#")
+            ? std.partner?.widthMm
+            : std.widthMm
+          : null;
+        const bay_config =
+          field === "width_mm" && stdWidth != null && val !== stdWidth
+            ? "custom"
+            : v.bay_config;
+        return { ...v, [field]: val, bay_config };
       }),
     );
   }
@@ -1382,8 +1433,12 @@ export function GaCanvas({
     const bay = bays[idx];
     const right = bays[idx + 1] ?? null;
     const current = currentConfigOf(bay, right);
+    const partnerConfig =
+      c.partner && !isAlley(c.partner.bayType) ? `${c.id}#2` : null;
     let next = verticals.map((v) =>
-      v.id === bayId ? { ...v, width_mm: c.widthMm, depth_mm: c.depthMm } : v,
+      v.id === bayId
+        ? { ...v, width_mm: c.widthMm, depth_mm: c.depthMm, bay_config: c.id }
+        : v,
     );
     const rightIsOldPartner = !!(
       current?.partner &&
@@ -1403,20 +1458,24 @@ export function GaCanvas({
                 bay_type: c.partner!.bayType,
                 name: c.partner!.name,
                 depth_mm: c.depthMm,
+                bay_config: partnerConfig,
               }
             : v,
         );
       } else {
         // open a slot right after the bay and insert the partner there
         const order = bays.map((b) => b.id);
-        const partner = makeVertical(
-          sb.id,
-          c.partner.name,
-          c.partner.bayType,
-          c.partner.widthMm,
-          c.depthMm,
-          0,
-        );
+        const partner = {
+          ...makeVertical(
+            sb.id,
+            c.partner.name,
+            c.partner.bayType,
+            c.partner.widthMm,
+            c.depthMm,
+            0,
+          ),
+          bay_config: partnerConfig,
+        };
         order.splice(idx + 1, 0, partner.id);
         const pos = new Map(order.map((id, i) => [id, i]));
         next = [...next, partner].map((v) =>
@@ -1753,6 +1812,8 @@ export function GaCanvas({
   }
 
   async function handleSave() {
+    // bays without a chosen config get the standard one their size matches
+    const verticals = verticalsForSave;
     // every bay is saved at the panel's one depth (its deepest bay's)
     const boardDepth = panelDepthOf(verticals);
     const depthToSave = (v: VerticalWithFeeders) =>
@@ -1760,6 +1821,15 @@ export function GaCanvas({
         ? v.depth_mm
         : boardDepth;
     if (!sb || readOnly) return;
+    const noConfig = bays.filter(
+      (v, i) => needsBayConfig(v) && !effectiveBayConfig(i),
+    );
+    if (noConfig.length) {
+      alert(
+        `Choose a bay config for ${noConfig.map((v) => `"${v.name}"`).join(", ")} before saving — right-click the bay → Change bay config… (pick "Custom" for a non-standard bay). Cable and busbar alleys don't need one.`,
+      );
+      return;
+    }
     if (hasBusduct && busductTotal === 0) {
       alert(
         "Busduct entries is ticked for this panel — select a bay and add at least one busduct top entry before saving (or untick Busduct entries).",
@@ -1788,6 +1858,7 @@ export function GaCanvas({
             busduct_entries: v.busduct_entries ?? 0,
             cable_entry: v.cable_entry ?? null,
             cable_exit: v.cable_exit ?? null,
+            bay_config: v.bay_config ?? null,
           })
           .select("id")
           .single();
@@ -1815,6 +1886,8 @@ export function GaCanvas({
           fieldPatch.cable_entry = v.cable_entry ?? null;
         if ((v.cable_exit ?? null) !== (prev.cable_exit ?? null))
           fieldPatch.cable_exit = v.cable_exit ?? null;
+        if ((v.bay_config ?? null) !== (prev.bay_config ?? null))
+          fieldPatch.bay_config = v.bay_config ?? null;
         if (Object.keys(fieldPatch).length === 0) continue;
         const { error } = await supabase
           .from("verticals")
@@ -2269,11 +2342,10 @@ export function GaCanvas({
             return (
               <ArtukBayConfigDialog
                 bayName={bay.name}
-                currentId={
-                  currentConfigOf(bay, bays[idx + 1] ?? null)?.id ?? null
-                }
+                currentId={effectiveBayConfig(idx)?.split("#")[0] ?? null}
                 misfitsFor={(c) => configMisfits(c, bay, cableAccess)}
                 onApply={(c) => applyBayConfig(bay.id, c)}
+                onCustom={() => setCustomBayConfig(bay.id)}
                 onClose={() => setConfigBayId(null)}
               />
             );
@@ -2917,6 +2989,10 @@ export function GaCanvas({
                                     bayNumber={bayNumbers.get(v.id) ?? null}
                                     configLabel={
                                       isArtuk ? bayConfigLabel(i) : null
+                                    }
+                                    configMissing={
+                                      needsBayConfig(v) &&
+                                      !effectiveBayConfig(i)
                                     }
                                     readOnly={readOnly}
                                     pxPerMm={pxPerMm}
@@ -3966,6 +4042,7 @@ function BayColumn({
   selectedPlacedId,
   selectedUnitIndex,
   configLabel,
+  configMissing = false,
   onContextMenu,
   onSelectBay,
   onSelectFeeder,
@@ -3990,6 +4067,8 @@ function BayColumn({
   selectedUnitIndex: number;
   /** matched ArTu-K bay config, shown vertically in the left 60mm strip */
   configLabel?: string | null;
+  /** an ArTu-K bay with no config chosen -- shown in red, blocks saving */
+  configMissing?: boolean;
   /** right-click on the bay (cable entry / exit menu); none when read-only */
   onContextMenu?: (x: number, y: number) => void;
   onSelectBay: () => void;
@@ -4195,14 +4274,18 @@ function BayColumn({
           );
         })}
       </div>
-      {configLabel && gapPx >= 5 && (
+      {(configLabel || configMissing) && gapPx >= 5 && (
         <div
-          title={`Bay config: ${configLabel}`}
+          title={
+            configLabel
+              ? `Bay config: ${configLabel}`
+              : "No bay config — right-click the bay → Change bay config… (needed to save)"
+          }
           className="pointer-events-auto absolute bottom-0 left-0 top-0 z-[5] flex items-center justify-center overflow-hidden"
           style={{ width: gapPx }}
         >
           <span
-            className="whitespace-nowrap font-semibold uppercase tracking-wide text-primary/80"
+            className={`whitespace-nowrap font-semibold uppercase tracking-wide ${configLabel ? "text-primary/80" : "text-error"}`}
             style={{
               writingMode: "vertical-rl",
               transform: "rotate(180deg)",
@@ -4212,7 +4295,7 @@ function BayColumn({
               textOverflow: "ellipsis",
             }}
           >
-            {configLabel}
+            {configLabel ?? "Select bay config"}
           </span>
         </div>
       )}
