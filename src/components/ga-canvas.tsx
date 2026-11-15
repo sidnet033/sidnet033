@@ -626,6 +626,28 @@ export function GaCanvas({
   // off) clears it -- and with no bay, the side view shows no busbars.
   const [sideBayId, setSideBayId] = useState<string | null>(null);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
+  // "Switchboard Master Parameters" strip: collapsible for more canvas
+  // space; the choice is remembered on this browser
+  const [paramsCollapsed, setParamsCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("ga.paramsCollapsed") === "1")
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setParamsCollapsed(true);
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
+  function toggleParams() {
+    setParamsCollapsed((c) => {
+      try {
+        localStorage.setItem("ga.paramsCollapsed", c ? "0" : "1");
+      } catch {
+        /* storage unavailable */
+      }
+      return !c;
+    });
+  }
   const [sizingLogicOpen, setSizingLogicOpen] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const fullscreenRef = useRef<HTMLDivElement>(null);
@@ -2048,6 +2070,18 @@ export function GaCanvas({
   // while typing in a field).
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      // Cmd+D (Mac) / Ctrl+D (Windows): open / close the right-hand panel
+      // (instead of the browser's bookmark shortcut), even while typing
+      if (
+        e.key.toLowerCase() === "d" &&
+        (e.metaKey || e.ctrlKey) &&
+        !e.altKey &&
+        !e.shiftKey
+      ) {
+        e.preventDefault();
+        setRightSidebarCollapsed((c) => !c);
+        return;
+      }
       const tag = (document.activeElement?.tagName ?? "").toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select") return;
       if (
@@ -2196,140 +2230,179 @@ export function GaCanvas({
           </div>
         )}
 
-        <div className="flex flex-wrap items-end gap-4 border-b border-surface-container-high bg-surface-container-low/60 px-4 py-2.5 text-xs">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-secondary">
-            Switchboard Master Parameters
-          </p>
-          <Field label="Plinth Height">
-            <select
-              disabled={readOnly}
-              value={plinthHeight}
-              onChange={(e) => setPlinthHeight(Number(e.target.value))}
-              className="rounded border border-surface-container-high px-1.5 py-1"
+        {paramsCollapsed ? (
+          <button
+            type="button"
+            onClick={toggleParams}
+            title="Show the switchboard master parameters"
+            className="flex w-full items-center gap-2 border-b border-surface-container-high bg-surface-container-low/60 px-4 py-1 text-left text-xs hover:bg-surface-container-low"
+          >
+            <Icon name="expand_more" size={16} className="text-secondary" />
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-secondary">
+              Switchboard Master Parameters
+            </span>
+            <span className="truncate text-on-surface-variant">
+              {[
+                sb.std,
+                sb.amps ? `${sb.amps}A` : null,
+                sb.ka ? `${sb.ka}kA` : null,
+                sb.busbar,
+                sb.ip_rating ? `IP${sb.ip_rating}` : null,
+                sb.form_of_separation,
+                cableAccess ? `${cableAccess} access` : null,
+                isArtuk
+                  ? arrangement === "double_front"
+                    ? "Double front"
+                    : "Single front"
+                  : null,
+                isArtuk && internalArc ? "Internal arc" : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          </button>
+        ) : (
+          <div className="flex flex-wrap items-end gap-4 border-b border-surface-container-high bg-surface-container-low/60 px-4 py-2.5 text-xs">
+            <button
+              type="button"
+              onClick={toggleParams}
+              title="Hide the switchboard master parameters (more room for the drawing)"
+              className="flex items-center gap-1 self-center text-[11px] font-semibold uppercase tracking-wide text-secondary hover:text-on-surface"
             >
-              {PLINTH_OPTIONS.map((v) => (
-                <option key={v} value={v}>
-                  {v}mm
-                </option>
-              ))}
-            </select>
-          </Field>
-          {isArtuk ? (
-            <>
-              <Field label="ArTuK Height (overall)">
-                <select
-                  disabled={readOnly}
-                  value={artukHeight}
-                  onChange={(e) => setArtukHeight(Number(e.target.value))}
-                  className="rounded border border-surface-container-high px-1.5 py-1"
-                >
-                  {ARTUK_HEIGHTS_MM.map((v) => (
-                    <option key={v} value={v}>
-                      {v + plinthHeight}mm ({v - ARTUK_STRIP_MM} uprights, {v}mm
-                      without base)
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <ReadOnlyField label="Feeders" value={`${panelHeight}mm`} />
-              <ReadOnlyField
-                label="From floor"
-                value={`${artukHeight + plinthHeight}mm`}
-              />
-            </>
-          ) : (
-            <Field label="Panel Height">
+              <Icon name="expand_less" size={16} />
+              Switchboard Master Parameters
+            </button>
+            <Field label="Plinth Height">
               <select
                 disabled={readOnly}
-                value={panelHeightSetting}
-                onChange={(e) => setPanelHeight(Number(e.target.value))}
+                value={plinthHeight}
+                onChange={(e) => setPlinthHeight(Number(e.target.value))}
                 className="rounded border border-surface-container-high px-1.5 py-1"
               >
-                {PANEL_HEIGHT_OPTIONS.map((v) => (
+                {PLINTH_OPTIONS.map((v) => (
                   <option key={v} value={v}>
                     {v}mm
                   </option>
                 ))}
               </select>
             </Field>
-          )}
-          <ReadOnlyField
-            label="Form of Separation"
-            value={sb.form_of_separation}
-          />
-          <ReadOnlyField
-            label="Amps"
-            value={sb.amps != null ? `${sb.amps}A` : null}
-          />
-          <ReadOnlyField
-            label="kA"
-            value={sb.ka != null ? `${sb.ka}kA` : null}
-          />
-          <Field label="Cable Access">
-            <select
-              disabled={readOnly}
-              value={cableAccess ?? ""}
-              onChange={(e) =>
-                setCableAccess(
-                  (e.target.value || null) as Switchboard["cable_access"],
-                )
-              }
-              className="rounded border border-surface-container-high px-1.5 py-1"
-            >
-              <option value="">—</option>
-              <option value="Front">Front</option>
-              <option value="Rear">Rear</option>
-            </select>
-          </Field>
-          {isArtuk && (
-            <Field label="Arrangement">
+            {isArtuk ? (
+              <>
+                <Field label="ArTuK Height (overall)">
+                  <select
+                    disabled={readOnly}
+                    value={artukHeight}
+                    onChange={(e) => setArtukHeight(Number(e.target.value))}
+                    className="rounded border border-surface-container-high px-1.5 py-1"
+                  >
+                    {ARTUK_HEIGHTS_MM.map((v) => (
+                      <option key={v} value={v}>
+                        {v + plinthHeight}mm ({v - ARTUK_STRIP_MM} uprights, {v}
+                        mm without base)
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <ReadOnlyField label="Feeders" value={`${panelHeight}mm`} />
+                <ReadOnlyField
+                  label="From floor"
+                  value={`${artukHeight + plinthHeight}mm`}
+                />
+              </>
+            ) : (
+              <Field label="Panel Height">
+                <select
+                  disabled={readOnly}
+                  value={panelHeightSetting}
+                  onChange={(e) => setPanelHeight(Number(e.target.value))}
+                  className="rounded border border-surface-container-high px-1.5 py-1"
+                >
+                  {PANEL_HEIGHT_OPTIONS.map((v) => (
+                    <option key={v} value={v}>
+                      {v}mm
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+            <ReadOnlyField
+              label="Form of Separation"
+              value={sb.form_of_separation}
+            />
+            <ReadOnlyField
+              label="Amps"
+              value={sb.amps != null ? `${sb.amps}A` : null}
+            />
+            <ReadOnlyField
+              label="kA"
+              value={sb.ka != null ? `${sb.ka}kA` : null}
+            />
+            <Field label="Cable Access">
               <select
                 disabled={readOnly}
-                value={arrangement}
+                value={cableAccess ?? ""}
                 onChange={(e) =>
-                  setArrangement(e.target.value as Switchboard["arrangement"])
+                  setCableAccess(
+                    (e.target.value || null) as Switchboard["cable_access"],
+                  )
                 }
                 className="rounded border border-surface-container-high px-1.5 py-1"
               >
-                <option value="single_front">Single front</option>
-                <option value="double_front">Double front</option>
+                <option value="">—</option>
+                <option value="Front">Front</option>
+                <option value="Rear">Rear</option>
               </select>
             </Field>
-          )}
-          <Field label="Busduct Entries">
-            <label className="flex items-center gap-1.5 py-1 text-xs">
-              <input
-                type="checkbox"
-                disabled={readOnly}
-                checked={hasBusduct}
-                onChange={(e) => setHasBusduct(e.target.checked)}
-              />
-              Top busduct entry
-              {hasBusduct && (
-                <span
-                  className={`ml-1 rounded px-1 text-[10px] font-semibold ${busductTotal ? "bg-violet-100 text-violet-700" : "bg-red-100 text-red-700"}`}
+            {isArtuk && (
+              <Field label="Arrangement">
+                <select
+                  disabled={readOnly}
+                  value={arrangement}
+                  onChange={(e) =>
+                    setArrangement(e.target.value as Switchboard["arrangement"])
+                  }
+                  className="rounded border border-surface-container-high px-1.5 py-1"
                 >
-                  {busductTotal ? `${busductTotal} in GA` : "add ≥1 in a bay"}
-                </span>
-              )}
-            </label>
-          </Field>
-          {isArtuk && (
-            <Field label="Internal Arc">
+                  <option value="single_front">Single front</option>
+                  <option value="double_front">Double front</option>
+                </select>
+              </Field>
+            )}
+            <Field label="Busduct Entries">
               <label className="flex items-center gap-1.5 py-1 text-xs">
                 <input
                   type="checkbox"
                   disabled={readOnly}
-                  checked={internalArc}
-                  onChange={(e) => setInternalArc(e.target.checked)}
+                  checked={hasBusduct}
+                  onChange={(e) => setHasBusduct(e.target.checked)}
                 />
-                ABB internal arc design
+                Top busduct entry
+                {hasBusduct && (
+                  <span
+                    className={`ml-1 rounded px-1 text-[10px] font-semibold ${busductTotal ? "bg-violet-100 text-violet-700" : "bg-red-100 text-red-700"}`}
+                  >
+                    {busductTotal ? `${busductTotal} in GA` : "add ≥1 in a bay"}
+                  </span>
+                )}
               </label>
             </Field>
-          )}
-          <ReadOnlyField label="Cable Entry" value={sb.cable_entry} />
-          <ReadOnlyField label="Cable Exit" value={sb.cable_exit} />
-        </div>
+            {isArtuk && (
+              <Field label="Internal Arc">
+                <label className="flex items-center gap-1.5 py-1 text-xs">
+                  <input
+                    type="checkbox"
+                    disabled={readOnly}
+                    checked={internalArc}
+                    onChange={(e) => setInternalArc(e.target.checked)}
+                  />
+                  ABB internal arc design
+                </label>
+              </Field>
+            )}
+            <ReadOnlyField label="Cable Entry" value={sb.cable_entry} />
+            <ReadOnlyField label="Cable Exit" value={sb.cable_exit} />
+          </div>
+        )}
 
         <div
           ref={fullscreenRef}
@@ -3160,8 +3233,8 @@ export function GaCanvas({
               onClick={() => setRightSidebarCollapsed(!rightSidebarCollapsed)}
               title={
                 rightSidebarCollapsed
-                  ? "Expand bay details"
-                  : "Collapse bay details"
+                  ? "Expand bay details (Ctrl+D / ⌘D)"
+                  : "Collapse bay details (Ctrl+D / ⌘D)"
               }
               className={`mb-2 flex items-center justify-center rounded p-1 text-secondary hover:bg-surface-container-low ${
                 rightSidebarCollapsed ? "w-full" : ""

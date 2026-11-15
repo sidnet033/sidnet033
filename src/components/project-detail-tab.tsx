@@ -81,6 +81,7 @@ const EDITABLE_SWITCHBOARD_FIELDS = [
   "cable_exit",
   "busbar",
   "neutral_size_pct",
+  "arrangement",
   "qty",
 ] as const satisfies readonly (keyof Switchboard)[];
 
@@ -1748,6 +1749,23 @@ export function ProjectDetailTab({
                           )}
                         </div>
                       </>,
+                      /* 19: Arrangement -- single / double front */ <>
+                        <select
+                          disabled={rowDisabled}
+                          value={sb.arrangement ?? "single_front"}
+                          onChange={(e) =>
+                            updateSwitchboardField(sb.id, {
+                              arrangement: e.target
+                                .value as Switchboard["arrangement"],
+                            })
+                          }
+                          title="Single front, or double front (back-to-back feeders). On ArTuK boards this sets the MCC bay depths and the double-front parts lists in GA Builder."
+                          className="w-36 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 text-center [text-align-last:center] disabled:border-transparent disabled:bg-transparent"
+                        >
+                          <option value="single_front">Single front</option>
+                          <option value="double_front">Double front</option>
+                        </select>
+                      </>,
                     ],
                   };
                 });
@@ -1765,6 +1783,11 @@ export function ProjectDetailTab({
                 }[] = [
                   { label: "Type", idx: 2 },
                   { label: "Std", idx: 3 },
+                  {
+                    label: "Front",
+                    idx: 19,
+                    title: "Single front or double front (back-to-back)",
+                  },
                   { label: "Form of Separation", idx: 4 },
                   { label: "Amps", idx: 5 },
                   { label: "IP", idx: 6 },
