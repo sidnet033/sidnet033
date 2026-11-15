@@ -1,7 +1,7 @@
 import { parseIp } from "@/lib/artuk-busbar-chart";
 import type { BayType, Feeder, PlacedFeeder, Switchboard, Vertical } from "@/types/database";
 import { ACB_SIZES, MCCB_SIZES, OUTGOING_MCC_BAY, lookupAcbBaySpec, lookupFeederBoxHeight, suggestAcbFrame } from "@/lib/artuk-sizing";
-import { bayFunctionOf, breakerFrameOf, overrideKey, planBusbars, type BusbarMaterial, type BusbarOverride, type BusbarPlan, type BusbarSegment } from "@/lib/busbar-plan";
+import { bayFunctionOf, breakerFrameOf, overrideKey, planBusbars, type BusbarMaterial, type BusbarOverride, type BusbarPlan } from "@/lib/busbar-plan";
 
 // GA layout rules shared by GA Builder (drawing, Update GA, busbar layer)
 // and Project Detail's project-wide checks, so both always reach the same
@@ -328,23 +328,19 @@ type PlanArgs = {
 };
 
 // The busbar plan for a switchboard. A double-front board with feeders on
-// the rear face is planned face by face and merged: one main busbar, one
-// vertical busbar (dropper) per bay -- the longer of the two faces' -- and
-// each face's own links to its feeders.
+// the rear face is planned face by face and merged: one shared main busbar;
+// each face has its OWN vertical busbars (droppers), in line with that
+// face's switchgear, and its own links to its feeders.
 export function planForSwitchboard(args: PlanArgs): BusbarPlan {
   if (!hasRearFeeders(args.verticals)) return planOneFace(args);
   const front = planOneFace({ ...args, verticals: faceView(args.verticals, "front") });
   const rear = planOneFace({ ...args, verticals: faceView(args.verticals, "rear") });
-  const span = (s: BusbarSegment) => {
-    const ys = s.path.map((p) => p.y);
-    return ys.length ? Math.max(...ys) - Math.min(...ys) : 0;
-  };
   const segments = [...front.segments];
   for (const seg of rear.segments) {
     if (seg.kind === "main") continue;
-    const i = segments.findIndex((s) => s.key === seg.key);
-    if (i === -1) segments.push(seg);
-    else if (seg.kind === "dropper" && span(seg) > span(segments[i])) segments[i] = seg;
+    // a rear vertical busbar is a bar of its own -- keep its key distinct
+    // from the front one in the same bay
+    segments.push(seg.kind === "dropper" ? { ...seg, key: `rear|${seg.key}`, title: `${seg.title} (rear)` } : seg);
   }
   return {
     ...front,

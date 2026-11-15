@@ -50,12 +50,11 @@ Open items for the switchboard estimation app. Newest at the top.
 - [ ] Busbar routing: a feeder bay sitting in one bus section but **fed
       from the other section** ("busbar supply from Bus-B" on 4F, Bus-A
       side) — needs its own horizontal run.
-- [ ] Busbar routing: vertical busbar in an **internal busbar chamber at
-      the side of an MCC bay**, shared by the front and rear faces of a
-      double-front panel.
-
-## Other open items
-
+- [x] Double front: each face has its own vertical busbars, in line
+      with its own switchgear (not shared); MCCB / DOL verticals are 200mm
+      wider (720 -> 920) to carry them.
+  - [ ] A busbar size override on a bay's vertical busbar currently
+        applies to both faces' vertical busbars in that bay.
 - [ ] Busduct **exit** (only busduct entries exist today).
 - [ ] Picking a double-front bay config could set the switchboard's
       Arrangement to Double front automatically.
