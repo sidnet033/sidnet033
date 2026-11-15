@@ -1166,6 +1166,21 @@ export function GaCanvas({
     );
   }
 
+  // the ArTu-K bay config a bay matches (by size / ACB frame / partner bay),
+  // written vertically in the bay's left 60mm strip; the second bay of a
+  // paired config shows the pair's name
+  function bayConfigLabel(i: number): string | null {
+    const strip = (l: string) => l.replace(/^ArTu-K\s+/i, "");
+    const bay = bays[i];
+    if (!bay || bay.bay_type === "unassigned") return null;
+    const own = currentConfigOf(bay, bays[i + 1] ?? null);
+    if (own) return strip(own.label);
+    const prev = bays[i - 1];
+    const pair = prev ? currentConfigOf(prev, bay) : null;
+    if (pair?.partner) return `${strip(pair.label)} (2nd bay)`;
+    return null;
+  }
+
   // right-click menu on a bay: set its cable entry / exit
   const [bayMenu, setBayMenu] = useState<{
     bayId: string;
@@ -2237,6 +2252,11 @@ export function GaCanvas({
                 entry={bay.cable_entry ?? null}
                 exit={bay.cable_exit ?? null}
                 onSet={(field, value) => setBayCable(bay.id, field, value)}
+                onChooseConfig={
+                  isArtuk && !isAlley(bay.bay_type)
+                    ? () => setConfigBayId(bay.id)
+                    : undefined
+                }
                 onClose={() => setBayMenu(null)}
               />
             );
@@ -2895,6 +2915,9 @@ export function GaCanvas({
                                         : null
                                     }
                                     bayNumber={bayNumbers.get(v.id) ?? null}
+                                    configLabel={
+                                      isArtuk ? bayConfigLabel(i) : null
+                                    }
                                     readOnly={readOnly}
                                     pxPerMm={pxPerMm}
                                     panelHeightMm={panelHeight}
@@ -3942,6 +3965,7 @@ function BayColumn({
   isSelected,
   selectedPlacedId,
   selectedUnitIndex,
+  configLabel,
   onContextMenu,
   onSelectBay,
   onSelectFeeder,
@@ -3964,6 +3988,8 @@ function BayColumn({
   isSelected: boolean;
   selectedPlacedId: string | null;
   selectedUnitIndex: number;
+  /** matched ArTu-K bay config, shown vertically in the left 60mm strip */
+  configLabel?: string | null;
   /** right-click on the bay (cable entry / exit menu); none when read-only */
   onContextMenu?: (x: number, y: number) => void;
   onSelectBay: () => void;
@@ -4169,6 +4195,27 @@ function BayColumn({
           );
         })}
       </div>
+      {configLabel && gapPx >= 5 && (
+        <div
+          title={`Bay config: ${configLabel}`}
+          className="pointer-events-auto absolute bottom-0 left-0 top-0 z-[5] flex items-center justify-center overflow-hidden"
+          style={{ width: gapPx }}
+        >
+          <span
+            className="whitespace-nowrap font-semibold uppercase tracking-wide text-primary/80"
+            style={{
+              writingMode: "vertical-rl",
+              transform: "rotate(180deg)",
+              fontSize: Math.max(6, Math.min(11, gapPx * 0.6)),
+              maxHeight: Math.max(heightPx - 8, 0),
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {configLabel}
+          </span>
+        </div>
+      )}
       {/* cable entry / exit: set per bay (right-click), not by bay type */}
       {vertical.cable_entry && (
         <div
@@ -4596,6 +4643,7 @@ function BayCableMenu({
   entry,
   exit,
   onSet,
+  onChooseConfig,
   onClose,
 }: {
   x: number;
@@ -4607,6 +4655,8 @@ function BayCableMenu({
     field: "cable_entry" | "cable_exit",
     value: "Top" | "Bottom" | null,
   ) => void;
+  /** ArTu-K bays: open the bay config picker */
+  onChooseConfig?: () => void;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -4667,6 +4717,18 @@ function BayCableMenu({
         <p className="truncate px-3 py-1.5 text-[12px] font-bold text-on-surface">
           {bayName}
         </p>
+        {onChooseConfig && (
+          <button
+            type="button"
+            onClick={() => {
+              onChooseConfig();
+              onClose();
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] font-medium text-primary hover:bg-surface-container-low"
+          >
+            <Icon name="view_column" size={16} /> Change bay config…
+          </button>
+        )}
         {group("cable_entry", "Cable entry", entry, "bg-blue-600")}
         {group("cable_exit", "Cable exit", exit, "bg-purple-600")}
       </div>
