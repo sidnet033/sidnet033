@@ -41,7 +41,8 @@ Open items for the switchboard estimation app. Newest at the top.
   - [x] Update GA (bay sizing) considers rear-face feeders too.
   - [x] Bay-size checks look at both faces (the larger width / depth
         decides).
-  - [ ] Phone summary / PDFs: list front and rear feeders per bay.
+  - [x] PDFs: feeder arrangement per bay (front / rear columns).
+  - [ ] Phone summary: list front and rear feeders per bay.
   - [ ] Double-front workbook parts lists (ICC, rear doors) instead of the
         general rules.
 - [ ] Busbar routing: incomer fed by **top busduct straight down to the

@@ -291,7 +291,9 @@ async function loadGaData(
     .from("verticals")
     .select("*")
     .eq("switchboard_id", switchboardId)
-    .order("sort_order");
+    .order("sort_order")
+    .order("created_at")
+    .order("id");
 
   const verticalIds = (verticals ?? []).map((v) => v.id);
   const { data: placed } = verticalIds.length
@@ -1540,10 +1542,10 @@ export function GaCanvas({
   // busbars, supports and enclosure parts follow from the new layout.
   function applyBayConfig(bayId: string, c: ArtukBayConfig) {
     if (!sb || readOnly) return;
-    const idx = bays.findIndex((b) => b.id === bayId);
+    const idx = baysInOrder.findIndex((b) => b.id === bayId);
     if (idx === -1) return;
-    const bay = bays[idx];
-    const right = bays[idx + 1] ?? null;
+    const bay = baysInOrder[idx];
+    const right = baysInOrder[idx + 1] ?? null;
     const current = currentConfigOf(bay, right);
     const partnerConfig =
       c.partner && !isAlley(c.partner.bayType) ? `${c.id}#2` : null;
@@ -1576,7 +1578,7 @@ export function GaCanvas({
         );
       } else {
         // open a slot right after the bay and insert the partner there
-        const order = bays.map((b) => b.id);
+        const order = baysInOrder.map((b) => b.id);
         const partner = {
           ...makeVertical(
             sb.id,
@@ -1925,8 +1927,13 @@ export function GaCanvas({
   }
 
   async function handleSave() {
-    // bays without a chosen config get the standard one their size matches
-    const verticals = verticalsForSave;
+    // bays without a chosen config get the standard one their size matches.
+    // Bays are renumbered 0..n-1 in the line-up order shown, so no two share
+    // a sort_order (ties made the order shuffle after every save).
+    const bayPos = new Map(baysInOrder.map((b, i) => [b.id, i]));
+    const verticals = verticalsForSave.map((v) =>
+      bayPos.has(v.id) ? { ...v, sort_order: bayPos.get(v.id)! } : v,
+    );
     // every bay is saved at the panel's one depth (its deepest bay's)
     const boardDepth = panelDepthOf(verticals);
     const depthToSave = (v: VerticalWithFeeders) =>
@@ -2006,6 +2013,8 @@ export function GaCanvas({
           fieldPatch.cable_exit = v.cable_exit ?? null;
         if ((v.bay_config ?? null) !== (prev.bay_config ?? null))
           fieldPatch.bay_config = v.bay_config ?? null;
+        if (v.sort_order !== prev.sort_order)
+          fieldPatch.sort_order = v.sort_order;
         if (Object.keys(fieldPatch).length === 0) continue;
         const { error } = await supabase
           .from("verticals")

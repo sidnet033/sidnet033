@@ -433,6 +433,63 @@ export async function buildProjectPdf(
     );
   }
 
+  // feeder arrangement: each switchboard's bays as laid out in the GA, with
+  // the front and (double front) rear side feeders
+  for (const b of s.boards) {
+    if (!b.bays.length && !b.unplaced.length) continue;
+    const label = `${b.tag}${b.title ? `: ${b.title}` : ""}`;
+    d.heading(
+      `Feeder arrangement — ${label}${b.doubleFront ? " (double front)" : ""}`,
+    );
+    const list = (fs: { name: string; qty: number }[]) =>
+      fs.length ? fs.map((f) => `${f.name}${f.qty > 1 ? ` x${f.qty}` : ""}`).join("\n") : "—";
+    const bayName = (bay: (typeof b.bays)[number]) => {
+      const alley =
+        bay.kind === "cable_alley"
+          ? "Cable alley"
+          : bay.kind === "busbar_alley"
+            ? "Busbar chamber"
+            : null;
+      return [
+        bay.number != null ? `${bay.number}. ${bay.name}` : bay.name,
+        alley && bay.name.toLowerCase() !== alley.toLowerCase() ? alley : null,
+        bay.widthMm ? `${bay.widthMm}mm wide` : null,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    };
+    const rows = b.bays.map((bay) =>
+      b.doubleFront
+        ? [bayName(bay), list(bay.front), list(bay.rear)]
+        : [bayName(bay), list(bay.front)],
+    );
+    if (rows.length)
+      d.table(
+        b.doubleFront
+          ? [
+              { title: "Bay", w: 40 },
+              { title: "Front side feeders", w: 70 },
+              { title: "Rear side feeders", w: 70 },
+            ]
+          : [
+              { title: "Bay", w: 40 },
+              { title: "Feeders (top to bottom)", w: 140 },
+            ],
+        rows,
+      );
+    if (internal && b.unplaced.length) {
+      pdf.setFont("helvetica", "italic").setFontSize(8).setTextColor(...GREY);
+      const note = pdf.splitTextToSize(
+        `Not yet placed in a bay: ${b.unplaced.map((f) => `${f.name}${f.qty > 1 ? ` x${f.qty}` : ""}`).join(", ")}`,
+        d.W - 2 * M,
+      );
+      d.ensure(note.length * 4 + 2);
+      pdf.text(note, M, d.y);
+      d.y += note.length * 4 + 2;
+      pdf.setTextColor(20, 20, 20);
+    }
+  }
+
   // costing / price summary
   if (internal) {
     d.ensure(22 + (12 + s.logistics.length) * 6.5);

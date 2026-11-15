@@ -1,4 +1,8 @@
-import type { RevisionContext } from "@/lib/revision-context";
+import type {
+  BayFeeders,
+  FeederQty,
+  RevisionContext,
+} from "@/lib/revision-context";
 import type { CostBreakdown } from "@/lib/switchboard-cost";
 import type { ProjectStage } from "@/types/database";
 
@@ -26,6 +30,10 @@ export const STAGE_TONE: Record<ProjectStage, string> = {
 
 export type SummaryBoard = {
   id: string;
+  /** double-front panel: feeders on a front and a rear side */
+  doubleFront: boolean;
+  bays: BayFeeders[];
+  unplaced: FeederQty[];
   tag: string;
   title: string | null;
   description: string | null;
@@ -131,6 +139,9 @@ export function buildProjectSummary(ctx: RevisionContext): ProjectSummary {
     const unitPrice = unitCost * (1 + sb.profit_pct / 100);
     return {
       id: sb.id,
+      doubleFront: sb.arrangement === "double_front",
+      bays: s.bays,
+      unplaced: s.unplaced,
       tag: sb.tag,
       title: sb.title,
       description: sb.description,
