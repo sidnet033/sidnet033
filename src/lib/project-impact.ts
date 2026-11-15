@@ -27,7 +27,7 @@ import {
 import {
   BUSBAR_CHAMBER_HEIGHT_MM,
   effectivePanelHeight,
-  artukBaySize,
+  artukBaySizeAllFaces,
   overridesFromRows,
   planForSwitchboard,
   type BusbarOverrideRow,
@@ -653,10 +653,11 @@ export function auditBoard(
     const boardDepth = Math.max(
       0,
       ...board.verticals.filter((v) => v.bay_type !== "unassigned").map((v) => Number(v.depth_mm ?? 0)),
-      ...placedBays.map((v) => artukBaySize(v, bayOpts)?.depthMm ?? 0),
+      ...placedBays.map((v) => artukBaySizeAllFaces(v, bayOpts)?.depthMm ?? 0),
     );
     for (const v of placedBays) {
-      const own = artukBaySize(v, bayOpts);
+      // double front: the bay must fit both faces' switchgear
+      const own = artukBaySizeAllFaces(v, bayOpts);
       const size = own ? { widthMm: own.widthMm, depthMm: boardDepth || own.depthMm } : null;
       if (
         size &&

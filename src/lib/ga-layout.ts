@@ -276,6 +276,17 @@ export function artukBaySize(v: VerticalWithFeeders, opts: ArtukBayOptions = {})
   return hasOtherClassified ? { widthMm, depthMm: mccBayDepth(opts) } : null;
 }
 
+// Double front: a bay must fit the switchgear on both faces -- each face is
+// sized on its own feeders and the bay takes the larger width and depth.
+// (Single-front boards: all feeders are front, same as artukBaySize.)
+export function artukBaySizeAllFaces(v: VerticalWithFeeders, opts: ArtukBayOptions = {}): { widthMm: number; depthMm: number } | null {
+  const front = artukBaySize({ ...v, placed: v.placed.filter((p) => p.face !== "rear") }, opts);
+  const rearPlaced = v.placed.filter((p) => p.face === "rear");
+  const rear = rearPlaced.length ? artukBaySize({ ...v, placed: rearPlaced }, opts) : null;
+  if (!front || !rear) return front ?? rear;
+  return { widthMm: Math.max(front.widthMm, rear.widthMm), depthMm: Math.max(front.depthMm, rear.depthMm) };
+}
+
 export type BusbarOverrideRow = {
   kind: BusbarOverride["kind"];
   vertical_id: string | null;

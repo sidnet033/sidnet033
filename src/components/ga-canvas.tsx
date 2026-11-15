@@ -74,6 +74,7 @@ import {
   deviceDepthFor,
   DEFAULT_COMPARTMENT_HEIGHT_MM,
   artukBaySize,
+  artukBaySizeAllFaces,
   mccBayDepth,
   blankCompartmentLabel,
   chamberPositionFor,
@@ -638,8 +639,20 @@ export function GaCanvas({
   const faceRef = useRef<Face>("front");
   // placements on the face not being shown (kept when saving overrides)
   const otherFacePlacedIds = useRef<Set<string>>(new Set());
+  // the other face's feeders per bay, as last loaded (Update GA sizes bays
+  // to fit both faces; switching faces needs saved changes, so these are
+  // current)
+  const otherFacePlaced = useRef<Map<string, VerticalWithFeeders["placed"]>>(
+    new Map(),
+  );
   function viewOf(all: VerticalWithFeeders[]) {
     const f = faceRef.current;
+    const other = faceView(all, f === "front" ? "rear" : "front");
+    otherFacePlaced.current = new Map(
+      other
+        .filter((v) => v.bay_type !== "unassigned")
+        .map((v) => [v.id, v.placed]),
+    );
     const shown = new Set(
       faceView(all, f).flatMap((v) => v.placed.map((p) => p.id)),
     );
@@ -1460,7 +1473,18 @@ export function GaCanvas({
     setVerticals(
       verticals
         .map((v) => {
-          const size = artukBaySize(v, {
+          // both faces' feeders: the bay must fit the switchgear on each
+          const both =
+            v.bay_type === "unassigned"
+              ? v
+              : {
+                  ...v,
+                  placed: [
+                    ...v.placed,
+                    ...(otherFacePlaced.current.get(v.id) ?? []),
+                  ],
+                };
+          const size = artukBaySizeAllFaces(both, {
             arrangement,
             frontAccess: cableAccess === "Front",
             amps: sb.amps,
@@ -2785,7 +2809,7 @@ export function GaCanvas({
                       disabled={rearView}
                       title={
                         rearView
-                          ? "Update GA sizes bays from the front side"
+                          ? "Run Update GA on the front side -- it sizes every bay to fit both sides' feeders"
                           : undefined
                       }
                       className="btn btn-primary btn-sm"

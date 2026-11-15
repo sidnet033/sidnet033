@@ -38,9 +38,9 @@ Open items for the switchboard estimation app. Newest at the top.
       ArTu-K boards), rear feeders + blank space per bay, rear drawn from
       behind, busbars / supports / enclosure costed for both faces, rear
       export. Still to do:
-  - [ ] Update GA (bay sizing) to consider rear-face feeders too.
-  - [ ] Bay-width checks that look at both faces (a bay only fits one
-        width; the wider face decides).
+  - [x] Update GA (bay sizing) considers rear-face feeders too.
+  - [x] Bay-size checks look at both faces (the larger width / depth
+        decides).
   - [ ] Phone summary / PDFs: list front and rear feeders per bay.
   - [ ] Double-front workbook parts lists (ICC, rear doors) instead of the
         general rules.
