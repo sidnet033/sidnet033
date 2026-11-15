@@ -2416,7 +2416,9 @@ export function GaCanvas({
               <ArtukBayConfigDialog
                 bayName={bay.name}
                 currentId={effectiveBayConfig(idx)?.split("#")[0] ?? null}
-                misfitsFor={(c) => configMisfits(c, bay, cableAccess)}
+                misfitsFor={(c) =>
+                  configMisfits(c, bay, cableAccess, arrangement)
+                }
                 onApply={(c) => applyBayConfig(bay.id, c)}
                 onCustom={() => setCustomBayConfig(bay.id)}
                 onClose={() => setConfigBayId(null)}

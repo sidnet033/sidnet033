@@ -247,6 +247,10 @@ export function mccBayDepth(opts: ArtukBayOptions = {}): number {
   return OUTGOING_MCC_BAY.depthMm;
 }
 
+// extra width of an MCCB / DOL vertical on a double-front board (busbars in
+// line with the switchgear instead of behind it)
+export const DOUBLE_FRONT_MCC_EXTRA_MM = 200;
+
 export function artukBaySize(v: VerticalWithFeeders, opts: ArtukBayOptions = {}): { widthMm: number; depthMm: number } | null {
   if (v.bay_type === "cable_alley" || v.bay_type === "busbar_alley" || v.bay_type === "unassigned") return null;
   const acbUnits = v.placed.filter((p) => p.feeder.device_type === "ACB");
@@ -266,7 +270,10 @@ export function artukBaySize(v: VerticalWithFeeders, opts: ArtukBayOptions = {})
     return bracket ? { widthMm: bracket.width4P100, depthMm: 1037 } : null;
   }
   const hasOtherClassified = v.placed.some((p) => p.feeder.device_type && p.feeder.device_type !== "ACB" && p.feeder.device_type !== "OTHER");
-  return hasOtherClassified ? { widthMm: OUTGOING_MCC_BAY.widthMm, depthMm: mccBayDepth(opts) } : null;
+  // Double front: the busbars can't run behind the switchgear, so an MCCB /
+  // DOL vertical is 200mm wider to carry them in line with it (720 -> 920).
+  const widthMm = OUTGOING_MCC_BAY.widthMm + (opts.arrangement === "double_front" ? DOUBLE_FRONT_MCC_EXTRA_MM : 0);
+  return hasOtherClassified ? { widthMm, depthMm: mccBayDepth(opts) } : null;
 }
 
 export type BusbarOverrideRow = {

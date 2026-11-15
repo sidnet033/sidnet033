@@ -375,6 +375,7 @@ export function configMisfits(
   c: ArtukBayConfig,
   bay: BayLike,
   cableAccess: "Front" | "Rear" | null | undefined,
+  arrangement?: "single_front" | "double_front" | null,
 ): string[] {
   const out: string[] = [];
   const acbs = bay.placed.filter((p) => p.feeder.device_type === "ACB");
@@ -432,6 +433,12 @@ export function configMisfits(
   if (c.access === "rear" && c.kind === "mcc" && cableAccess === "Front")
     out.push(
       "This is a rear-access vertical; the switchboard is set to front access.",
+    );
+  // double front: busbars run in line with the switchgear, not behind it,
+  // so an MCCB / DOL vertical needs 200mm more width (720 -> 920)
+  if (arrangement === "double_front" && c.kind === "mcc" && c.widthMm < 920)
+    out.push(
+      `Double front: an MCCB / DOL vertical needs 200mm more width for the busbars in line with the switchgear — use a ${c.widthMm + 200}mm vertical (or Custom).`,
     );
   return out;
 }

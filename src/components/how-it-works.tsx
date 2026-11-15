@@ -518,7 +518,10 @@ export function HowItWorks() {
                 Cable Access) is Single front by default; Double front is
                 ABB&apos;s back-to-back layout. MCC bay depth follows ABB: rear
                 access 1037mm; front access 637mm (single-run busbar) or 837mm
-                (two runs); double front 1037mm up to 2000A, 1237mm at 2500A.
+                (two runs); double front 1037mm up to 2000A, 1237mm at 2500A. On a
+                double front board the busbars can&apos;t run behind the
+                switchgear, so an MCCB / DOL vertical is 200mm wider to carry
+                them in line with it (720mm single front → 920mm double front).
                 Front-access and double-front ArTu-K are type-tested to 50kA 1s
                 and Form 3b (double front up to 2500A) — the checks warn beyond
                 that. <b>Internal Arc</b> (tick box next to Arrangement)
