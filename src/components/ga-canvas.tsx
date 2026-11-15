@@ -69,6 +69,7 @@ import {
   ALLEY_MIN_WIDTH_MM,
   isAlley,
   bayWidthFor,
+  DOUBLE_FRONT_MCC_EXTRA_MM,
   panelDepthOf,
   sharedBreakerBay,
   nextBayWidth,
@@ -410,14 +411,22 @@ function withUnassigned(
 // rows, which then showed up in BOM Builder as separate feeder cards
 // instead of one feeder at its real qty.
 // A bay whose contents changed takes the width of its widest feeder plus
-// the side gaps (alleys and bays left empty keep their width).
-function withAutoWidths(
+// the side gaps (alleys and bays left empty keep their width). A bay with a
+// chosen bay config (or Custom) keeps the width that config / the user set.
+// On a double-front board a bay holds the other face's feeders too (not in
+// `placed` on this view) and carries its vertical busbars in line, so it
+// gets the extra 200mm and never shrinks.
+function withAutoWidthsFor(
   verts: VerticalWithFeeders[],
   ids: string[],
+  doubleFront: boolean,
 ): VerticalWithFeeders[] {
   return verts.map((v) => {
-    if (!ids.includes(v.id)) return v;
-    const w = bayWidthFor(v);
+    if (!ids.includes(v.id) || v.bay_config) return v;
+    let w = bayWidthFor(v);
+    if (w != null && doubleFront) {
+      w = Math.max(w + DOUBLE_FRONT_MCC_EXTRA_MM, v.width_mm ?? 0);
+    }
     return w != null && w !== v.width_mm ? { ...v, width_mm: w } : v;
   });
 }
@@ -961,6 +970,8 @@ export function GaCanvas({
   const bays = face === "rear" ? [...baysInOrder].reverse() : baysInOrder;
   const rearView = face === "rear";
   const isDoubleFront = isArtuk && savedArrangement === "double_front";
+  const withAutoWidths = (verts: VerticalWithFeeders[], ids: string[]) =>
+    withAutoWidthsFor(verts, ids, isDoubleFront);
   // ArTu-K 920+1120 front-access MCC pairs: cable alleys + shared VBB inside the bays
   // an incomer / bus coupler / ACB bay (front-only on a double-front board)
   const isAcbBay = (v: VerticalWithFeeders) =>
