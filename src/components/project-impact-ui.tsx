@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Icon } from "@/components/icon";
-import type { ReviewItem } from "@/lib/project-impact";
+import { alertCategory, type ReviewItem } from "@/lib/project-impact";
 
 const SEVERITY_STYLE: Record<ReviewItem["severity"], { dot: string; label: string }> = {
   alert: { dot: "bg-error", label: "Alert — blocks saving" },
@@ -255,18 +255,39 @@ export function AlertsPanel({
       </button>
       {!collapsed && (
         <div className="space-y-space-md border-t border-surface-container-high p-space-lg">
-          {alerts.length > 0 && (
-            <div>
-              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-error">Alerts — block saving</p>
-              <ItemList items={shown(alerts)} ticked={ticked} onToggle={toggle} onOpenBoard={onOpenBoard} mode="alerts" />
-            </div>
-          )}
-          {warnings.length > 0 && (
-            <div>
-              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-amber-700">Warnings — saving allowed</p>
-              <ItemList items={shown(warnings)} ticked={ticked} onToggle={toggle} onOpenBoard={onOpenBoard} mode="alerts" />
-            </div>
-          )}
+          {(
+            [
+              ["commercial", "Commercial Alerts", "Missing prices, margin and other commercial points", "payments"],
+              ["technical", "Technical Alerts", "kA ratings, sizes, layout, cable / busduct entries and other technical points", "engineering"],
+            ] as const
+          ).map(([cat, title, sub, icon]) => {
+            const catAlerts = alerts.filter((i) => alertCategory(i) === cat);
+            const catWarnings = warnings.filter((i) => alertCategory(i) === cat);
+            if (catAlerts.length + catWarnings.length === 0) return null;
+            return (
+              <section key={cat} className="rounded-lg border border-surface-container-high p-space-md">
+                <p className="mb-2 flex flex-wrap items-center gap-2">
+                  <Icon name={icon} size={18} className="text-on-surface-variant" />
+                  <span className="font-headline-sm text-headline-sm text-on-surface">{title}</span>
+                  <span className="text-xs text-secondary">
+                    {catAlerts.length + catWarnings.length} · {sub}
+                  </span>
+                </p>
+                {catAlerts.length > 0 && (
+                  <div className="mb-2">
+                    <p className="mb-2 text-xs font-bold uppercase tracking-wide text-error">Alerts — block saving</p>
+                    <ItemList items={shown(catAlerts)} ticked={ticked} onToggle={toggle} onOpenBoard={onOpenBoard} mode="alerts" />
+                  </div>
+                )}
+                {catWarnings.length > 0 && (
+                  <div>
+                    <p className="mb-2 text-xs font-bold uppercase tracking-wide text-amber-700">Warnings — saving allowed</p>
+                    <ItemList items={shown(catWarnings)} ticked={ticked} onToggle={toggle} onOpenBoard={onOpenBoard} mode="alerts" />
+                  </div>
+                )}
+              </section>
+            );
+          })}
           {!readOnly && fixable.length > 0 && (
             <div className="flex items-center justify-between">
               <button onClick={() => setTicked(new Set(fixable.map((i) => i.id)))} className="text-xs text-primary hover:underline">

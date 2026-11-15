@@ -132,6 +132,14 @@ export type ReviewItem = {
   keepSeverity?: "alert" | null;
 };
 
+// Alerts are grouped as Commercial (prices, margin) or Technical (ratings,
+// kA, sizes, layout, cable / busduct entries...).
+export type AlertCategory = "commercial" | "technical";
+const COMMERCIAL_CHECKS = new Set(["unpriced", "no-margin"]);
+export function alertCategory(item: Pick<ReviewItem, "id">): AlertCategory {
+  return COMMERCIAL_CHECKS.has(item.id.split("|")[1] ?? "") ? "commercial" : "technical";
+}
+
 export async function loadProjectData(
   supabase: Supabase,
   projectId: string,
@@ -461,6 +469,39 @@ export function auditBoard(
       apply: null,
       applyLabel: null,
     });
+  }
+
+  // cable entry / exit are marked per bay (GA Builder: right-click a bay);
+  // flag a laid-out board where none is marked
+  const realBays = board.verticals.filter(
+    (v) => v.bay_type !== "unassigned" && (v.width_mm ?? 0) > 0,
+  );
+  if (realBays.length > 0) {
+    const busductIn = sb.has_busduct && realBays.some((v) => (v.busduct_entries ?? 0) > 0);
+    if (!busductIn && !realBays.some((v) => v.cable_entry)) {
+      items.push({
+        ...base,
+        id: `${sb.id}|cable-entry`,
+        area: "GA",
+        severity: "warning",
+        message:
+          "No bay is marked for cable entry — in GA Builder right-click the incoming bay and set Cable entry (Top / Bottom), or add a busduct entry.",
+        apply: null,
+        applyLabel: null,
+      });
+    }
+    if (!realBays.some((v) => v.cable_exit)) {
+      items.push({
+        ...base,
+        id: `${sb.id}|cable-exit`,
+        area: "GA",
+        severity: "warning",
+        message:
+          "No bay is marked for cable exit — in GA Builder right-click the bay or cable / busbar alley the outgoing cables leave from and set Cable exit (Top / Bottom).",
+        apply: null,
+        applyLabel: null,
+      });
+    }
   }
 
   if (placedBays.length === 0) return items;
