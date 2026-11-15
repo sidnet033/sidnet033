@@ -53,8 +53,8 @@ Open items for the switchboard estimation app. Newest at the top.
 - [x] Double front: each face has its own vertical busbars, in line
       with its own switchgear (not shared); MCCB / DOL verticals are 200mm
       wider (720 -> 920) to carry them.
-  - [ ] A busbar size override on a bay's vertical busbar currently
-        applies to both faces' vertical busbars in that bay.
+  - [x] A hand-set size / length on a vertical busbar belongs to its
+        face (front and rear set separately).
 - [ ] Busduct **exit** (only busduct entries exist today).
 - [ ] Picking a double-front bay config could set the switchboard's
       Arrangement to Double front automatically.

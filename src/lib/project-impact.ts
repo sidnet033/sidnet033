@@ -17,6 +17,7 @@ import {
   formatBar,
   isIncomerFeeder,
   isStockedBar,
+  REAR_KEY_PREFIX,
   type BarSize,
   type BusbarKind,
   type BusbarMaterial,
@@ -85,7 +86,7 @@ export const IMPACT_FIELDS = [
 
 type SegmentRef = Pick<
   BusbarOverride,
-  "kind" | "verticalId" | "placedFeederId" | "unitIndex"
+  "kind" | "verticalId" | "placedFeederId" | "unitIndex" | "face"
 >;
 
 export type FixAction =
@@ -295,6 +296,7 @@ function segmentRef(seg: BusbarSegment): SegmentRef {
     verticalId: seg.verticalId,
     placedFeederId: seg.placedFeederId,
     unitIndex: seg.unitIndex,
+    face: seg.key.startsWith(REAR_KEY_PREFIX) ? "rear" : "front",
   };
 }
 
@@ -834,7 +836,8 @@ async function findOverride(
     .select("id, length_mm")
     .eq("switchboard_id", switchboardId)
     .eq("kind", seg.kind)
-    .eq("unit_index", seg.unitIndex);
+    .eq("unit_index", seg.unitIndex)
+    .eq("face", seg.face ?? "front");
   q = seg.verticalId
     ? q.eq("vertical_id", seg.verticalId)
     : q.is("vertical_id", null);
@@ -896,6 +899,7 @@ export async function applyActions(
           vertical_id: a.segment.verticalId,
           placed_feeder_id: a.segment.placedFeederId,
           unit_index: a.segment.unitIndex,
+          face: a.segment.face ?? "front",
           ...sizeFields,
         });
     if (error) throw new Error(error.message);

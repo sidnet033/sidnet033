@@ -48,6 +48,7 @@ import {
 } from "@/lib/artuk-sizing";
 import {
   bayFunctionOf,
+  REAR_KEY_PREFIX,
   type BusbarOverride,
   type BusbarPlan,
   type BusbarSegment,
@@ -1094,6 +1095,8 @@ export function GaCanvas({
           verticalId: seg.verticalId,
           placedFeederId: seg.placedFeederId,
           unitIndex: seg.unitIndex,
+          // a rear-face vertical busbar has its own setting
+          face: seg.key.startsWith(REAR_KEY_PREFIX) ? "rear" : "front",
           barWidthMm: null,
           barThicknessMm: null,
           runsPerPhase: null,
@@ -2098,6 +2101,7 @@ export function GaCanvas({
             length_mm: o.lengthMm,
             start_ext_mm: o.startExtMm || null,
             end_ext_mm: o.endExtMm || null,
+            face: o.face ?? "front",
             updated_at: new Date().toISOString(),
           }));
         const { error: delError } = await supabase

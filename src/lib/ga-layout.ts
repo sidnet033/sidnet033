@@ -1,7 +1,7 @@
 import { parseIp } from "@/lib/artuk-busbar-chart";
 import type { BayType, Feeder, PlacedFeeder, Switchboard, Vertical } from "@/types/database";
 import { ACB_SIZES, MCCB_SIZES, OUTGOING_MCC_BAY, lookupAcbBaySpec, lookupFeederBoxHeight, suggestAcbFrame } from "@/lib/artuk-sizing";
-import { bayFunctionOf, breakerFrameOf, overrideKey, planBusbars, type BusbarMaterial, type BusbarOverride, type BusbarPlan } from "@/lib/busbar-plan";
+import { bayFunctionOf, breakerFrameOf, overrideKey, planBusbars, type BusbarMaterial, type BusbarOverride, type BusbarPlan, REAR_KEY_PREFIX } from "@/lib/busbar-plan";
 
 // GA layout rules shared by GA Builder (drawing, Update GA, busbar layer)
 // and Project Detail's project-wide checks, so both always reach the same
@@ -287,6 +287,7 @@ export type BusbarOverrideRow = {
   length_mm: number | null;
   start_ext_mm?: number | null;
   end_ext_mm?: number | null;
+  face?: "front" | "rear" | null;
 };
 
 export function overridesFromRows(rows: BusbarOverrideRow[]): Record<string, BusbarOverride> {
@@ -303,6 +304,7 @@ export function overridesFromRows(rows: BusbarOverrideRow[]): Record<string, Bus
       lengthMm: r.length_mm != null ? Number(r.length_mm) : null,
       startExtMm: r.start_ext_mm != null ? Number(r.start_ext_mm) : null,
       endExtMm: r.end_ext_mm != null ? Number(r.end_ext_mm) : null,
+      face: r.face === "rear" ? "rear" : "front",
     };
     overrides[overrideKey(o)] = o;
   }
@@ -332,15 +334,27 @@ type PlanArgs = {
 // each face has its OWN vertical busbars (droppers), in line with that
 // face's switchgear, and its own links to its feeders.
 export function planForSwitchboard(args: PlanArgs): BusbarPlan {
-  if (!hasRearFeeders(args.verticals)) return planOneFace(args);
-  const front = planOneFace({ ...args, verticals: faceView(args.verticals, "front") });
-  const rear = planOneFace({ ...args, verticals: faceView(args.verticals, "rear") });
+  // overrides: the rear vertical busbars' own (stored under rear|...) are
+  // handed to the rear plan under their plain key; the front plan never
+  // sees them, and the rear plan never sees the front vertical busbars'
+  const frontOverrides: Record<string, BusbarOverride> = {};
+  const rearOverrides: Record<string, BusbarOverride> = {};
+  for (const [k, o] of Object.entries(args.overrides)) {
+    if (k.startsWith(REAR_KEY_PREFIX)) rearOverrides[k.slice(REAR_KEY_PREFIX.length)] = o;
+    else {
+      frontOverrides[k] = o;
+      if (o.kind !== "dropper") rearOverrides[k] = o;
+    }
+  }
+  if (!hasRearFeeders(args.verticals)) return planOneFace({ ...args, overrides: frontOverrides });
+  const front = planOneFace({ ...args, overrides: frontOverrides, verticals: faceView(args.verticals, "front") });
+  const rear = planOneFace({ ...args, overrides: rearOverrides, verticals: faceView(args.verticals, "rear") });
   const segments = [...front.segments];
   for (const seg of rear.segments) {
     if (seg.kind === "main") continue;
     // a rear vertical busbar is a bar of its own -- keep its key distinct
     // from the front one in the same bay
-    segments.push(seg.kind === "dropper" ? { ...seg, key: `rear|${seg.key}`, title: `${seg.title} (rear)` } : seg);
+    segments.push(seg.kind === "dropper" ? { ...seg, key: `${REAR_KEY_PREFIX}${seg.key}`, title: `${seg.title} (rear)` } : seg);
   }
   return {
     ...front,

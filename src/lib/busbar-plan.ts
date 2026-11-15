@@ -117,7 +117,13 @@ export type BusbarOverride = {
   // last point of its path (negative shortens). A typed lengthMm wins.
   startExtMm?: number | null;
   endExtMm?: number | null;
+  // double front: a vertical busbar belongs to one face (each face has its
+  // own); missing = front
+  face?: "front" | "rear";
 };
+
+// A double-front board's rear vertical busbars carry this key prefix.
+export const REAR_KEY_PREFIX = "rear|";
 
 export function segmentKey(
   kind: BusbarKind,
@@ -131,10 +137,11 @@ export function segmentKey(
 export function overrideKey(
   o: Pick<
     BusbarOverride,
-    "kind" | "verticalId" | "placedFeederId" | "unitIndex"
+    "kind" | "verticalId" | "placedFeederId" | "unitIndex" | "face"
   >,
 ): string {
-  return segmentKey(o.kind, o.verticalId, o.placedFeederId, o.unitIndex);
+  const key = segmentKey(o.kind, o.verticalId, o.placedFeederId, o.unitIndex);
+  return o.face === "rear" ? `${REAR_KEY_PREFIX}${key}` : key;
 }
 
 export function barArea(bar: BarSize): number {
