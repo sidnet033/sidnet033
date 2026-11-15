@@ -1,5 +1,8 @@
 # TrueQuote LV — to-do list
 
+Cable alleys stay 420mm in the app; widen one by hand (e.g. to 720mm)
+in GA Builder when a customer wants it.
+
 Open items for the switchboard estimation app. Newest at the top.
 
 ## Waiting on data from Siddharth
@@ -21,16 +24,20 @@ Open items for the switchboard estimation app. Newest at the top.
   - [ ] 920mm E2.2 2500A **bus coupler, double front 1237mm**, with the
         420mm external busbar chamber to Bus-B (the 1037mm version exists:
         "...920+420 E2.2 w ACB BC With External Busbar Chamber").
-  - [ ] 720mm and 420mm **cable alleys at 1237mm depth** in a double-front
-        line-up (gland plates 620 / 320 wide) — confirm parts.
   - [ ] Double-front **ACB bays** in general (no double-front ACB parts list
         in the workbook today; they're priced as rear-access bays).
 
 ## App changes these will need
 
-- [ ] Panel depth per bay: allow a deeper rear chamber on some bays only
-      (e.g. incomer 1237+437 with the rest at 1237). Today the whole
-      line-up takes the deepest bay's depth.
+- [ ] **Different depths for certain bays**: let a bay be deeper than the
+      rest of the line-up (e.g. incomer 1237+437 with a rear busduct
+      chamber, the rest at 1237). Today every bay takes the deepest bay's
+      depth.
+- [ ] **Build the rear side of a double-front panel**: GA Builder only
+      builds the front face today. Let the user lay out the rear face's
+      feeders too (rear front view, its own compartments / feeders,
+      sharing the line-up's bays and vertical busbars), with the BOM,
+      costing and GA export covering both sides.
 - [ ] Busbar routing: incomer fed by **top busduct straight down to the
       ACB** (busduct riser in the bay / rear chamber) with the ACB output
       up to the main busbar chamber (BBC).
