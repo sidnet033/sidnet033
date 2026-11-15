@@ -2364,7 +2364,7 @@ export function GaCanvas({
           <button
             type="button"
             onClick={toggleParams}
-            title="Show the switchboard master parameters"
+            title="Show the switchboard master parameters, GA toolbar and bay templates"
             className="flex w-full items-center gap-2 border-b border-surface-container-high bg-surface-container-low/60 px-4 py-1 text-left text-xs hover:bg-surface-container-low"
           >
             <Icon name="expand_more" size={16} className="text-secondary" />
@@ -2396,7 +2396,7 @@ export function GaCanvas({
             <button
               type="button"
               onClick={toggleParams}
-              title="Hide the switchboard master parameters (more room for the drawing)"
+              title="Hide the master parameters, GA toolbar and bay templates (more room for the drawing)"
               className="flex items-center gap-1 self-center text-[11px] font-semibold uppercase tracking-wide text-secondary hover:text-on-surface"
             >
               <Icon name="expand_less" size={16} />
@@ -2639,86 +2639,12 @@ export function GaCanvas({
                 />
               </button>
             </div>
-            <div className="mb-1 flex flex-wrap items-center gap-2">
-              {!readOnly && sb?.std === "ArTuK" && (
-                <button
-                  onClick={autoGenerateGa}
-                  className="btn btn-primary btn-sm"
-                >
-                  <Icon name="auto_awesome" size={14} /> Update GA
-                </button>
-              )}
-              <button
-                onClick={exportPng}
-                disabled={exporting || bays.length === 0}
-                title="Export the GA drawing as a PNG image"
-                className="btn btn-outline btn-sm"
-              >
-                <Icon name="download" size={14} />{" "}
-                {exporting ? "Exporting..." : "Export PNG"}
-              </button>
-              <button
-                onClick={exportPdf}
-                disabled={exporting || bays.length === 0}
-                title="Export the GA drawing as a PDF"
-                className="btn btn-outline btn-sm"
-              >
-                <Icon name="download" size={14} />{" "}
-                {exporting ? "Exporting..." : "Export PDF"}
-              </button>
-              <button
-                onClick={() =>
-                  setZoomMode((z) => (z === "standard" ? "fit" : "standard"))
-                }
-                disabled={bays.length === 0}
-                title={
-                  zoomMode === "standard"
-                    ? "Zoom out to see the whole panel width"
-                    : "Back to the standard zoom"
-                }
-                className="btn btn-outline btn-sm"
-              >
-                <Icon
-                  name={zoomMode === "standard" ? "zoom_out" : "zoom_in"}
-                  size={14}
-                />{" "}
-                {zoomMode === "standard"
-                  ? "Zoom out (fit width)"
-                  : "Zoom in (standard)"}
-              </button>
-              <button
-                onClick={() => {
-                  setShowBusbars((v) => !v);
-                  setSelectedSegmentKey(null);
-                }}
-                disabled={bays.length === 0}
-                title={
-                  showBusbars
-                    ? "Hide the busbar layer"
-                    : "Show the planned busbar routing and sizes"
-                }
-                className={`btn btn-sm ${showBusbars ? "btn-primary" : "btn-outline"}`}
-              >
-                <Icon name="electric_bolt" size={14} /> Busbars
-              </button>
-              {isArtuk && (
-                <button
-                  onClick={() => setShowSupports((v) => !v)}
-                  disabled={
-                    bays.length === 0 || !busbarSupports?.supports.length
-                  }
-                  title={
-                    showSupports
-                      ? "Hide the busbar supports (still counted in the BOM)"
-                      : "Show the busbar supports"
-                  }
-                  className={`btn btn-sm ${showSupports ? "btn-primary" : "btn-outline"}`}
-                >
-                  <Icon name="push_pin" size={14} /> Supports
-                </button>
-              )}
-              {!readOnly && dirty && (
-                <>
+            {/* toolbar, help and bay templates collapse with the
+                Switchboard Master Parameters strip; Save / Cancel stay */}
+            {paramsCollapsed ? (
+              !readOnly &&
+              dirty && (
+                <div className="mb-2 flex flex-wrap items-center gap-2">
                   <button
                     onClick={handleCancel}
                     disabled={saving}
@@ -2737,57 +2663,163 @@ export function GaCanvas({
                   <span className="font-body-sm text-body-sm text-amber-600">
                     Unsaved changes
                   </span>
-                </>
-              )}
-            </div>
-            {!readOnly && sb?.std === "ArTuK" && (
-              <p className="mb-3 text-[11px] text-on-surface-variant">
-                Create your bays and drag feeders into them first (each feeder
-                needs a Device Type and rating in BOM Builder), then click
-                Update GA to size every bay from what you&rsquo;ve placed, using
-                ArTuK standard sizing -- see{" "}
-                <a
-                  href="/how-it-works#dimensions"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary underline hover:no-underline"
-                >
-                  How it works → Dimensions
-                </a>{" "}
-                for how sizes are worked out. It never creates, deletes, or
-                moves bays or feeders.
-              </p>
-            )}
-            {!readOnly && (
-              <div className="mb-3 flex flex-wrap gap-2">
-                {BAY_TEMPLATES.map((t) => (
+                </div>
+              )
+            ) : (
+              <>
+                <div className="mb-1 flex flex-wrap items-center gap-2">
+                  {!readOnly && sb?.std === "ArTuK" && (
+                    <button
+                      onClick={autoGenerateGa}
+                      className="btn btn-primary btn-sm"
+                    >
+                      <Icon name="auto_awesome" size={14} /> Update GA
+                    </button>
+                  )}
                   <button
-                    key={t.bay_type}
-                    onClick={() => addBay(t)}
-                    className="rounded-md border border-dashed border-surface-container-high px-2.5 py-1 text-xs font-medium text-on-surface-variant hover:border-primary/40 hover:text-primary"
+                    onClick={exportPng}
+                    disabled={exporting || bays.length === 0}
+                    title="Export the GA drawing as a PNG image"
+                    className="btn btn-outline btn-sm"
                   >
-                    {t.label}
+                    <Icon name="download" size={14} />{" "}
+                    {exporting ? "Exporting..." : "Export PNG"}
                   </button>
-                ))}
-                {sb?.std === "ArTuK" && (
-                  <>
+                  <button
+                    onClick={exportPdf}
+                    disabled={exporting || bays.length === 0}
+                    title="Export the GA drawing as a PDF"
+                    className="btn btn-outline btn-sm"
+                  >
+                    <Icon name="download" size={14} />{" "}
+                    {exporting ? "Exporting..." : "Export PDF"}
+                  </button>
+                  <button
+                    onClick={() =>
+                      setZoomMode((z) =>
+                        z === "standard" ? "fit" : "standard",
+                      )
+                    }
+                    disabled={bays.length === 0}
+                    title={
+                      zoomMode === "standard"
+                        ? "Zoom out to see the whole panel width"
+                        : "Back to the standard zoom"
+                    }
+                    className="btn btn-outline btn-sm"
+                  >
+                    <Icon
+                      name={zoomMode === "standard" ? "zoom_out" : "zoom_in"}
+                      size={14}
+                    />{" "}
+                    {zoomMode === "standard"
+                      ? "Zoom out (fit width)"
+                      : "Zoom in (standard)"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowBusbars((v) => !v);
+                      setSelectedSegmentKey(null);
+                    }}
+                    disabled={bays.length === 0}
+                    title={
+                      showBusbars
+                        ? "Hide the busbar layer"
+                        : "Show the planned busbar routing and sizes"
+                    }
+                    className={`btn btn-sm ${showBusbars ? "btn-primary" : "btn-outline"}`}
+                  >
+                    <Icon name="electric_bolt" size={14} /> Busbars
+                  </button>
+                  {isArtuk && (
                     <button
-                      onClick={add2TierOutgoingE12}
-                      title="ArTu-K 920+720w Emax 2 E1.2 2-Tier ACB Outgoing"
-                      className="rounded-md border border-dashed border-surface-container-high px-2.5 py-1 text-xs font-medium text-on-surface-variant hover:border-primary/40 hover:text-primary"
+                      onClick={() => setShowSupports((v) => !v)}
+                      disabled={
+                        bays.length === 0 || !busbarSupports?.supports.length
+                      }
+                      title={
+                        showSupports
+                          ? "Hide the busbar supports (still counted in the BOM)"
+                          : "Show the busbar supports"
+                      }
+                      className={`btn btn-sm ${showSupports ? "btn-primary" : "btn-outline"}`}
                     >
-                      + 2-Tier ACB Outgoing (E1.2)
+                      <Icon name="push_pin" size={14} /> Supports
                     </button>
-                    <button
-                      onClick={addMccFrontAccessPair}
-                      title={MCC_FRONT_ACCESS_PAIR.note}
-                      className="rounded-md border border-dashed border-surface-container-high px-2.5 py-1 text-xs font-medium text-on-surface-variant hover:border-primary/40 hover:text-primary"
+                  )}
+                  {!readOnly && dirty && (
+                    <>
+                      <button
+                        onClick={handleCancel}
+                        disabled={saving}
+                        className="btn btn-outline btn-sm"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSave}
+                        disabled={saving}
+                        className="btn btn-primary btn-sm"
+                      >
+                        <Icon name="save" size={14} />
+                        {saving ? "Saving..." : "Save Changes"}
+                      </button>
+                      <span className="font-body-sm text-body-sm text-amber-600">
+                        Unsaved changes
+                      </span>
+                    </>
+                  )}
+                </div>
+                {!readOnly && sb?.std === "ArTuK" && (
+                  <p className="mb-3 text-[11px] text-on-surface-variant">
+                    Create your bays and drag feeders into them first (each
+                    feeder needs a Device Type and rating in BOM Builder), then
+                    click Update GA to size every bay from what you&rsquo;ve
+                    placed, using ArTuK standard sizing -- see{" "}
+                    <a
+                      href="/how-it-works#dimensions"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary underline hover:no-underline"
                     >
-                      + MCC Vertical Pair (Front Access)
-                    </button>
-                  </>
+                      How it works → Dimensions
+                    </a>{" "}
+                    for how sizes are worked out. It never creates, deletes, or
+                    moves bays or feeders.
+                  </p>
                 )}
-              </div>
+                {!readOnly && (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {BAY_TEMPLATES.map((t) => (
+                      <button
+                        key={t.bay_type}
+                        onClick={() => addBay(t)}
+                        className="rounded-md border border-dashed border-surface-container-high px-2.5 py-1 text-xs font-medium text-on-surface-variant hover:border-primary/40 hover:text-primary"
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                    {sb?.std === "ArTuK" && (
+                      <>
+                        <button
+                          onClick={add2TierOutgoingE12}
+                          title="ArTu-K 920+720w Emax 2 E1.2 2-Tier ACB Outgoing"
+                          className="rounded-md border border-dashed border-surface-container-high px-2.5 py-1 text-xs font-medium text-on-surface-variant hover:border-primary/40 hover:text-primary"
+                        >
+                          + 2-Tier ACB Outgoing (E1.2)
+                        </button>
+                        <button
+                          onClick={addMccFrontAccessPair}
+                          title={MCC_FRONT_ACCESS_PAIR.note}
+                          className="rounded-md border border-dashed border-surface-container-high px-2.5 py-1 text-xs font-medium text-on-surface-variant hover:border-primary/40 hover:text-primary"
+                        >
+                          + MCC Vertical Pair (Front Access)
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </>
             )}
 
             <div
