@@ -315,6 +315,10 @@ export type Vertical = {
   dummy_height_mm: number | null;
   // number of busduct top entries in this bay (switchboards with has_busduct)
   busduct_entries: number;
+  // cable entry / exit marked on this bay in the GA (set by right-click);
+  // null = none (e.g. outgoings taken out through a cable / busbar alley)
+  cable_entry?: "Top" | "Bottom" | null;
+  cable_exit?: "Top" | "Bottom" | null;
 };
 
 // a feeder placed inside a bay, stacked into a tier

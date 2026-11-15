@@ -1166,6 +1166,22 @@ export function GaCanvas({
     );
   }
 
+  // right-click menu on a bay: set its cable entry / exit
+  const [bayMenu, setBayMenu] = useState<{
+    bayId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  function setBayCable(
+    id: string,
+    field: "cable_entry" | "cable_exit",
+    value: "Top" | "Bottom" | null,
+  ) {
+    setVerticals((vs) =>
+      vs.map((v) => (v.id === id ? { ...v, [field]: value } : v)),
+    );
+  }
+
   function setBayDim(
     id: string,
     field: "width_mm" | "depth_mm",
@@ -1755,6 +1771,8 @@ export function GaCanvas({
             dummy_slot: v.dummy_slot,
             dummy_height_mm: v.dummy_height_mm,
             busduct_entries: v.busduct_entries ?? 0,
+            cable_entry: v.cable_entry ?? null,
+            cable_exit: v.cable_exit ?? null,
           })
           .select("id")
           .single();
@@ -1778,6 +1796,10 @@ export function GaCanvas({
           fieldPatch.dummy_height_mm = v.dummy_height_mm;
         if ((v.busduct_entries ?? 0) !== (prev.busduct_entries ?? 0))
           fieldPatch.busduct_entries = v.busduct_entries ?? 0;
+        if ((v.cable_entry ?? null) !== (prev.cable_entry ?? null))
+          fieldPatch.cable_entry = v.cable_entry ?? null;
+        if ((v.cable_exit ?? null) !== (prev.cable_exit ?? null))
+          fieldPatch.cable_exit = v.cable_exit ?? null;
         if (Object.keys(fieldPatch).length === 0) continue;
         const { error } = await supabase
           .from("verticals")
@@ -2203,6 +2225,22 @@ export function GaCanvas({
     >
       <div className="flex h-full flex-col">
         <SavingOverlay show={saving} />
+        {bayMenu &&
+          (() => {
+            const bay = bays.find((b) => b.id === bayMenu.bayId);
+            if (!bay) return null;
+            return (
+              <BayCableMenu
+                x={bayMenu.x}
+                y={bayMenu.y}
+                bayName={bay.name}
+                entry={bay.cable_entry ?? null}
+                exit={bay.cable_exit ?? null}
+                onSet={(field, value) => setBayCable(bay.id, field, value)}
+                onClose={() => setBayMenu(null)}
+              />
+            );
+          })()}
         {configBayId &&
           (() => {
             const idx = bays.findIndex((b) => b.id === configBayId);
@@ -2861,8 +2899,12 @@ export function GaCanvas({
                                         : null
                                     }
                                     selectedUnitIndex={selectedUnitIndex}
-                                    cableEntry={sb.cable_entry}
-                                    cableExit={sb.cable_exit}
+                                    onContextMenu={
+                                      readOnly || v.bay_type === "unassigned"
+                                        ? undefined
+                                        : (x, y) =>
+                                            setBayMenu({ bayId: v.id, x, y })
+                                    }
                                     onSelectBay={() => {
                                       setSelectedBayId(v.id);
                                       setSideBayId(v.id);
@@ -3892,8 +3934,7 @@ function BayColumn({
   isSelected,
   selectedPlacedId,
   selectedUnitIndex,
-  cableEntry,
-  cableExit,
+  onContextMenu,
   onSelectBay,
   onSelectFeeder,
   onMoveBay,
@@ -3915,8 +3956,8 @@ function BayColumn({
   isSelected: boolean;
   selectedPlacedId: string | null;
   selectedUnitIndex: number;
-  cableEntry: "Top" | "Bottom" | null;
-  cableExit: "Top" | "Bottom" | null;
+  /** right-click on the bay (cable entry / exit menu); none when read-only */
+  onContextMenu?: (x: number, y: number) => void;
   onSelectBay: () => void;
   onSelectFeeder: (placedId: string, unitIndex: number) => void;
   onMoveBay: (direction: "left" | "right") => void;
@@ -3960,6 +4001,16 @@ function BayColumn({
     <div
       ref={setNodeRef}
       onClick={onSelectBay}
+      onContextMenu={
+        onContextMenu
+          ? (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onSelectBay();
+              onContextMenu(e.clientX, e.clientY);
+            }
+          : undefined
+      }
       data-ga-selectable=""
       data-ga-tip={tip}
       className={`relative shrink-0 cursor-pointer border bg-neutral-100 ${isOver ? "border-primary" : isSelected ? "border-2 border-primary" : "border-black/70"}`}
@@ -4110,18 +4161,28 @@ function BayColumn({
           );
         })}
       </div>
-      {vertical.bay_type === "incomer" && cableEntry && (
+      {/* cable entry / exit: set per bay (right-click), not by bay type */}
+      {vertical.cable_entry && (
         <div
-          title={`Cable entry — ${cableEntry.toLowerCase()}`}
+          title={`Cable entry — ${vertical.cable_entry.toLowerCase()}`}
           className="pointer-events-auto absolute left-1/2 z-10 h-1.5 w-3/4 -translate-x-1/2 bg-blue-600"
-          style={cableEntry === "Top" ? { top: 0 } : { bottom: 0 }}
+          style={vertical.cable_entry === "Top" ? { top: 0 } : { bottom: 0 }}
         />
       )}
-      {vertical.bay_type === "outgoing" && cableExit && (
+      {vertical.cable_exit && (
         <div
-          title={`Cable exit — ${cableExit.toLowerCase()}`}
+          title={`Cable exit — ${vertical.cable_exit.toLowerCase()}`}
           className="pointer-events-auto absolute left-1/2 z-10 h-1.5 w-3/4 -translate-x-1/2 bg-purple-600"
-          style={cableExit === "Top" ? { top: 0 } : { bottom: 0 }}
+          style={
+            // both on the same side: exit sits just inside the entry mark
+            vertical.cable_exit === vertical.cable_entry
+              ? vertical.cable_exit === "Top"
+                ? { top: 8 }
+                : { bottom: 8 }
+              : vertical.cable_exit === "Top"
+                ? { top: 0 }
+                : { bottom: 0 }
+          }
         />
       )}
     </div>
@@ -4418,6 +4479,15 @@ function BayDetailsPanel({
           {vertical.bay_type.replace("_", " ")}
         </span>
       )}
+      <p className="mb-2 text-[11px] text-on-surface-variant">
+        Cable entry: <b>{vertical.cable_entry ?? "none"}</b> · Cable exit:{" "}
+        <b>{vertical.cable_exit ?? "none"}</b>
+        {!readOnly && (
+          <span className="block text-[10px] text-secondary">
+            Right-click the bay in the drawing to change.
+          </span>
+        )}
+      </p>
       <div className="mb-3 flex items-end gap-2">
         <label>
           <span className="mb-1 block text-[10px] font-medium text-on-surface-variant">
@@ -4506,5 +4576,92 @@ function BayDetailsPanel({
         </button>
       )}
     </div>
+  );
+}
+
+// Right-click menu on a bay: where its cables come in / go out. Shown on the
+// GA as a blue (entry) / purple (exit) bar at the top or bottom of the bay.
+function BayCableMenu({
+  x,
+  y,
+  bayName,
+  entry,
+  exit,
+  onSet,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  bayName: string;
+  entry: "Top" | "Bottom" | null;
+  exit: "Top" | "Bottom" | null;
+  onSet: (
+    field: "cable_entry" | "cable_exit",
+    value: "Top" | "Bottom" | null,
+  ) => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onClose, true);
+    window.addEventListener("resize", onClose);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onClose, true);
+      window.removeEventListener("resize", onClose);
+    };
+  }, [onClose]);
+  // keep the menu on screen
+  const left = Math.min(x, window.innerWidth - 240);
+  const top = Math.min(y, window.innerHeight - 300);
+  const group = (
+    field: "cable_entry" | "cable_exit",
+    label: string,
+    current: "Top" | "Bottom" | null,
+    swatch: string,
+  ) => (
+    <div className="py-1">
+      <p className="flex items-center gap-1.5 px-3 pb-0.5 pt-1 text-[11px] font-semibold uppercase tracking-wide text-secondary">
+        <span className={`inline-block h-1.5 w-3 ${swatch}`} /> {label}
+      </p>
+      {(["Top", "Bottom", null] as const).map((v) => (
+        <button
+          key={v ?? "none"}
+          type="button"
+          onClick={() => {
+            onSet(field, v);
+            onClose();
+          }}
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] hover:bg-surface-container-low"
+        >
+          <span className="w-4 text-primary">{current === v ? "✓" : ""}</span>
+          {v === null ? "None" : v}
+        </button>
+      ))}
+    </div>
+  );
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-40"
+        onClick={onClose}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          onClose();
+        }}
+      />
+      <div
+        role="menu"
+        className="fixed z-50 w-56 divide-y divide-surface-container overflow-hidden rounded-lg border border-surface-container-high bg-surface-container-lowest shadow-lg"
+        style={{ left, top }}
+      >
+        <p className="truncate px-3 py-1.5 text-[12px] font-bold text-on-surface">
+          {bayName}
+        </p>
+        {group("cable_entry", "Cable entry", entry, "bg-blue-600")}
+        {group("cable_exit", "Cable exit", exit, "bg-purple-600")}
+      </div>
+    </>
   );
 }
