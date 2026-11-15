@@ -5,6 +5,7 @@ import {
   ARTUK_BAY_CONFIGS,
   configMisfits,
   currentConfigOf,
+  doubleFrontMccLayouts,
   frontAccessPairLayouts,
   type ArtukBayConfig,
   type InnerLayout,
@@ -642,16 +643,18 @@ export function GaCanvas({
   // the other face's feeders per bay, as last loaded (Update GA sizes bays
   // to fit both faces; switching faces needs saved changes, so these are
   // current)
-  const otherFacePlaced = useRef<Map<string, VerticalWithFeeders["placed"]>>(
-    new Map(),
-  );
+  const [otherFacePlaced, setOtherFacePlaced] = useState<
+    Map<string, VerticalWithFeeders["placed"]>
+  >(new Map());
   function viewOf(all: VerticalWithFeeders[]) {
     const f = faceRef.current;
     const other = faceView(all, f === "front" ? "rear" : "front");
-    otherFacePlaced.current = new Map(
-      other
-        .filter((v) => v.bay_type !== "unassigned")
-        .map((v) => [v.id, v.placed]),
+    setOtherFacePlaced(
+      new Map(
+        other
+          .filter((v) => v.bay_type !== "unassigned")
+          .map((v) => [v.id, v.placed]),
+      ),
     );
     const shown = new Set(
       faceView(all, f).flatMap((v) => v.placed.map((p) => p.id)),
@@ -957,7 +960,29 @@ export function GaCanvas({
   const rearView = face === "rear";
   const isDoubleFront = isArtuk && savedArrangement === "double_front";
   // ArTu-K 920+1120 front-access MCC pairs: cable alleys + shared VBB inside the bays
-  const innerLayouts = frontAccessPairLayouts(bays);
+  // an incomer / bus coupler / ACB bay (front-only on a double-front board)
+  const isAcbBay = (v: VerticalWithFeeders) =>
+    v.bay_type === "incomer" ||
+    v.bay_type === "bus_coupler" ||
+    v.placed.some((p) => p.feeder.device_type === "ACB") ||
+    (otherFacePlaced.get(v.id) ?? []).some(
+      (p) => p.feeder.device_type === "ACB",
+    );
+  const innerLayouts = new Map<string, InnerLayout>([
+    ...frontAccessPairLayouts(bays),
+    // double front: each MCC bay's side busbar chamber (mirrored on the rear)
+    ...(isDoubleFront
+      ? doubleFrontMccLayouts(
+          bays.map((v) => ({
+            id: v.id,
+            bay_type: v.bay_type,
+            width_mm: v.width_mm,
+            acbBay: isAcbBay(v),
+          })),
+          rearView,
+        )
+      : []),
+  ]);
   const busductTotal = bays.reduce((s, v) => s + (v.busduct_entries ?? 0), 0);
   const unallocated =
     verticals.find((v) => v.bay_type === "unassigned") ?? null;
@@ -982,8 +1007,10 @@ export function GaCanvas({
   const bayHeightMm = busbarHeight + panelHeight;
   // Vertical numbers as on a GA drawing: switchgear bays are 1F, 2F, 3F...
   // left to right; cable/busbar alleys aren't numbered.
+  // numbered in line-up order on both sides: bay 1 on the rear (1R) is the
+  // one behind 1F, even though the rear is drawn mirrored
   const bayNumbers = new Map<string, number>();
-  for (const v of bays) {
+  for (const v of baysInOrder) {
     if (v.bay_type === "cable_alley" || v.bay_type === "busbar_alley") continue;
     bayNumbers.set(v.id, bayNumbers.size + 1);
   }
@@ -1479,10 +1506,7 @@ export function GaCanvas({
               ? v
               : {
                   ...v,
-                  placed: [
-                    ...v.placed,
-                    ...(otherFacePlaced.current.get(v.id) ?? []),
-                  ],
+                  placed: [...v.placed, ...(otherFacePlaced.get(v.id) ?? [])],
                 };
           const size = artukBaySizeAllFaces(both, {
             arrangement,
@@ -2335,6 +2359,18 @@ export function GaCanvas({
     }
   }
 
+  // double front: incomer / bus coupler / ACB bays have no rear side (a
+  // louvred rear cover), so nothing can be placed on their rear
+  function blockedOnRear(verticalId: string): boolean {
+    if (!rearView) return false;
+    const v = verticals.find((x) => x.id === verticalId);
+    if (!v || !isAcbBay(v)) return false;
+    alert(
+      `"${v.name}" is an ACB bay — on a double-front panel it has no rear side (louvred rear cover). Place rear feeders in the MCC bays.`,
+    );
+    return true;
+  }
+
   function handleDragEnd(event: DragEndEvent) {
     setDraggingFeeder(null);
     const { active, over } = event;
@@ -2357,6 +2393,7 @@ export function GaCanvas({
       }
       if (!overId.startsWith("bay-")) return;
       const toVerticalId = overId.replace("bay-", "");
+      if (blockedOnRear(toVerticalId)) return;
       if (toVerticalId !== fromVerticalId)
         moveUnitToBay(fromVerticalId, placedId, unitIndex, toVerticalId);
       return;
@@ -2364,6 +2401,7 @@ export function GaCanvas({
 
     if (!overId.startsWith("bay-")) return;
     const verticalId = overId.replace("bay-", "");
+    if (blockedOnRear(verticalId)) return;
 
     if (activeId.startsWith("unit-") && unallocated) {
       const [placedId, unit] = activeId.replace("unit-", "").split("::");
@@ -4346,7 +4384,9 @@ function BayColumn({
           key={z.leftMm}
           title={
             z.kind === "vbb"
-              ? "Shared vertical busbar compartment (VBBC) — serves the MCCBs of both bays"
+              ? z.label === "Busbar chamber"
+                ? "Busbar chamber — this side's vertical busbar, in line with its switchgear (double front)"
+                : "Shared vertical busbar compartment (VBBC) — serves the MCCBs of both bays"
               : `Cable alley — ${z.widthMm}mm`
           }
           className={`pointer-events-none absolute inset-y-0 flex items-center justify-center border-x border-black/60 ${

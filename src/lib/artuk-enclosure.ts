@@ -610,6 +610,10 @@ export function artukEnclosureBom(input: EnclosureInput): {
       add(bp?.plate, 1, `${name}: busbar chamber cover`);
     }
 
+    if (acbs.length > 0 && input.doubleFront)
+      warnings.push(
+        `${name}: double front — an ACB bay has no rear side; its rear is a louvred (ventilated) cover. The plain rear door is listed — swap in ABB's louvred rear panel code.`,
+      );
     if (acbs.length > 0) {
       for (const f of acbs) {
         const frame =

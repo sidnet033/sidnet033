@@ -474,6 +474,7 @@ export function currentConfigOf(
 }
 
 export {
+  doubleFrontMccLayouts,
   frontAccessPairLayouts,
   type InnerLayout,
   type InnerZone,

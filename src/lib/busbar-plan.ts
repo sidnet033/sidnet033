@@ -1,5 +1,6 @@
 import type { BayType, Feeder } from "@/types/database";
 import {
+  doubleFrontMccLayouts,
   frontAccessPairLayouts,
   type InnerLayout,
 } from "@/lib/artuk-inner-layout";
@@ -263,7 +264,13 @@ export type BusbarPlanInput = {
   defaultDepthMm: number;
   overrides: Record<string, BusbarOverride>;
   // set on ArTuK boards: bars come from ABB's charts
-  artuk?: { ka: number | null; ip: number | null } | null;
+  artuk?: {
+    ka: number | null;
+    ip: number | null;
+    /** double-front board: MCC bays' vertical busbars run in their own
+     * side busbar chamber, in line with the switchgear */
+    doubleFront?: boolean;
+  } | null;
 };
 
 export type BusbarPlan = {
@@ -542,15 +549,31 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
   const droppers = new Map<string, DropperGroup>();
   // feeders inside a 920+1120 front-access pair sit between the cable alley
   // / VBB zones, not across the whole bay
-  const innerLayouts = artuk
-    ? frontAccessPairLayouts(
+  const dfLayouts = artuk?.doubleFront
+    ? doubleFrontMccLayouts(
         bays.map((b) => ({
           id: b.id,
           bay_type: b.bayType,
           width_mm: b.widthMm,
-          depth_mm: b.depthMm,
+          acbBay:
+            b.bayType === "incomer" ||
+            b.bayType === "bus_coupler" ||
+            b.placed.some((p) => p.feeder.device_type === "ACB"),
         })),
       )
+    : new Map<string, InnerLayout>();
+  const innerLayouts = artuk
+    ? new Map([
+        ...frontAccessPairLayouts(
+          bays.map((b) => ({
+            id: b.id,
+            bay_type: b.bayType,
+            width_mm: b.widthMm,
+            depth_mm: b.depthMm,
+          })),
+        ),
+        ...dfLayouts,
+      ])
     : new Map<string, InnerLayout>();
 
   bays.forEach((bay, i) => {
@@ -761,7 +784,15 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
       // neighbour first), else a vertical run inside the bay itself.
       const right = bays[i + 1];
       const left = bays[i - 1];
-      const vbb = frontAccessVbbHost(i);
+      // double front: the bay's own side busbar chamber
+      const dfZone = dfLayouts.get(bay.id)?.zones[0] ?? null;
+      const vbb = dfZone
+        ? {
+            host: bay,
+            partner: null,
+            x: bay.leftMm + dfZone.leftMm + dfZone.widthMm / 2,
+          }
+        : frontAccessVbbHost(i);
       const alley = vbb
         ? null
         : right?.bayType === "busbar_alley"

@@ -47,9 +47,13 @@ Open items for the switchboard estimation app. Newest at the top.
 - [ ] Busbar routing: incomer fed by **top busduct straight down to the
       ACB** (busduct riser in the bay / rear chamber) with the ACB output
       up to the main busbar chamber (BBC).
-- [ ] Busbar routing: a feeder bay sitting in one bus section but **fed
-      from the other section** ("busbar supply from Bus-B" on 4F, Bus-A
-      side) — needs its own horizontal run.
+- [ ] Busbar routing: a face's feeders **fed from the other bus section**
+      (Vedanta bay 4: "busbar supply from Bus-B for front side feeders" —
+      4F sits on the Bus-A side; its vertical busbar is fed from Bus-B
+      through the chamber on the rear face) — needs its own run and a way
+      to pick the bus section per face.
+- [ ] ABB part code for the **louvred rear cover** of ACB bays on a
+      double-front panel (the plain rear door is listed with a warning).
 - [x] Double front: each face has its own vertical busbars, in line
       with its own switchgear (not shared); MCCB / DOL verticals are 200mm
       wider (720 -> 920) to carry them.

@@ -323,7 +323,7 @@ export function overridesFromRows(rows: BusbarOverrideRow[]): Record<string, Bus
 }
 
 export type BusbarParams = Pick<Switchboard, "busbar" | "amps" | "poles" | "neutral_size_pct" | "cable_entry"> &
-  Partial<Pick<Switchboard, "std" | "ka" | "ip_rating">>;
+  Partial<Pick<Switchboard, "std" | "ka" | "ip_rating" | "arrangement">>;
 
 // Physically the busbar chamber sits away from wherever cables enter the
 // panel (more room to route cable near the entry side).
@@ -407,6 +407,9 @@ function planOneFace(args: PlanArgs): BusbarPlan {
     defaultDepthMm: Math.max(0, ...bays.map((v) => v.depth_mm ?? 0)) || DEFAULT_BAY_DEPTH_MM,
     overrides: args.overrides,
     // ArTuK: bars from ABB's charts (copper and aluminium)
-    artuk: args.params.std === "ArTuK" ? { ka: args.params.ka ?? null, ip: parseIp(args.params.ip_rating) } : null,
+    artuk:
+      args.params.std === "ArTuK"
+        ? { ka: args.params.ka ?? null, ip: parseIp(args.params.ip_rating), doubleFront: args.params.arrangement === "double_front" }
+        : null,
   });
 }

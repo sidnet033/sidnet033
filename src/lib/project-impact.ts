@@ -460,6 +460,26 @@ export function auditBoard(
     });
   }
 
+  // double front: incomer / bus coupler / ACB bays have no rear side
+  if (sb.arrangement === "double_front") {
+    for (const v of board.verticals) {
+      const acbBay =
+        v.bay_type === "incomer" ||
+        v.bay_type === "bus_coupler" ||
+        v.placed.some((p) => p.feeder.device_type === "ACB");
+      if (acbBay && v.placed.some((p) => p.face === "rear"))
+        items.push({
+          ...base,
+          id: `${sb.id}|rear-in-acb-bay|${v.id}`,
+          area: "GA",
+          severity: "warning",
+          message: `"${v.name}" is an ACB bay but has feeders on its rear side — on a double-front panel ACB bays are front-only (louvred rear cover). Move them to an MCC bay's rear.`,
+          apply: null,
+          applyLabel: null,
+        });
+    }
+  }
+
   // busduct entries ticked but none placed in the GA
   if (sb.has_busduct && !board.verticals.some((v) => (v.busduct_entries ?? 0) > 0)) {
     items.push({

@@ -69,3 +69,48 @@ export function frontAccessPairLayouts(
   }
   return out;
 }
+
+// Double-front MCC vertical (Thermax / Vedanta GA): a 200mm busbar chamber
+// at the side of the bay with the feeders (about 600mm in a 920 bay) beside
+// it, on BOTH faces, in the same physical position -- the left side seen
+// from the front, so the right side when the rear is drawn from behind.
+// Each face's vertical busbar runs in its own chamber. ACB bays (incomer /
+// bus coupler) are front-only and get no chamber.
+export const DF_BUSBAR_CHAMBER_MM = 200;
+export function doubleFrontMccLayouts(
+  bays: {
+    id: string;
+    bay_type: BayType | null;
+    width_mm: number | null;
+    /** an incomer / bus coupler / ACB bay */
+    acbBay: boolean;
+  }[],
+  mirrored = false,
+): Map<string, InnerLayout> {
+  const out = new Map<string, InnerLayout>();
+  for (const b of bays) {
+    const w = b.width_mm ?? 0;
+    if (
+      b.acbBay ||
+      b.bay_type === "cable_alley" ||
+      b.bay_type === "busbar_alley" ||
+      b.bay_type === "unassigned" ||
+      w < 2 * 60 + DF_BUSBAR_CHAMBER_MM + 300
+    )
+      continue;
+    const zoneLeft = mirrored ? w - 60 - DF_BUSBAR_CHAMBER_MM : 60;
+    out.set(b.id, {
+      feederLeftMm: mirrored ? 60 : 60 + DF_BUSBAR_CHAMBER_MM,
+      feederRightMm: mirrored ? w - 60 - DF_BUSBAR_CHAMBER_MM : w - 60,
+      zones: [
+        {
+          leftMm: zoneLeft,
+          widthMm: DF_BUSBAR_CHAMBER_MM,
+          kind: "vbb",
+          label: "Busbar chamber",
+        },
+      ],
+    });
+  }
+  return out;
+}
