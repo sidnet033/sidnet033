@@ -451,7 +451,9 @@ export async function buildProjectPdf(
             ? "Busbar chamber"
             : null;
       return [
-        bay.number != null ? `${bay.number}. ${bay.name}` : bay.name,
+        bay.number != null
+          ? `${b.doubleFront ? `${bay.number}F / ${bay.number}R` : `${bay.number}F`}  ${bay.name}`
+          : bay.name,
         alley && bay.name.toLowerCase() !== alley.toLowerCase() ? alley : null,
         bay.widthMm ? `${bay.widthMm}mm wide` : null,
       ]

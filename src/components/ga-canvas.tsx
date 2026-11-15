@@ -1011,10 +1011,12 @@ export function GaCanvas({
   // left to right; cable/busbar alleys aren't numbered.
   // numbered in line-up order on both sides: bay 1 on the rear (1R) is the
   // one behind 1F, even though the rear is drawn mirrored
-  const bayNumbers = new Map<string, number>();
+  // tags: 1F, 2F... on the front side; 1R, 2R... on the rear side
+  const faceLetter = face === "rear" ? "R" : "F";
+  const bayNumbers = new Map<string, string>();
   for (const v of baysInOrder) {
     if (v.bay_type === "cable_alley" || v.bay_type === "busbar_alley") continue;
-    bayNumbers.set(v.id, bayNumbers.size + 1);
+    bayNumbers.set(v.id, `${bayNumbers.size + 1}${faceLetter}`);
   }
   const standardPxPerMm = computePxPerMm(totalHeightMm);
   const selectedBay = bays.find((v) => v.id === selectedBayId) ?? null;
@@ -3399,7 +3401,7 @@ export function GaCanvas({
                             style={{ width: (v.width_mm ?? 0) * pxPerMm }}
                           >
                             {bayNumbers.has(v.id)
-                              ? `${bayNumbers.get(v.id)}F`
+                              ? bayNumbers.get(v.id)
                               : ""}
                           </div>
                         ))}
@@ -4288,7 +4290,8 @@ function BayColumn({
   vertical: VerticalWithFeeders;
   /** zones drawn inside the bay (cable alleys, shared VBB) + where feeders sit */
   innerLayout?: InnerLayout | null;
-  bayNumber: number | null;
+  /** bay tag, e.g. "3F" (front) or "3R" (rear) */
+  bayNumber: string | null;
   readOnly: boolean;
   pxPerMm: number;
   panelHeightMm: number;
@@ -4422,9 +4425,9 @@ function BayColumn({
         style={feederMargins}
       >
         {compartments.map((c, ci) => {
-          // compartment tag as on a GA drawing: <bay>F<n> top to bottom
-          // (blank/dummy spaces included), with its height in modules (1M = 100mm)
-          const tag = bayNumber != null ? `${bayNumber}F${ci + 1}` : null;
+          // compartment tag as on a GA drawing: <bay>F<n> (rear: <bay>R<n>) top
+          // to bottom (blank/dummy spaces included), height in modules (1M = 100mm)
+          const tag = bayNumber != null ? `${bayNumber}${ci + 1}` : null;
           const modules =
             c.heightMm % 100 === 0 ? `${c.heightMm / 100}M` : `${c.heightMm}mm`;
           // one unit at a time: a row of 4 merged MCCBs is 4 separate units
