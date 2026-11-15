@@ -701,6 +701,19 @@ export function GaCanvas({
     });
   }
   const [sizingLogicOpen, setSizingLogicOpen] = useState(false);
+  // selecting a bay / feeder / busbar shows the Feeder details tab
+  const selectionKey = `${selectedBayId}|${selectedPlacedId}|${selectedSegmentKey}|${busbarSelected}`;
+  const [prevSelectionKey, setPrevSelectionKey] = useState(selectionKey);
+  if (selectionKey !== prevSelectionKey) {
+    setPrevSelectionKey(selectionKey);
+    if (
+      selectedBayId ||
+      selectedPlacedId ||
+      selectedSegmentKey ||
+      busbarSelected
+    )
+      setLeftTab("details");
+  }
   const [isFullscreen, setIsFullscreen] = useState(false);
   const fullscreenRef = useRef<HTMLDivElement>(null);
   const drawingRef = useRef<HTMLDivElement>(null);
