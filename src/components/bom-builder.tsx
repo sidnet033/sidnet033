@@ -843,6 +843,7 @@ export function BomBuilder({
         breaking_capacity: mod.feeder.breaking_capacity,
         device_type: mod.feeder.device_type,
         rated_kw: mod.feeder.rated_kw,
+        remarks: mod.feeder.remarks ?? null,
         switchboard_id: sb.id,
         is_library: false,
         created_by: user?.id,
@@ -1198,6 +1199,22 @@ export function BomBuilder({
     );
   }
 
+  function setFeederRemarks(mod: DraftModule, value: string) {
+    const remarks = value.trim() ? value.trim() : null;
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            modules: d.modules.map((m) =>
+              m.feeder.id === mod.feeder.id
+                ? { ...m, feeder: { ...m.feeder, remarks } }
+                : m,
+            ),
+          }
+        : d,
+    );
+  }
+
   function updateFeederRating(
     mod: DraftModule,
     field: "rated_current" | "rated_kw",
@@ -1435,6 +1452,7 @@ export function BomBuilder({
               breaking_capacity: m.feeder.breaking_capacity,
               device_type: m.feeder.device_type,
               rated_kw: m.feeder.rated_kw,
+              remarks: m.feeder.remarks ?? null,
               switchboard_id: sb.id,
               is_library: false,
               created_by: currentUserId,
@@ -1473,6 +1491,7 @@ export function BomBuilder({
               breaking_capacity: m.feeder.breaking_capacity,
               device_type: m.feeder.device_type,
               rated_kw: m.feeder.rated_kw,
+              remarks: m.feeder.remarks ?? null,
               switchboard_id: sb.id,
               is_library: false,
               source_library_feeder_id: m.feeder.id,
@@ -1606,6 +1625,7 @@ export function BomBuilder({
                 | "breaking_capacity"
                 | "device_type"
                 | "rated_kw"
+                | "remarks"
               >
             > & { updated_at?: string } = {};
             if (priorModule.feeder.name !== m.feeder.name)
@@ -1629,6 +1649,11 @@ export function BomBuilder({
               feederPatch.device_type = m.feeder.device_type;
             if (priorModule.feeder.rated_kw !== m.feeder.rated_kw)
               feederPatch.rated_kw = m.feeder.rated_kw;
+            if (
+              (priorModule.feeder.remarks ?? null) !==
+              (m.feeder.remarks ?? null)
+            )
+              feederPatch.remarks = m.feeder.remarks ?? null;
             if (Object.keys(feederPatch).length) {
               feederPatch.updated_at = new Date().toISOString();
               await updateChecked(
@@ -2224,6 +2249,7 @@ export function BomBuilder({
             canEditLines={!readOnly}
             allItems={items}
             onRename={(field, value) => renameFeeder(mod, field, value)}
+            onRemarksChange={(value) => setFeederRemarks(mod, value)}
             onRatingChange={(field, value) =>
               updateFeederRating(mod, field, value)
             }
@@ -2432,6 +2458,7 @@ function FeederModuleCard({
   canEditLines,
   allItems,
   onRename,
+  onRemarksChange,
   onRatingChange,
   onQtyChange,
   onAddLine,
@@ -2459,6 +2486,7 @@ function FeederModuleCard({
     field: "name" | "tag" | "device_type" | "category",
     value: string,
   ) => void;
+  onRemarksChange: (value: string) => void;
   onRatingChange: (field: "rated_current" | "rated_kw", value: string) => void;
   onQtyChange: (qty: number) => void;
   onAddLine: (item: ItemMaster, qty: number) => void;
@@ -2478,6 +2506,7 @@ function FeederModuleCard({
   onSplit?: (picks: SplitPick[], newName: string) => void;
 }) {
   const [splitOpen, setSplitOpen] = useState(false);
+  const [remarksOpen, setRemarksOpen] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [createItemOpen, setCreateItemOpen] = useState(false);
   const [bulkAddOpen, setBulkAddOpen] = useState(false);
@@ -2657,6 +2686,39 @@ function FeederModuleCard({
         <span className="font-display text-sm font-semibold text-on-surface">
           {money(subtotal)}
         </span>
+        <button
+          type="button"
+          onClick={() => setRemarksOpen(true)}
+          title={mod.feeder.remarks ? mod.feeder.remarks : "Add remarks"}
+          aria-label={
+            mod.feeder.remarks ? "View or edit remarks" : "Add remarks"
+          }
+          className={`relative flex items-center rounded p-0.5 ${
+            mod.feeder.remarks
+              ? "text-amber-600 hover:text-amber-700"
+              : "text-secondary hover:text-on-surface"
+          }`}
+        >
+          <Icon
+            name={mod.feeder.remarks ? "sticky_note_2" : "add_comment"}
+            size={16}
+          />
+          {mod.feeder.remarks && (
+            <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-amber-500" />
+          )}
+        </button>
+        {remarksOpen && (
+          <RemarksDialog
+            feederName={mod.feeder.name}
+            value={mod.feeder.remarks ?? ""}
+            readOnly={readOnly || !canEditLines}
+            onClose={() => setRemarksOpen(false)}
+            onSave={(v) => {
+              onRemarksChange(v);
+              setRemarksOpen(false);
+            }}
+          />
+        )}
         {!readOnly && (
           <div className="flex items-center gap-2 text-xs">
             {onPromote && (
@@ -3378,5 +3440,78 @@ function LineItemsSection<
         </table>
       )}
     </div>
+  );
+}
+
+// Remarks for one feeder in this BOM. Saved with the BOM (Save Changes),
+// shown as the remarks icon's tooltip.
+function RemarksDialog({
+  feederName,
+  value,
+  readOnly,
+  onClose,
+  onSave,
+}: {
+  feederName: string;
+  value: string;
+  readOnly: boolean;
+  onClose: () => void;
+  onSave: (value: string) => void;
+}) {
+  const [text, setText] = useState(value);
+  return (
+    <Modal title={`Remarks — ${feederName}`} onClose={onClose} width="max-w-lg">
+      <div className="space-y-3">
+        <textarea
+          autoFocus={!readOnly}
+          readOnly={readOnly}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={6}
+          maxLength={2000}
+          placeholder={
+            readOnly
+              ? "No remarks."
+              : "Notes about this feeder — scope, assumptions, customer requests…"
+          }
+          className="w-full rounded-lg border border-surface-container-high bg-surface-container-lowest p-2 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20 read-only:bg-surface-container-low"
+        />
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] text-secondary">
+            {readOnly
+              ? "Read only"
+              : "Saved with the BOM when you click Save Changes."}
+          </span>
+          <div className="flex gap-2">
+            {!readOnly && value && (
+              <button
+                type="button"
+                onClick={() => onSave("")}
+                className="btn btn-outline btn-sm text-error"
+              >
+                Clear
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn btn-outline btn-sm"
+            >
+              {readOnly ? "Close" : "Cancel"}
+            </button>
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={() => onSave(text)}
+                disabled={text.trim() === value.trim()}
+                className="btn btn-primary btn-sm"
+              >
+                Done
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </Modal>
   );
 }

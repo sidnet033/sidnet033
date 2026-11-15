@@ -101,6 +101,8 @@ export type Feeder = {
   device_type: DeviceType | null;
   rated_kw: number | null;
   source_library_feeder_id?: string | null;
+  /** free-text notes on this feeder (BOM Builder remarks popup) */
+  remarks?: string | null;
 };
 
 export type DeviceType =
