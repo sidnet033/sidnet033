@@ -123,6 +123,23 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
     form: "4B",
     partner: { widthMm: 420, bayType: "cable_alley", name: "Cable Chamber" },
   },
+  // same ABB sheet, drawing and parts list as the cable-chamber version;
+  // the 420mm partner is a busbar chamber (busbar routing as on the sheet)
+  {
+    id: "e22-920-420-bc-bb",
+    workbookKeys: ["920W", "420WX1037D"],
+    page: 6,
+    label: "ArTu-K Emax 2 920+420 E2.2 w ACB BC With External Busbar Chamber",
+    kind: "acb",
+    frame: "E2.2",
+    functions: ["bus_coupler"],
+    access: "rear",
+    widthMm: 920,
+    depthMm: 1037,
+    ip: 54,
+    form: "4B",
+    partner: { widthMm: 420, bayType: "busbar_alley", name: "Busbar Chamber" },
+  },
   {
     id: "e62-1120-in",
     workbookKeys: ["1120WX1037+437D"],
