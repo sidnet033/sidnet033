@@ -489,7 +489,16 @@ export function artukEnclosureBom(input: EnclosureInput): {
     poles: input.poles,
   });
   warnings.push(...sup.warnings);
-  for (const s of sup.supports.filter((x) => !templatedNames.has(x.bayName))) {
+  // A bay with a workbook parts list takes its parts as-is, except busbar
+  // chambers (busbar alleys): they carry busbar, and the workbook lists have
+  // no busbar support insulators -- so their supports are always counted
+  // (e.g. the 920+420 E2.2 bus coupler with external busbar chamber).
+  const busbarAlleyNames = new Set(
+    bays.filter((v) => v.bay_type === "busbar_alley").map((v) => v.name),
+  );
+  for (const s of sup.supports.filter(
+    (x) => !templatedNames.has(x.bayName) || busbarAlleyNames.has(x.bayName),
+  )) {
     const what = `${s.bayName}: ${s.kind === "hbb" ? "main" : "vertical"} busbar support (span ≤${s.spanMm}mm)`;
     add(s.code, 1, what);
     add(s.neutralCode, 1, what);
