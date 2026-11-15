@@ -248,7 +248,8 @@ export type Switchboard = {
   neutral_size_pct: number;
   cable_access: "Front" | "Rear" | null;
   // ArTu-K: single front (default) or double front (back-to-back feeders)
-  arrangement: "single_front" | "double_front";
+  // null = not chosen yet (required before Project Details saves)
+  arrangement: "single_front" | "double_front" | null;
   // ArTu-K internal arc compliance (ABB ELSP/ARTU-K/ENGG/04)
   internal_arc: boolean;
   // takes busduct(s) in from the top as well as cables

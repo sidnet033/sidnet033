@@ -347,6 +347,15 @@ export function ProjectDetailTab({
       ? ["a Google Drive / Docs link"]
       : []),
     ...(siteMissing ? ["site altitude and ambient temperature"] : []),
+    // single / double front is a required choice for every switchboard
+    ...(() => {
+      const missing = boards
+        .filter((b) => !b.switchboard.arrangement)
+        .map((b) => b.switchboard.tag);
+      return missing.length
+        ? [`single / double front for ${missing.join(", ")}`]
+        : [];
+    })(),
   ];
   // Amps below a feeder's rating is a warning (allowed), not a blocker.
   const saveBlocked =
@@ -1752,16 +1761,17 @@ export function ProjectDetailTab({
                       /* 19: Arrangement -- single / double front */ <>
                         <select
                           disabled={rowDisabled}
-                          value={sb.arrangement ?? "single_front"}
+                          value={sb.arrangement ?? ""}
                           onChange={(e) =>
                             updateSwitchboardField(sb.id, {
-                              arrangement: e.target
-                                .value as Switchboard["arrangement"],
+                              arrangement: (e.target.value ||
+                                null) as Switchboard["arrangement"],
                             })
                           }
-                          title="Single front, or double front (back-to-back feeders). On ArTuK boards this sets the MCC bay depths and the double-front parts lists in GA Builder."
-                          className="w-36 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 text-center [text-align-last:center] disabled:border-transparent disabled:bg-transparent"
+                          title="Required: single front, or double front (back-to-back feeders). On ArTuK boards this sets the MCC bay depths and the double-front parts lists in GA Builder."
+                          className={`w-36 rounded border bg-surface-container-lowest px-1.5 py-1 text-center [text-align-last:center] disabled:border-transparent disabled:bg-transparent ${sb.arrangement ? "border-surface-container-high" : "border-error text-error"}`}
                         >
+                          {!sb.arrangement && <option value="">Select…</option>}
                           <option value="single_front">Single front</option>
                           <option value="double_front">Double front</option>
                         </select>
@@ -1784,7 +1794,7 @@ export function ProjectDetailTab({
                   { label: "Type", idx: 2 },
                   { label: "Std", idx: 3 },
                   {
-                    label: "Front",
+                    label: "Front *",
                     idx: 19,
                     title: "Single front or double front (back-to-back)",
                   },

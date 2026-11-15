@@ -823,8 +823,8 @@ export function GaCanvas({
     setSavedPlinthHeight(plinth);
     setCableAccess(data.switchboard.cable_access ?? null);
     setSavedCableAccess(data.switchboard.cable_access ?? null);
-    setArrangement(data.switchboard.arrangement ?? "single_front");
-    setSavedArrangement(data.switchboard.arrangement ?? "single_front");
+    setArrangement(data.switchboard.arrangement ?? null);
+    setSavedArrangement(data.switchboard.arrangement ?? null);
     setInternalArc(!!data.switchboard.internal_arc);
     setSavedInternalArc(!!data.switchboard.internal_arc);
     setHasBusduct(!!data.switchboard.has_busduct);
@@ -863,8 +863,8 @@ export function GaCanvas({
       setSavedPlinthHeight(plinth);
       setCableAccess(data.switchboard.cable_access ?? null);
       setSavedCableAccess(data.switchboard.cable_access ?? null);
-      setArrangement(data.switchboard.arrangement ?? "single_front");
-      setSavedArrangement(data.switchboard.arrangement ?? "single_front");
+      setArrangement(data.switchboard.arrangement ?? null);
+      setSavedArrangement(data.switchboard.arrangement ?? null);
       setInternalArc(!!data.switchboard.internal_arc);
       setSavedInternalArc(!!data.switchboard.internal_arc);
       setHasBusduct(!!data.switchboard.has_busduct);
@@ -2395,12 +2395,20 @@ export function GaCanvas({
               <Field label="Arrangement">
                 <select
                   disabled={readOnly}
-                  value={arrangement}
+                  value={arrangement ?? ""}
                   onChange={(e) =>
-                    setArrangement(e.target.value as Switchboard["arrangement"])
+                    setArrangement(
+                      (e.target.value || null) as Switchboard["arrangement"],
+                    )
                   }
-                  className="rounded border border-surface-container-high px-1.5 py-1"
+                  title={
+                    arrangement
+                      ? undefined
+                      : "Choose single or double front (required)"
+                  }
+                  className={`rounded border px-1.5 py-1 ${arrangement ? "border-surface-container-high" : "border-error text-error"}`}
                 >
+                  {!arrangement && <option value="">Select…</option>}
                   <option value="single_front">Single front</option>
                   <option value="double_front">Double front</option>
                 </select>
