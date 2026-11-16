@@ -643,7 +643,8 @@ export function auditBoard(
     const boardIp = sb.ip_rating ? Number(sb.ip_rating) : null;
     const bayOpts = {
       arrangement: sb.arrangement,
-      frontAccess: sb.cable_access === "Front",
+      frontAccess:
+      sb.cable_access === "Front" || sb.arrangement === "double_front",
       amps: sb.amps,
       mainRuns: plan.segments.find((s) => s.kind === "main")?.runs ?? 1,
     };

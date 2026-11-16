@@ -82,6 +82,8 @@ const EDITABLE_SWITCHBOARD_FIELDS = [
   "busbar",
   "neutral_size_pct",
   "arrangement",
+  "cable_access",
+  "internal_arc",
   "qty",
 ] as const satisfies readonly (keyof Switchboard)[];
 
@@ -354,6 +356,20 @@ export function ProjectDetailTab({
         .map((b) => b.switchboard.tag);
       return missing.length
         ? [`single / double front for ${missing.join(", ")}`]
+        : [];
+    })(),
+    // a single-front board needs front or rear access (double front is
+    // always front access)
+    ...(() => {
+      const missing = boards
+        .filter(
+          (b) =>
+            b.switchboard.arrangement === "single_front" &&
+            !b.switchboard.cable_access,
+        )
+        .map((b) => b.switchboard.tag);
+      return missing.length
+        ? [`front / rear access for ${missing.join(", ")}`]
         : [];
     })(),
   ];
@@ -1766,6 +1782,10 @@ export function ProjectDetailTab({
                             updateSwitchboardField(sb.id, {
                               arrangement: (e.target.value ||
                                 null) as Switchboard["arrangement"],
+                              // double front: alleys in line with the switchgear
+                              ...(e.target.value === "double_front"
+                                ? { cable_access: "Front" as const }
+                                : {}),
                             })
                           }
                           title="Required: single front, or double front (back-to-back feeders). On ArTuK boards this sets the MCC bay depths and the double-front parts lists in GA Builder."
@@ -1774,6 +1794,53 @@ export function ProjectDetailTab({
                           {!sb.arrangement && <option value="">Select…</option>}
                           <option value="single_front">Single front</option>
                           <option value="double_front">Double front</option>
+                        </select>
+                      </>,
+                      /* 20: Access -- front / rear (single front only) */ <>
+                        {sb.arrangement === "double_front" ? (
+                          <span
+                            className="text-on-surface-variant"
+                            title="Double front: cable and busbar alleys are front access, in line with the switchgear"
+                          >
+                            Front
+                          </span>
+                        ) : (
+                          <select
+                            disabled={rowDisabled || !sb.arrangement}
+                            value={sb.cable_access ?? ""}
+                            onChange={(e) =>
+                              updateSwitchboardField(sb.id, {
+                                cable_access: (e.target.value ||
+                                  null) as Switchboard["cable_access"],
+                              })
+                            }
+                            title="Single front: Front access (cable / busbar alleys in line with the switchgear) or Rear access (busbars / cables behind the switchgear)"
+                            className={`w-36 rounded border bg-surface-container-lowest px-1.5 py-1 text-center [text-align-last:center] disabled:border-transparent disabled:bg-transparent ${sb.cable_access || sb.arrangement !== "single_front" ? "border-surface-container-high" : "border-error text-error"}`}
+                          >
+                            {!sb.cable_access && (
+                              <option value="">
+                                {sb.arrangement ? "Select…" : "—"}
+                              </option>
+                            )}
+                            <option value="Front">Front access</option>
+                            <option value="Rear">Rear access</option>
+                          </select>
+                        )}
+                      </>,
+                      /* 21: Internal arc -- yes / no */ <>
+                        <select
+                          disabled={rowDisabled}
+                          value={sb.internal_arc ? "yes" : "no"}
+                          onChange={(e) =>
+                            updateSwitchboardField(sb.id, {
+                              internal_arc: e.target.value === "yes",
+                            })
+                          }
+                          title="Internal arc design: Yes or No. On ArTuK boards, Yes applies the ABB internal arc rules (arc flaps, arc-proof rear covers, etc.) in the enclosure BOM."
+                          className="w-36 rounded border border-surface-container-high bg-surface-container-lowest px-1.5 py-1 text-center [text-align-last:center] disabled:border-transparent disabled:bg-transparent"
+                        >
+                          <option value="no">No</option>
+                          <option value="yes">Yes</option>
                         </select>
                       </>,
                     ],
@@ -1797,6 +1864,18 @@ export function ProjectDetailTab({
                     label: "Front *",
                     idx: 19,
                     title: "Single front or double front (back-to-back)",
+                  },
+                  {
+                    label: "Access *",
+                    idx: 20,
+                    title:
+                      "Single front: front access (alleys in line with the switchgear) or rear access (busbars / cables behind). Double front is always front access.",
+                  },
+                  {
+                    label: "Internal Arc",
+                    idx: 21,
+                    title:
+                      "Internal arc design. Yes on an ArTuK board applies the ABB internal arc rules.",
                   },
                   { label: "Form of Separation", idx: 4 },
                   { label: "Amps", idx: 5 },

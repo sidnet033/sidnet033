@@ -984,6 +984,10 @@ export function GaCanvas({
   const bays = face === "rear" ? [...baysInOrder].reverse() : baysInOrder;
   const rearView = face === "rear";
   const isDoubleFront = isArtuk && savedArrangement === "double_front";
+  // a double-front panel's cable / busbar alleys are front access (in line
+  // with the switchgear); only a single-front panel can be rear access
+  const effectiveCableAccess: Switchboard["cable_access"] =
+    isArtuk && arrangement === "double_front" ? "Front" : cableAccess;
   const withAutoWidths = (verts: VerticalWithFeeders[], ids: string[]) =>
     withAutoWidthsFor(verts, ids, isDoubleFront);
   // ArTu-K 920+1120 front-access MCC pairs: cable alleys + shared VBB inside the bays
@@ -1540,7 +1544,7 @@ export function GaCanvas({
                 };
           const size = artukBaySizeAllFaces(both, {
             arrangement,
-            frontAccess: cableAccess === "Front",
+            frontAccess: effectiveCableAccess === "Front",
             amps: sb.amps,
             mainRuns:
               busbarPlan?.segments.find((s) => s.kind === "main")?.runs ?? 1,
@@ -1632,7 +1636,7 @@ export function GaCanvas({
     // so switching away from a deep config lets the panel get shallower.
     const opts = {
       arrangement,
-      frontAccess: cableAccess === "Front",
+      frontAccess: effectiveCableAccess === "Front",
       amps: sb.amps,
       mainRuns:
         busbarPlan?.segments.find((seg) => seg.kind === "main")?.runs ?? 1,
@@ -1972,6 +1976,12 @@ export function GaCanvas({
     const noConfig = bays.filter(
       (v, i) => needsBayConfig(v) && !effectiveBayConfig(i),
     );
+    if (arrangement === "single_front" && !effectiveCableAccess) {
+      alert(
+        "Choose Cable Access (Front or Rear) for this single-front panel before saving.",
+      );
+      return;
+    }
     if (noConfig.length) {
       alert(
         `Choose a bay config for ${noConfig.map((v) => `"${v.name}"`).join(", ")} before saving — right-click the bay → Change bay config… (pick "Custom" for a non-standard bay). Cable and busbar alleys don't need one.`,
@@ -2520,7 +2530,7 @@ export function GaCanvas({
                 bayName={bay.name}
                 currentId={effectiveBayConfig(idx)?.split("#")[0] ?? null}
                 misfitsFor={(c) =>
-                  configMisfits(c, bay, cableAccess, arrangement)
+                  configMisfits(c, bay, effectiveCableAccess, arrangement)
                 }
                 onApply={(c) => applyBayConfig(bay.id, c)}
                 onCustom={() => setCustomBayConfig(bay.id)}
@@ -2557,7 +2567,7 @@ export function GaCanvas({
                 sb.busbar,
                 sb.ip_rating ? `IP${sb.ip_rating}` : null,
                 sb.form_of_separation,
-                cableAccess ? `${cableAccess} access` : null,
+                effectiveCableAccess ? `${effectiveCableAccess} access` : null,
                 isArtuk
                   ? arrangement === "double_front"
                     ? "Double front"
@@ -2647,8 +2657,13 @@ export function GaCanvas({
             />
             <Field label="Cable Access">
               <select
-                disabled={readOnly}
-                value={cableAccess ?? ""}
+                disabled={readOnly || (isArtuk && arrangement === "double_front")}
+                title={
+                  isArtuk && arrangement === "double_front"
+                    ? "Double front: cable and busbar alleys are front access, in line with the switchgear"
+                    : "Single front: front access (alleys in line with the switchgear) or rear access (busbars / cables behind the switchgear)"
+                }
+                value={effectiveCableAccess ?? ""}
                 onChange={(e) =>
                   setCableAccess(
                     (e.target.value || null) as Switchboard["cable_access"],
@@ -2656,7 +2671,9 @@ export function GaCanvas({
                 }
                 className="rounded border border-surface-container-high px-1.5 py-1"
               >
-                <option value="">—</option>
+                {!effectiveCableAccess && (
+                  <option value="">Select…</option>
+                )}
                 <option value="Front">Front</option>
                 <option value="Rear">Rear</option>
               </select>
@@ -2666,11 +2683,12 @@ export function GaCanvas({
                 <select
                   disabled={readOnly}
                   value={arrangement ?? ""}
-                  onChange={(e) =>
-                    setArrangement(
-                      (e.target.value || null) as Switchboard["arrangement"],
-                    )
-                  }
+                  onChange={(e) => {
+                    const next = (e.target.value ||
+                      null) as Switchboard["arrangement"];
+                    setArrangement(next);
+                    if (next === "double_front") setCableAccess("Front");
+                  }}
                   title={
                     arrangement
                       ? undefined
@@ -3799,7 +3817,7 @@ export function GaCanvas({
                           : null
                       }
                       heightMm={plinthHeight + heightNoBaseMm}
-                      cableAccess={cableAccess}
+                      cableAccess={effectiveCableAccess}
                       cableEntry={sb.cable_entry}
                       cableExit={sb.cable_exit}
                       busductEntries={hasBusduct ? busductTotal : null}

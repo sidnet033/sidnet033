@@ -843,7 +843,8 @@ export async function loadEnclosureTakeoff(
       artukHeightOf(sb.panel_height_mm, chamber) - ARTUK_FIXED_MM,
     panelHeightMm: panel,
     chamberHeightMm: chamber,
-    frontAccess: sb.cable_access === "Front",
+    frontAccess:
+      sb.cable_access === "Front" || sb.arrangement === "double_front",
     poles: sb.poles ?? 4,
     material: sb.busbar ?? "Cu",
     ka: sb.ka,
