@@ -98,6 +98,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "e12-920-bc",
+    drawing: "/artuk-bays/e12-920-bc-ga.jpg",
     workbookKeys: ["920W WITH BC"],
     page: 5,
     label: "ArTu-K Emax 2 920w E1.2 WITHDRAW ACB BC With Internal Bus Riser",
@@ -404,6 +405,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   // no vertical busbar is run in the bay
   {
     id: "wb-920-mcc-df-1237-ca",
+    drawing: "/artuk-bays/wb-920-mcc-df-1237-ca.jpg",
     workbookKeys: ["920W DOUBLE FRONT MCC VERTICAL"],
     page: 0,
     label:
