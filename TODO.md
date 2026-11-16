@@ -12,7 +12,10 @@ Open items for the switchboard estimation app. Newest at the top.
       2500/LT/1/26-27_R6, 15-Nov-2026). Siddharth to collate drawings +
       parts lists for each; then add them to the bay selector, the
       workbook parts lists (artuk_bay_templates) and the enclosure BOM:
-  - [ ] 920mm MCC vertical, **double front at 1237mm depth** (2500A) —
+  - [x] 920mm MCC vertical, **double front at 1237mm depth** — ingested
+        16-Nov-2026 ("920W DOUBLE FRONT MCC VERTICAL"), with 920W X 1237D
+        (ACB) and 420WX1237D. Original note:
+  - [ ] ~~920mm MCC vertical, double front at 1237mm depth~~ (2500A) —
         feeder modules (~600mm) beside an **internal vertical busbar
         chamber** in the same bay (bays 1F, 3F, 8F, 11F).
   - [ ] 920mm MCC vertical, double front 1237mm, with an **internal cable

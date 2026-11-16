@@ -408,6 +408,8 @@ export function matchBayTemplates(
       if (t.kind === "any") return true;
       if (t.kind === "mcc")
         return ka === "mcc" && !ctx.frontAccess && !ctx.doubleFront;
+      // a single double-front MCC vertical (e.g. 920 x 1237)
+      if (t.kind === "mcc_df") return ka === "mcc" && ctx.doubleFront;
       return t.kind === ka;
     });
     if (exact) {
