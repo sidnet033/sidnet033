@@ -103,6 +103,29 @@ const DEPTH_CODE: Record<number, string> = {
 };
 const BASE_DEPTHS = [430, 630, 830, 1030, 1230];
 
+// Double front: only ACB bays (single-front) keep a rear door / cover
+// (ABB RF... parts). Any other workbook vertical loses its RF lines; an
+// alley's rear face takes a second metal door (PO...) instead, as on the
+// rule-based alleys.
+function doubleFrontLines(
+  t: ArtukBayTemplate,
+  bays: VerticalWithFeeders[],
+): ArtukTemplateLine[] {
+  if (t.kind.startsWith("acb")) return t.lines;
+  const isRear = (l: ArtukTemplateLine) => /^RF/i.test(l.code.trim());
+  const dropped = t.lines
+    .filter((l) => l.section === "vertical" && isRear(l))
+    .reduce((n, l) => n + l.qty, 0);
+  const allAlleys = bays.every((b) => isAlley(b.bay_type as BayType | null));
+  return t.lines
+    .filter((l) => !isRear(l))
+    .map((l) =>
+      allAlleys && dropped > 0 && /^PO/i.test(l.code.trim())
+        ? { ...l, qty: l.qty + dropped }
+        : l,
+    );
+}
+
 // Frame hardware every rule-based bay takes (from the workbook parts
 // lists): code, qty, workbook unit cost, description. The 3-way corner
 // joints are one set of 8 (one per corner).
@@ -483,7 +506,10 @@ export function artukEnclosureBom(input: EnclosureInput): {
     const names = m.bays.map((b) => b.name).join(" + ");
     const why = `${names}: ${m.template.title}${input.internalArc ? " (internal arc)" : ""}`;
     forBays = m.bays.map((b) => b.id);
-    for (const l of withArc(m.template.lines, "vertical", input.internalArc))
+    const tLines = input.doubleFront
+      ? doubleFrontLines(m.template, m.bays)
+      : m.template.lines;
+    for (const l of withArc(tLines, "vertical", input.internalArc))
       add(l.code, l.qty, why, l.unitCost, l.description);
     forBays = null;
     for (const l of withArc(m.template.lines, "panel", input.internalArc)) {
