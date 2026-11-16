@@ -8,7 +8,7 @@ import { effectiveNetRate } from "@/lib/feeder-cost";
 import {
   ARTUK_BAY_CONFIGS,
   ARTUK_HEIGHT_MM,
-  bayImage,
+  drawingOf,
   sheetImage,
   type ArtukBayConfig,
 } from "@/lib/artuk-bay-configs";
@@ -134,10 +134,10 @@ export function ArtukBayConfigDialog({
                     : "border-surface-container-high hover:bg-surface-container-low"
                 }`}
               >
-                {c.page > 0 ? (
+                {drawingOf(c) ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={bayImage(c)}
+                    src={drawingOf(c)!}
                     alt=""
                     loading="lazy"
                     className="h-20 w-20 shrink-0 rounded border border-surface-container-high bg-white object-contain"
@@ -182,9 +182,9 @@ export function ArtukBayConfigDialog({
             <p className="text-[13px] text-on-surface-variant">
               Use this when the bay isn&apos;t one of ABB&apos;s standard ArTu-K
               verticals. The bay keeps its current size; set its width and depth
-              yourself in <b>Bay Details</b> (Feeder details tab, left panel). The front view
-              shows &quot;Custom&quot; with the size in the bay&apos;s left
-              strip.
+              yourself in <b>Bay Details</b> (Feeder details tab, left panel).
+              The front view shows &quot;Custom&quot; with the size in the
+              bay&apos;s left strip.
             </p>
             <p className="text-[12px] text-secondary">
               The enclosure parts for a custom bay come from the general ABB
@@ -212,7 +212,9 @@ export function ArtukBayConfigDialog({
                 <p className="text-[11px] text-secondary">
                   {sel.page > 0
                     ? `ABB · ArTu-K Assembly Guideline & Standard Compartment Sizes (ELSP/ARTUK/ENGG/WEL KIT, R3) · page ${sel.page} of 17`
-                    : "ArTuK fabrication BOM workbook (no ABB guideline drawing)"}
+                    : sel.drawing
+                      ? "ArTuK fabrication BOM workbook · GA drawing (Drawing tab)"
+                      : "ArTuK fabrication BOM workbook (no ABB guideline drawing)"}
                 </p>
               </div>
               <table className="border-collapse text-[12px]">
@@ -306,7 +308,7 @@ export function ArtukBayConfigDialog({
               >
                 Parts list
               </button>
-              {sel.page > 0 && (
+              {drawingOf(sel) && (
                 <button
                   type="button"
                   onClick={() => setPartsTab("drawing")}
@@ -316,11 +318,11 @@ export function ArtukBayConfigDialog({
                 </button>
               )}
             </div>
-            {partsTab === "drawing" && sel.page > 0 ? (
+            {partsTab === "drawing" && drawingOf(sel) ? (
               <div className="rounded-lg border border-surface-container-high bg-white p-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={bayImage(sel)}
+                  src={drawingOf(sel)!}
                   alt={`${sel.label} — front and side view`}
                   className="mx-auto max-h-[42vh] w-auto object-contain"
                 />

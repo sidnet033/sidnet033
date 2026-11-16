@@ -32,6 +32,8 @@ export type ArtukBayConfig = {
   note?: string;
   /** fabrication-BOM workbook tab(s) with this vertical's parts list */
   workbookKeys?: string[];
+  /** front + side view drawing for a config with no ABB sheet (page 0) */
+  drawing?: string;
 };
 
 export const ARTUK_HEIGHT_MM = 2231;
@@ -232,6 +234,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   // sheet (page 0 = no drawing)
   {
     id: "wb-720-acb-1467",
+    drawing: "/artuk-bays/wb-720-acb-1467.jpg",
     workbookKeys: ["720W X(1037+437)D"],
     page: 0,
     label:
@@ -248,6 +251,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "wb-920-acb-1467",
+    drawing: "/artuk-bays/wb-920-acb-1467.jpg",
     workbookKeys: ["920WX(1037+437)W"],
     page: 0,
     label:
@@ -264,6 +268,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "wb-920-2t",
+    drawing: "/artuk-bays/wb-920-2t.jpg",
     workbookKeys: ["920W X 1037+437D 2 TIER"],
     page: 0,
     label: "ArTu-K 920mm Emax 2 E1.2 2 Tier ACB Outgoing",
@@ -404,6 +409,9 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
 
 export const bayImage = (c: ArtukBayConfig) =>
   `/artuk-bays/bay-${String(c.page).padStart(2, "0")}.jpg`;
+/** the config's front + side view drawing, if it has one */
+export const drawingOf = (c: ArtukBayConfig): string | null =>
+  c.drawing ?? (c.page > 0 ? bayImage(c) : null);
 export const sheetImage = (c: ArtukBayConfig) =>
   `/artuk-bays/sheet-${String(c.page).padStart(2, "0")}.jpg`;
 
