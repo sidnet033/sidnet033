@@ -106,6 +106,13 @@ const BASE_DEPTHS = [430, 630, 830, 1030, 1230];
 // Frame hardware every rule-based bay takes (from the workbook parts
 // lists): code, qty, workbook unit cost, description. The 3-way corner
 // joints are one set of 8 (one per corner).
+// ABB ArTu logo strip by bay width: code, workbook unit cost, description
+// (widths not listed take the W=915 strip)
+const LOGO_STRIP: Record<number, [string, number, string]> = {
+  420: ["853342/001-1", 79.8, "STRIP LOGO ABB ARTU W=415"],
+  720: ["853266/001-1", 114, "STRIP LOGO ABB ARTU W=715"],
+  920: ["853266/002-1", 136, "STRIP LOGO ABB ARTU W=915"],
+};
 const BAY_HARDWARE: [string, number, number, string][] = [
   ["856615/001-1", 1, 2736, "3 WAY JOINTS (Set of 8 Nos)"],
   ["856012/001-1", 1, 204, "VITI TSCE Z.B UNI 5933 M8X12 (Set of 48 Nos)"],
@@ -576,13 +583,8 @@ export function artukEnclosureBom(input: EnclosureInput): {
     // rates when the part isn't in Item Master)
     for (const [code, qty, cost, label] of BAY_HARDWARE)
       add(code, qty, `${name}: frame hardware`, cost, label);
-    add(
-      w === 720 ? "853266/001-1" : "853266/002-1",
-      1,
-      `${name}: ABB ArTu logo strip`,
-      w === 720 ? 114 : 136,
-      w === 720 ? "STRIP LOGO ABB ARTU W=715" : "STRIP LOGO ABB ARTU W=915",
-    );
+    const logo = LOGO_STRIP[w] ?? LOGO_STRIP[920];
+    add(logo[0], 1, `${name}: ABB ArTu logo strip`, logo[1], logo[2]);
 
     if (alley) {
       add(`PO${H}${METAL_DOOR_W[inner] ?? "33"}-1`, 1, `${name}: metal door`);
