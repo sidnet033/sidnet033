@@ -299,6 +299,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "wb-920-1120-df",
+    drawing: "/artuk-bays/wb-920-1120-df.jpg",
     workbookKeys: ["1120+920W X 637D DOUBLE FRONT A"],
     page: 0,
     label: "ArTu-K 920+1120mm MCC VERTICAL DOUBLE FRONT ACCESS",
