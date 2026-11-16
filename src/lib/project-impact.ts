@@ -487,7 +487,7 @@ export function auditBoard(
       id: `${sb.id}|busduct`,
       area: "GA",
       severity: "alert",
-      message: "Busduct entries is ticked but no bay has a busduct top entry — add at least one in GA Builder (select a bay).",
+      message: "Busduct entries is ticked but no bay has a busduct entry — in GA Builder right-click the bay and set Busduct entry (Top / Bottom).",
       apply: null,
       applyLabel: null,
     });

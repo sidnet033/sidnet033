@@ -916,6 +916,7 @@ export function HowItWorks() {
                   "Clear every selection (bay, feeder, busbar, busbar chamber).",
                 ],
                 [["F"], "Toggle full screen."],
+                [["H"], "Selected feeder / blank space: show and change its height."],
               ]}
             />
             <ShortcutGroup

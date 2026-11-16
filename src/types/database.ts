@@ -314,8 +314,10 @@ export type Vertical = {
   dummy_slot: number | null;
   // the blank/DUMMY space's height when set by hand; null = fills what's left
   dummy_height_mm: number | null;
-  // number of busduct top entries in this bay (switchboards with has_busduct)
+  // number of busducts entering this bay (switchboards with has_busduct)
   busduct_entries: number;
+  // which side they enter from (set by right-click in GA Builder)
+  busduct_entry?: "Top" | "Bottom" | null;
   // cable entry / exit marked on this bay in the GA (set by right-click);
   // null = none (e.g. outgoings taken out through a cable / busbar alley)
   cable_entry?: "Top" | "Bottom" | null;

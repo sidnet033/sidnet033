@@ -2,6 +2,7 @@
 
 import { ArtukBayConfigDialog } from "@/components/artuk-bay-config-dialog";
 import { BayEnclosureDialog } from "@/components/bay-enclosure-dialog";
+import { Modal } from "@/components/modal";
 import {
   ARTUK_BAY_CONFIGS,
   configMisfits,
@@ -637,6 +638,8 @@ export function GaCanvas({
   const [configBayId, setConfigBayId] = useState<string | null>(null);
   // right-click -> Enclosure parts…: the bay whose parts list is open
   const [enclosureBayId, setEnclosureBayId] = useState<string | null>(null);
+  // "H" on a selected feeder / blank space: the height dialog
+  const [heightDialogOpen, setHeightDialogOpen] = useState(false);
   const [selectedPlacedId, setSelectedPlacedId] = useState<string | null>(null);
   // which unit of a multi-qty row is selected (a row of 4 MCCBs is 4 units)
   const [selectedUnitIndex, setSelectedUnitIndex] = useState(0);
@@ -709,6 +712,7 @@ export function GaCanvas({
   const [prevSelectionKey, setPrevSelectionKey] = useState(selectionKey);
   if (selectionKey !== prevSelectionKey) {
     setPrevSelectionKey(selectionKey);
+    setHeightDialogOpen(false);
     if (
       selectedBayId ||
       selectedPlacedId ||
@@ -1372,6 +1376,24 @@ export function GaCanvas({
     );
   }
 
+  // right-click -> Busduct entry Top / Bottom / None
+  function setBayBusduct(id: string, value: "Top" | "Bottom" | null) {
+    setVerticals((vs) =>
+      vs.map((v) =>
+        v.id === id
+          ? {
+              ...v,
+              busduct_entry: value,
+              busduct_entries: value
+                ? Math.max(1, v.busduct_entries ?? 0)
+                : 0,
+            }
+          : v,
+      ),
+    );
+    if (value) setHasBusduct(true);
+  }
+
   function setBayDim(
     id: string,
     field: "width_mm" | "depth_mm",
@@ -1993,7 +2015,7 @@ export function GaCanvas({
     }
     if (hasBusduct && busductTotal === 0) {
       alert(
-        "Busduct entries is ticked for this panel — select a bay and add at least one busduct top entry before saving (or untick Busduct entries).",
+        "Busduct entries is ticked for this panel — right-click the bay the busduct comes into and set Busduct entry (Top / Bottom) before saving (or untick Busduct entries).",
       );
       return;
     }
@@ -2017,6 +2039,7 @@ export function GaCanvas({
             dummy_slot: v.dummy_slot,
             dummy_height_mm: v.dummy_height_mm,
             busduct_entries: v.busduct_entries ?? 0,
+            busduct_entry: v.busduct_entry ?? null,
             cable_entry: v.cable_entry ?? null,
             cable_exit: v.cable_exit ?? null,
             bay_config: v.bay_config ?? null,
@@ -2048,6 +2071,8 @@ export function GaCanvas({
         }
         if ((v.busduct_entries ?? 0) !== (prev.busduct_entries ?? 0))
           fieldPatch.busduct_entries = v.busduct_entries ?? 0;
+        if ((v.busduct_entry ?? null) !== (prev.busduct_entry ?? null))
+          fieldPatch.busduct_entry = v.busduct_entry ?? null;
         if ((v.cable_entry ?? null) !== (prev.cable_entry ?? null))
           fieldPatch.cable_entry = v.cable_entry ?? null;
         if ((v.cable_exit ?? null) !== (prev.cable_exit ?? null))
@@ -2377,6 +2402,16 @@ export function GaCanvas({
       ) {
         e.preventDefault();
         toggleFullscreen();
+      } else if (
+        e.key.toLowerCase() === "h" &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey
+      ) {
+        // only when a feeder / blank space is selected
+        if (!keyboardMoveRef.current.selectedPlacedId) return;
+        e.preventDefault();
+        setHeightDialogOpen(true);
       } else if (e.key === "Escape") {
         // Escape clears every selection on the canvas (bay, feeder, busbar,
         // busbar chamber) -- and leaves fullscreen if it's on.
@@ -2674,7 +2709,7 @@ export function GaCanvas({
                   checked={hasBusduct}
                   onChange={(e) => setHasBusduct(e.target.checked)}
                 />
-                Top busduct entry
+                Busduct entry
                 {hasBusduct && (
                   <span
                     className={`ml-1 rounded px-1 text-[10px] font-semibold ${busductTotal ? "bg-violet-100 text-violet-700" : "bg-red-100 text-red-700"}`}
@@ -2686,15 +2721,15 @@ export function GaCanvas({
             </Field>
             {isArtuk && (
               <Field label="Internal Arc">
-                <label className="flex items-center gap-1.5 py-1 text-xs">
-                  <input
-                    type="checkbox"
-                    disabled={readOnly}
-                    checked={internalArc}
-                    onChange={(e) => setInternalArc(e.target.checked)}
-                  />
-                  ABB internal arc design
-                </label>
+                <span
+                  className="block py-1 text-xs"
+                  title="Set in Project Details (switchboard table → Internal Arc)"
+                >
+                  {internalArc ? "Yes" : "No"}
+                  <span className="ml-1 text-[10px] text-on-surface-variant">
+                    (set in Project Details)
+                  </span>
+                </span>
               </Field>
             )}
             <ReadOnlyField label="Cable Entry" value={sb.cable_entry} />
@@ -2719,6 +2754,14 @@ export function GaCanvas({
                 entry={bay.cable_entry ?? null}
                 exit={bay.cable_exit ?? null}
                 onSet={(field, value) => setBayCable(bay.id, field, value)}
+                busduct={
+                  (bay.busduct_entries ?? 0) > 0
+                    ? (bay.busduct_entry ?? "Top")
+                    : null
+                }
+                onSetBusduct={
+                  (v) => setBayBusduct(bay.id, v)
+                }
                 onChooseConfig={
                   isArtuk && !isAlley(bay.bay_type)
                     ? () => setConfigBayId(bay.id)
@@ -2749,6 +2792,29 @@ export function GaCanvas({
               />
             );
           })()}
+        {heightDialogOpen &&
+          (() => {
+            const bay = selectedBayId
+              ? bays.find((b) => b.id === selectedBayId)
+              : null;
+            if (!bay || !selectedPlacedId) return null;
+            return (
+              <FeederHeightDialog
+                key={`${selectedPlacedId}-${selectedUnitIndex}`}
+                bay={bay}
+                placedId={selectedPlacedId}
+                unitIndex={selectedUnitIndex}
+                panelHeightMm={panelHeight}
+                blankFirst={blankFirst}
+                readOnly={readOnly}
+                onUnitHeight={(h) =>
+                  setUnitHeight(bay.id, selectedPlacedId, selectedUnitIndex, h)
+                }
+                onDummyHeight={(h) => setDummyHeight(bay.id, h)}
+                onClose={() => setHeightDialogOpen(false)}
+              />
+            );
+          })()}
         {enclosureBayId &&
           sb &&
           (() => {
@@ -2767,14 +2833,14 @@ export function GaCanvas({
           })()}
           <aside
             className={`shrink-0 overflow-y-auto rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-xs transition-[width] ${
-              sidebarCollapsed ? "w-11 p-2" : "w-80 p-3"
+              sidebarCollapsed ? "w-11 p-2" : "w-60 p-2.5"
             }`}
           >
             <div className="mb-2 flex items-center gap-1">
               {!sidebarCollapsed && (
                 <div
                   role="tablist"
-                  className="flex flex-1 overflow-hidden rounded-md border border-surface-container-high text-[12px] font-semibold"
+                  className="flex flex-1 overflow-hidden rounded-md border border-surface-container-high text-[11px] font-semibold"
                 >
                   {(
                     [
@@ -2788,7 +2854,7 @@ export function GaCanvas({
                       role="tab"
                       aria-selected={leftTab === t}
                       onClick={() => setLeftTab(t)}
-                      className={`flex flex-1 items-center justify-center gap-1 px-2 py-1.5 ${leftTab === t ? "bg-primary text-on-primary" : "bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container-low"}`}
+                      className={`flex flex-1 items-center justify-center gap-1 whitespace-nowrap px-1.5 py-1.5 ${leftTab === t ? "bg-primary text-on-primary" : "bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container-low"}`}
                     >
                       {label}
                       {t === "details" &&
@@ -2931,7 +2997,12 @@ export function GaCanvas({
                         setVerticals(
                           verticals.map((v) =>
                             v.id === selectedBay.id
-                              ? { ...v, busduct_entries: Math.max(0, n) }
+                              ? {
+                                  ...v,
+                                  busduct_entries: Math.max(0, n),
+                                  busduct_entry:
+                                    n > 0 ? (v.busduct_entry ?? "Top") : null,
+                                }
                               : v,
                           ),
                         )
@@ -3332,7 +3403,8 @@ export function GaCanvas({
                       </div>
                     </div>
 
-                    {/* busduct top entries (violet), above each bay that has them */}
+                    {/* busduct top entries (violet), above each bay that has them
+                        (bottom entries are marked at the foot of the bay) */}
                     {hasBusduct && (
                       <div className="flex">
                         <div
@@ -3351,7 +3423,12 @@ export function GaCanvas({
                               }}
                             >
                               {Array.from(
-                                { length: v.busduct_entries ?? 0 },
+                                {
+                                  length:
+                                    (v.busduct_entry ?? "Top") === "Top"
+                                      ? (v.busduct_entries ?? 0)
+                                      : 0,
+                                },
                                 (_, k) => (
                                   <span
                                     key={k}
@@ -3843,7 +3920,24 @@ export function GaCanvas({
                       cableAccess={effectiveCableAccess}
                       cableEntry={sb.cable_entry}
                       cableExit={sb.cable_exit}
-                      busductEntries={hasBusduct ? busductTotal : null}
+                      busductEntries={
+                        hasBusduct
+                          ? (["Top", "Bottom"] as const)
+                              .map((side) => {
+                                const n = bays
+                                  .filter(
+                                    (v) => (v.busduct_entry ?? "Top") === side,
+                                  )
+                                  .reduce(
+                                    (t, v) => t + (v.busduct_entries ?? 0),
+                                    0,
+                                  );
+                                return n ? `${side.toUpperCase()} × ${n}` : null;
+                              })
+                              .filter(Boolean)
+                              .join(", ") || "—"
+                          : null
+                      }
                       form={sb.form_of_separation}
                       std={sb.std}
                     />
@@ -4275,7 +4369,8 @@ function PanelSummaryTable({
   cableAccess: Switchboard["cable_access"];
   cableEntry: Switchboard["cable_entry"];
   cableExit: Switchboard["cable_exit"];
-  busductEntries: number | null;
+  /** e.g. "TOP × 2, BOTTOM × 1"; null when the panel has no busducts */
+  busductEntries: string | null;
   form: string | null;
   std: Switchboard["std"];
 }) {
@@ -4327,7 +4422,7 @@ function PanelSummaryTable({
           <tr>
             <td colSpan={3} className={cell}>
               BUSDUCT ENTRY –{" "}
-              <span className="text-violet-700">TOP × {busductEntries}</span>
+              <span className="text-violet-700">{busductEntries}</span>
             </td>
           </tr>
         )}
@@ -4617,6 +4712,23 @@ function BayColumn({
           </span>
         </div>
       )}
+      {/* busduct bottom entry (top entries are drawn above the bay) */}
+      {vertical.busduct_entry === "Bottom" &&
+        (vertical.busduct_entries ?? 0) > 0 && (
+          <div
+            data-ga-tip={`Busduct bottom entry × ${vertical.busduct_entries} — ${vertical.name}`}
+            className="pointer-events-auto absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 gap-1"
+          >
+            {Array.from({ length: vertical.busduct_entries }, (_, k) => (
+              <span
+                key={k}
+                className="rounded bg-violet-600 px-1 font-mono text-[9px] font-bold leading-[14px] text-white"
+              >
+                BD
+              </span>
+            ))}
+          </div>
+        )}
       {/* cable entry / exit: set per bay (right-click), not by bay type */}
       {vertical.cable_entry && (
         <div
@@ -4732,6 +4844,113 @@ function BusbarDetailsPanel({
 // used to throw off the drawing's alignment with the ruler.
 // Right-sidebar panel for a clicked compartment: a feeder unit (height,
 // send back to the available list) or the bay's blank/DUMMY space (height).
+// "H" on a selected feeder unit (or blank space): its height, editable.
+function FeederHeightDialog({
+  bay,
+  placedId,
+  unitIndex,
+  panelHeightMm,
+  blankFirst,
+  readOnly,
+  onUnitHeight,
+  onDummyHeight,
+  onClose,
+}: {
+  bay: VerticalWithFeeders;
+  placedId: string;
+  unitIndex: number;
+  panelHeightMm: number;
+  blankFirst: boolean;
+  readOnly: boolean;
+  onUnitHeight: (heightMm: number | null) => void;
+  onDummyHeight: (heightMm: number | null) => void;
+  onClose: () => void;
+}) {
+  const isDummy = placedId.endsWith("::dummy");
+  const row = bay.placed.find((p) => p.id === placedId) ?? null;
+  const compartments = computeCompartments(bay, panelHeightMm, blankFirst);
+  const current = compartments.find((c) =>
+    isDummy
+      ? c.isBlank
+      : c.placedId === placedId && (c.unitIndex ?? 0) === unitIndex,
+  );
+  const custom = isDummy
+    ? bay.dummy_height_mm
+    : (row?.unit_heights?.[unitIndex] ?? null);
+  const standard = row ? compartmentHeightFor(row.feeder) : null;
+  const [local, setLocal] = useState(
+    String(custom ?? current?.heightMm ?? standard ?? ""),
+  );
+  if (!isDummy && !row) return null;
+
+  function apply() {
+    const n = Math.round(Number(local));
+    const value = local.trim() === "" || !(n > 0) ? null : n;
+    if (isDummy) onDummyHeight(value);
+    else onUnitHeight(value === standard ? null : value);
+    onClose();
+  }
+
+  return (
+    <Modal title="Feeder height" onClose={onClose} width="max-w-sm">
+      <p className="text-sm font-semibold text-on-surface">
+        {isDummy ? blankCompartmentLabel(bay.bay_type) : row!.feeder.name}
+      </p>
+      <p className="mb-3 text-[11px] text-on-surface-variant">
+        {bay.name}
+        {!isDummy && row!.qty > 1
+          ? ` · unit ${unitIndex + 1} of ${row!.qty}`
+          : ""}
+        {current ? ` · ${current.heightMm}mm now` : ""}
+        {standard != null ? ` · standard ${standard}mm` : ""}
+      </p>
+      <label className="mb-3 block">
+        <span className="mb-1 block text-[11px] font-medium text-on-surface-variant">
+          Height (mm)
+        </span>
+        <input
+          autoFocus
+          type="text"
+          inputMode="decimal"
+          value={local}
+          disabled={readOnly}
+          placeholder={isDummy ? "fills the space left" : `${standard}`}
+          onFocus={(e) => e.target.select()}
+          onChange={(e) => setLocal(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") apply();
+            else numericKeyGuard()(e);
+          }}
+          className="w-full rounded border border-surface-container-high px-2 py-1.5 text-sm disabled:bg-surface-container-low"
+        />
+      </label>
+      {!readOnly && (
+        <div className="flex justify-end gap-2">
+          {custom != null && (
+            <button
+              type="button"
+              className="btn btn-outline btn-sm mr-auto"
+              onClick={() => {
+                if (isDummy) onDummyHeight(null);
+                else onUnitHeight(null);
+                onClose();
+              }}
+            >
+              {isDummy ? "Fill remaining" : "Use standard"}
+            </button>
+          )}
+          <button type="button" className="btn btn-outline btn-sm" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="btn btn-primary btn-sm" onClick={apply}>
+            Apply
+          </button>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 function PlacedItemPanel({
   bay,
   placedId,
@@ -5000,7 +5219,7 @@ function BayDetailsPanel({
       {busductEntries != null && (
         <div className="mb-3">
           <span className="mb-1 block text-[10px] font-medium text-on-surface-variant">
-            Busduct top entries
+            Busduct entries
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -5046,6 +5265,8 @@ function BayCableMenu({
   onSet,
   onChooseConfig,
   onShowEnclosure,
+  busduct,
+  onSetBusduct,
   onClose,
 }: {
   x: number;
@@ -5061,6 +5282,8 @@ function BayCableMenu({
   onChooseConfig?: () => void;
   /** ArTu-K bays: list this bay's enclosure parts, qty and cost */
   onShowEnclosure?: () => void;
+  busduct: "Top" | "Bottom" | null;
+  onSetBusduct?: (value: "Top" | "Bottom" | null) => void;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -5076,9 +5299,9 @@ function BayCableMenu({
   }, [onClose]);
   // keep the menu on screen
   const left = Math.min(x, window.innerWidth - 240);
-  const top = Math.min(y, window.innerHeight - 300);
+  const top = Math.min(y, window.innerHeight - 420);
   const group = (
-    field: "cable_entry" | "cable_exit",
+    field: "cable_entry" | "cable_exit" | "busduct",
     label: string,
     current: "Top" | "Bottom" | null,
     swatch: string,
@@ -5092,7 +5315,8 @@ function BayCableMenu({
           key={v ?? "none"}
           type="button"
           onClick={() => {
-            onSet(field, v);
+            if (field === "busduct") onSetBusduct?.(v);
+            else onSet(field, v);
             onClose();
           }}
           className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] hover:bg-surface-container-low"
@@ -5147,6 +5371,8 @@ function BayCableMenu({
         )}
         {group("cable_entry", "Cable entry", entry, "bg-blue-600")}
         {group("cable_exit", "Cable exit", exit, "bg-purple-600")}
+        {onSetBusduct &&
+          group("busduct", "Busduct entry", busduct, "bg-violet-600")}
       </div>
     </>
   );
