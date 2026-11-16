@@ -8,6 +8,7 @@ import {
   configMisfits,
   currentConfigOf,
   doubleFrontMccLayouts,
+  DF_CABLE_ALLEY_CONFIGS,
   frontAccessPairLayouts,
   type ArtukBayConfig,
   type InnerLayout,
@@ -1079,6 +1080,7 @@ export function GaCanvas({
             bay_type: v.bay_type,
             width_mm: v.width_mm,
             acbBay: isAcbBay(v),
+            cableAlley: DF_CABLE_ALLEY_CONFIGS.has(v.bay_config ?? ""),
           })),
           rearView,
         )

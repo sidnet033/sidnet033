@@ -394,6 +394,7 @@ function planOneFace(args: PlanArgs): BusbarPlan {
         compartments: computeCompartments(v, args.panelHeightMm, args.params.std === "ArTuK" && chamberPositionFor(args.params.cable_entry) === "top")
           .filter((c) => !c.isBlank && c.placedId)
           .map((c) => ({ placedId: c.placedId!, unitIndex: c.unitIndex ?? 0, topMm: c.topMm, heightMm: c.heightMm })),
+        bayConfig: v.bay_config ?? null,
       };
     }),
     panelHeightMm: args.panelHeightMm,

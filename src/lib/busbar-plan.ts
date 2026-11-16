@@ -1,6 +1,7 @@
 import type { BayType, Feeder } from "@/types/database";
 import {
   doubleFrontMccLayouts,
+  DF_CABLE_ALLEY_CONFIGS,
   frontAccessPairLayouts,
   type InnerLayout,
 } from "@/lib/artuk-inner-layout";
@@ -249,6 +250,8 @@ export type PlanBay = {
   leftMm: number;
   placed: { id: string; qty: number; feeder: Feeder }[];
   compartments: PlanCompartment[];
+  /** ArTu-K bay config id chosen in GA Builder */
+  bayConfig?: string | null;
 };
 
 export type BusbarPlanInput = {
@@ -559,6 +562,7 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
             b.bayType === "incomer" ||
             b.bayType === "bus_coupler" ||
             b.placed.some((p) => p.feeder.device_type === "ACB"),
+          cableAlley: DF_CABLE_ALLEY_CONFIGS.has(b.bayConfig ?? ""),
         })),
       )
     : new Map<string, InnerLayout>();
@@ -784,8 +788,10 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
       // neighbour first), else a vertical run inside the bay itself.
       const right = bays[i + 1];
       const left = bays[i - 1];
-      // double front: the bay's own side busbar chamber
+      // double front: the bay's own side busbar chamber -- a bay whose side
+      // chamber is a cable alley has no vertical busbar at all
       const dfZone = dfLayouts.get(bay.id)?.zones[0] ?? null;
+      if (dfZone?.kind === "cable_alley") continue;
       const vbb = dfZone
         ? {
             host: bay,

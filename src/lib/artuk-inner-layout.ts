@@ -77,6 +77,10 @@ export function frontAccessPairLayouts(
 // Each face's vertical busbar runs in its own chamber. ACB bays (incomer /
 // bus coupler) are front-only and get no chamber.
 export const DF_BUSBAR_CHAMBER_MM = 200;
+// Double-front MCC bay configs whose side chamber is a cable alley, not a
+// busbar chamber: no vertical busbar in the bay.
+export const DF_CABLE_ALLEY_CONFIGS = new Set(["wb-920-mcc-df-1237-ca"]);
+
 export function doubleFrontMccLayouts(
   bays: {
     id: string;
@@ -84,6 +88,8 @@ export function doubleFrontMccLayouts(
     width_mm: number | null;
     /** an incomer / bus coupler / ACB bay */
     acbBay: boolean;
+    /** the side chamber is a cable alley (no vertical busbar) */
+    cableAlley?: boolean;
   }[],
   mirrored = false,
 ): Map<string, InnerLayout> {
@@ -106,8 +112,8 @@ export function doubleFrontMccLayouts(
         {
           leftMm: zoneLeft,
           widthMm: DF_BUSBAR_CHAMBER_MM,
-          kind: "vbb",
-          label: "Busbar chamber",
+          kind: b.cableAlley ? "cable_alley" : "vbb",
+          label: b.cableAlley ? "Cable alley" : "Busbar chamber",
         },
       ],
     });

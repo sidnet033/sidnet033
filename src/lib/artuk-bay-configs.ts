@@ -384,7 +384,8 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
     id: "wb-920-mcc-df-1237",
     workbookKeys: ["920W DOUBLE FRONT MCC VERTICAL"],
     page: 0,
-    label: "ArTu-K 920 MCC VERTICAL DOUBLE FRONT ACCESS (1237 deep)",
+    label:
+      "ArTu-K 920 MCC VERTICAL DOUBLE FRONT ACCESS (1237 deep) with BusbarAlley",
     kind: "mcc",
     frame: null,
     functions: ["incomer", "outgoing"],
@@ -394,6 +395,24 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
     ip: 54,
     form: "3A",
     note: "MCCB / DOL / SD feeders on both faces, internal cable containers. Set the switchboard's arrangement to double front.",
+  },
+  // same vertical and parts list; its side chamber is a cable alley, so
+  // no vertical busbar is run in the bay
+  {
+    id: "wb-920-mcc-df-1237-ca",
+    workbookKeys: ["920W DOUBLE FRONT MCC VERTICAL"],
+    page: 0,
+    label:
+      "ArTu-K 920 MCC VERTICAL DOUBLE FRONT ACCESS (1237 deep) with CableAlley",
+    kind: "mcc",
+    frame: null,
+    functions: ["incomer", "outgoing"],
+    access: "front",
+    widthMm: 920,
+    depthMm: 1237,
+    ip: 54,
+    form: "3A",
+    note: "The side chamber is a cable alley — no vertical busbar in this bay. Set the switchboard's arrangement to double front.",
   },
   {
     id: "wb-420-bc-1237",
@@ -561,6 +580,7 @@ export function currentConfigOf(
 
 export {
   doubleFrontMccLayouts,
+  DF_CABLE_ALLEY_CONFIGS,
   frontAccessPairLayouts,
   type InnerLayout,
   type InnerZone,
