@@ -124,7 +124,11 @@ export function EnclosureRatesDialog({
       onSaved?.();
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save the rates.");
+      // Supabase errors are plain objects with a message, not Error instances
+      const msg = (e as { message?: string } | null)?.message;
+      setError(
+        msg ? `Could not save the rates: ${msg}` : "Could not save the rates.",
+      );
     } finally {
       setBusy(false);
     }
