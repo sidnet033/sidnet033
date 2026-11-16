@@ -355,6 +355,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   // 1237mm-deep verticals (double-front line-ups, e.g. Thermax / Vedanta)
   {
     id: "wb-920-e22-1237",
+    drawing: "/artuk-bays/wb-920-acb-1237.jpg",
     workbookKeys: ["920W X 1237D"],
     page: 0,
     label: "ArTu-K Emax 2 920w X 1237d E2.2 WITHDRAW ACB Incomer / Outgoing",
@@ -369,6 +370,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "wb-920-e42-1237",
+    drawing: "/artuk-bays/wb-920-acb-1237.jpg",
     workbookKeys: ["920W X 1237D"],
     page: 0,
     label: "ArTu-K Emax 2 920w X 1237d E4.2 WITHDRAW ACB Incomer / Outgoing",
