@@ -302,6 +302,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "wb-720-mcc-837",
+    drawing: "/artuk-bays/wb-720-mcc-837.jpg",
     workbookKeys: ["720W X 837D MCC"],
     page: 0,
     label: "ArTu-K 720mm WIDTH MCC VERTICAL REAR ACCESS WITH 837mm DEPTH",
@@ -382,6 +383,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "wb-920-mcc-df-1237",
+    drawing: "/artuk-bays/wb-920-mcc-df-1237.jpg",
     workbookKeys: ["920W DOUBLE FRONT MCC VERTICAL"],
     page: 0,
     label:
@@ -431,6 +433,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "wb-510-sa",
+    drawing: "/artuk-bays/wb-510-sa.jpg",
     workbookKeys: ["510WX1037D"],
     page: 0,
     label: "ArTu-K 510w Vertical for Standalone Breaker",
