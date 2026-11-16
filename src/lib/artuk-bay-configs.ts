@@ -69,7 +69,8 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "e22-920-io",
-    workbookKeys: ["920W"],
+    drawing: "/artuk-bays/e22-920-io-ga.jpg",
+    workbookKeys: ["920W E2.2"],
     page: 3,
     label: "ArTu-K Emax 2 920w E2.2 WITHDRAW ACB Incomer / Outgoing",
     kind: "acb",
@@ -84,7 +85,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "e42-920-io",
-    workbookKeys: ["920W"],
+    workbookKeys: ["920W E4.2"],
     page: 4,
     label: "ArTu-K Emax 2 920w E4.2 WITHDRAW ACB Incomer / Outgoing",
     kind: "acb",
@@ -113,7 +114,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "e22-920-420-bc",
-    workbookKeys: ["920W", "420WX1037D"],
+    workbookKeys: ["920W E2.2", "420WX1037D"],
     page: 6,
     label: "ArTu-K Emax 2 920+420 E2.2 w ACB BC With External Cable Chamber",
     kind: "acb",
@@ -130,7 +131,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   // the 420mm partner is a busbar chamber (busbar routing as on the sheet)
   {
     id: "e22-920-420-bc-bb",
-    workbookKeys: ["920W", "420WX1037D"],
+    workbookKeys: ["920W E2.2", "420WX1037D"],
     page: 6,
     label: "ArTu-K Emax 2 920+420 E2.2 w ACB BC With External Busbar Chamber",
     kind: "acb",

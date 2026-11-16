@@ -365,6 +365,16 @@ function bayKindOf(bay: VerticalWithFeeders): BayKind {
   return isAlley(bay.bay_type as BayType | null) ? "alley" : "mcc";
 }
 
+// the frame (E1.2 / E2.2 / E4.2 / E6.2) of the bay's ACB, if it has one
+function acbFrameOfBay(bay: VerticalWithFeeders): string | null {
+  const f = bay.placed.find((p) => p.feeder.device_type === "ACB")?.feeder;
+  if (!f) return null;
+  return (
+    breakerFrameOf(f) ??
+    (f.rated_current != null ? suggestAcbFrame(f.rated_current) : null)
+  );
+}
+
 const sameDepth = (a: number, b: number) =>
   depthSections(a).join("+") === depthSections(b).join("+");
 
@@ -424,9 +434,16 @@ export function matchBayTemplates(
         continue;
       }
     }
-    const singles = atDepth.filter(
-      (t) => t.widthsMm.length === 1 && t.widthsMm[0] === a.width_mm,
-    );
+    // ACB verticals split by frame (e.g. "920W E2.2" / "920W E4.2"): the
+    // one naming this bay's ACB frame comes first
+    const frame = acbFrameOfBay(a);
+    const singles = atDepth
+      .filter((t) => t.widthsMm.length === 1 && t.widthsMm[0] === a.width_mm)
+      .sort(
+        (x, y) =>
+          Number(!!frame && y.title.includes(frame)) -
+          Number(!!frame && x.title.includes(frame)),
+      );
     const exact = singles.find((t) => {
       if (t.kind === "any") return true;
       if (t.kind === "mcc")
