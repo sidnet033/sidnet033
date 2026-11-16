@@ -418,6 +418,7 @@ export const ARTUK_BAY_CONFIGS: ArtukBayConfig[] = [
   },
   {
     id: "wb-420-bc-1237",
+    drawing: "/artuk-bays/wb-420-bc-1237.jpg",
     workbookKeys: ["420WX1237D"],
     page: 0,
     label: "ArTu-K 420w Vertical for Bus coupler (1237 deep)",
