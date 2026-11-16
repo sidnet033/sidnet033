@@ -102,6 +102,22 @@ const DEPTH_CODE: Record<number, string> = {
   1230: "12",
 };
 const BASE_DEPTHS = [430, 630, 830, 1030, 1230];
+
+// Frame hardware every rule-based bay takes (from the workbook parts
+// lists): code, qty, workbook unit cost, description. The 3-way corner
+// joints are one set of 8 (one per corner).
+const BAY_HARDWARE: [string, number, number, string][] = [
+  ["856615/001-1", 1, 2736, "3 WAY JOINTS (Set of 8 Nos)"],
+  ["856012/001-1", 1, 204, "VITI TSCE Z.B UNI 5933 M8X12 (Set of 48 Nos)"],
+  ["VTBCE12X25-1", 1, 71.2, "HEX.SOCKET MUSHROOM HEAD SCREW 12X25 Z.B (Set of 8 Nos)"],
+  ["853293/001-1", 1, 1152, "UPRIGHT HINGES + PINS (Set of 16 Nos)"],
+  ["M12 Nylon Washer", 8, 9, "M12 Nylon Washer (id-13, od-24, thk-2.5mm)"],
+  ["Plain Washer, M12", 8, 3.18, "Plain Washer, M12 (ID-14, OD-35, Thk-3mm)"],
+  ["M12 Hardware", 32, 28.56, "M12 Hardware for busbar assembly"],
+  ["M10 Hardware", 16, 14, "M10 Hardware for busbar assembly"],
+  ["Gasket, adhesive", 6, 5, "Gasket, adhesive, 10 x 2 mm thk"],
+  ["M5 RIVETS", 32, 2.1, "RIVET 3/16X5/8 Multi grip blind Rivet for Butterfly hinges"],
+];
 // usable (inner) width of a bay: bay width less 2 x 60mm
 const innerWidth = (w: number) => w - 120;
 
@@ -556,14 +572,34 @@ export function artukEnclosureBom(input: EnclosureInput): {
     });
     add("AD1033-1", 5, "screws, per bay");
     add("APR14/20", 3, "rear cover screws, per bay");
+    // per-bay frame hardware, as in the workbook parts lists (workbook
+    // rates when the part isn't in Item Master)
+    for (const [code, qty, cost, label] of BAY_HARDWARE)
+      add(code, qty, `${name}: frame hardware`, cost, label);
+    add(
+      w === 720 ? "853266/001-1" : "853266/002-1",
+      1,
+      `${name}: ABB ArTu logo strip`,
+      w === 720 ? 114 : 136,
+      w === 720 ? "STRIP LOGO ABB ARTU W=715" : "STRIP LOGO ABB ARTU W=915",
+    );
 
     if (alley) {
       add(`PO${H}${METAL_DOOR_W[inner] ?? "33"}-1`, 1, `${name}: metal door`);
-      add(
-        `RF${H}${REAR_W[inner] ?? "30"}-1${input.frontAccess ? "" : "H"}`,
-        1,
-        `${name}: rear ${input.frontAccess ? "cover" : "door"}`,
-      );
+      if (input.doubleFront) {
+        // double front: the alley opens on both faces -- no rear cover
+        add(
+          `PO${H}${METAL_DOOR_W[inner] ?? "33"}-1`,
+          1,
+          `${name}: rear metal door (double front)`,
+        );
+      } else {
+        add(
+          `RF${H}${REAR_W[inner] ?? "30"}-1${input.frontAccess ? "" : "H"}`,
+          1,
+          `${name}: rear ${input.frontAccess ? "cover" : "door"}`,
+        );
+      }
       continue;
     }
 
@@ -587,7 +623,10 @@ export function artukEnclosureBom(input: EnclosureInput): {
       warnings.push(
         `${name}: no 2mm ABB rear panel listed for ${inner}mm — check with ABB.`,
       );
-    if (rearFeeders) {
+    // double front: the rear is a second front -- a glass door, never a
+    // rear cover (ACB bays keep the rear panel + the louvred-cover warning)
+    const bayHasAcb = bay.placed.some((p) => p.feeder.device_type === "ACB");
+    if (rearFeeders || (input.doubleFront && !bayHasAcb)) {
       add(glassDoor, 1, `${name}: rear glass door (double front)`);
     } else {
       add(
