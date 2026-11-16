@@ -22,6 +22,7 @@ export type BusbarSupport = {
   kind: "hbb" | "vbb";
   segmentKey: string;
   bayName: string;
+  bayId?: string;
   x: number;
   y: number;
   code: string;
@@ -87,6 +88,7 @@ export function planBusbarSupports(args: {
           kind: "hbb",
           segmentKey: main.key,
           bayName: bay.name,
+          bayId: bay.id,
           x: bay.leftMm + (bay.widthMm * (i + 0.5)) / n,
           y,
           ...parts,
@@ -109,6 +111,7 @@ export function planBusbarSupports(args: {
         kind: "vbb",
         segmentKey: seg.key,
         bayName: bay?.name ?? "",
+        bayId: bay?.id,
         x: a.x,
         y: a.y + ((b.y - a.y) * (i + 0.5)) / n,
         ...parts,

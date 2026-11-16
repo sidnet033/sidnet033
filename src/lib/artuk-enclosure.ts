@@ -79,6 +79,10 @@ export type EnclosureLine = {
   /** workbook cost x qty, used when the part isn't in Item Master */
   fallbackAmount?: number;
   label?: string;
+  /** which bay(s) the qty is for; a workbook pair (e.g. 920+420) lists
+   * both bays on one entry. Panel-wide parts (side panels, lifting,
+   * couplings) have no entry. */
+  byBay?: { bayIds: string[]; qty: number }[];
 };
 
 const WIDTH_PREFIX: Record<number, string> = {
@@ -412,6 +416,8 @@ export function artukEnclosureBom(input: EnclosureInput): {
   const H = String(input.modularHeightMm / 100).padStart(2, "0"); // 20 / 18 / 16
   const lines = new Map<string, EnclosureLine>();
   const warnings: string[] = [];
+  // the bay(s) the parts being added are for (null = the whole panel)
+  let forBays: string[] | null = null;
   const add = (
     code: string | null | undefined,
     qty: number,
@@ -426,6 +432,13 @@ export function artukEnclosureBom(input: EnclosureInput): {
       l.fallbackAmount = (l.fallbackAmount ?? 0) + unitCost * qty;
     if (label && !l.label) l.label = label;
     if (!l.why.includes(why)) l.why.push(why);
+    if (forBays?.length) {
+      l.byBay ??= [];
+      const key = forBays.join(",");
+      const e = l.byBay.find((x) => x.bayIds.join(",") === key);
+      if (e) e.qty += qty;
+      else l.byBay.push({ bayIds: [...forBays], qty });
+    }
     lines.set(code, l);
   };
 
@@ -444,8 +457,10 @@ export function artukEnclosureBom(input: EnclosureInput): {
   for (const m of matches) {
     const names = m.bays.map((b) => b.name).join(" + ");
     const why = `${names}: ${m.template.title}${input.internalArc ? " (internal arc)" : ""}`;
+    forBays = m.bays.map((b) => b.id);
     for (const l of withArc(m.template.lines, "vertical", input.internalArc))
       add(l.code, l.qty, why, l.unitCost, l.description);
+    forBays = null;
     for (const l of withArc(m.template.lines, "panel", input.internalArc)) {
       const cur = panelParts.get(l.code);
       if (!cur || l.qty > cur.qty) panelParts.set(l.code, l);
@@ -492,9 +507,11 @@ export function artukEnclosureBom(input: EnclosureInput): {
   // insulators (ABB 551060 / MXM parts).
   for (const s of sup.supports) {
     const what = `${s.bayName}: ${s.kind === "hbb" ? "main" : "vertical"} busbar support (span ≤${s.spanMm}mm)`;
+    forBays = s.bayId ? [s.bayId] : null;
     add(s.code, 1, what);
     add(s.neutralCode, 1, what);
   }
+  forBays = null;
   if (input.internalArc && templated.size < bays.length) {
     warnings.push(
       "Internal arc: use 2mm side panels and glass doors, recessed compartment doors (gap ≤3mm), APR14/20 + AD1090 fixings, M12 8.8 busbar bolts at 70Nm, and ACB/MCCB conductor anchoring per ABB ENGG/03 — confirm the 2mm door/side-panel part codes with ABB.",
@@ -503,6 +520,7 @@ export function artukEnclosureBom(input: EnclosureInput): {
 
   for (const bay of bays) {
     if (templated.has(bay.id)) continue;
+    forBays = [bay.id];
     const w = bay.width_mm ?? 0;
     const name = bay.name;
     const prefix = WIDTH_PREFIX[w];
@@ -728,6 +746,7 @@ export function artukEnclosureBom(input: EnclosureInput): {
     }
   }
 
+  forBays = null;
   // line-up (rule-based; a workbook bay type brings its own side panels)
   if (bays.length > 0 && matches.length === 0) {
     // side panels on the two line-up ends only (one N°2 pair), at the

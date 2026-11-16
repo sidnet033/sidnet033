@@ -1,6 +1,7 @@
 "use client";
 
 import { ArtukBayConfigDialog } from "@/components/artuk-bay-config-dialog";
+import { BayEnclosureDialog } from "@/components/bay-enclosure-dialog";
 import {
   ARTUK_BAY_CONFIGS,
   configMisfits,
@@ -634,6 +635,8 @@ export function GaCanvas({
   const [hover, setHover] = useState<HoverExtent>(null);
   const [selectedBayId, setSelectedBayId] = useState<string | null>(null);
   const [configBayId, setConfigBayId] = useState<string | null>(null);
+  // right-click -> Enclosure parts…: the bay whose parts list is open
+  const [enclosureBayId, setEnclosureBayId] = useState<string | null>(null);
   const [selectedPlacedId, setSelectedPlacedId] = useState<string | null>(null);
   // which unit of a multi-qty row is selected (a row of 4 MCCBs is 4 units)
   const [selectedUnitIndex, setSelectedUnitIndex] = useState(0);
@@ -2499,45 +2502,6 @@ export function GaCanvas({
     >
       <div className="flex h-full flex-col">
         <SavingOverlay show={saving} />
-        {bayMenu &&
-          (() => {
-            const bay = bays.find((b) => b.id === bayMenu.bayId);
-            if (!bay) return null;
-            return (
-              <BayCableMenu
-                x={bayMenu.x}
-                y={bayMenu.y}
-                bayName={bay.name}
-                entry={bay.cable_entry ?? null}
-                exit={bay.cable_exit ?? null}
-                onSet={(field, value) => setBayCable(bay.id, field, value)}
-                onChooseConfig={
-                  isArtuk && !isAlley(bay.bay_type)
-                    ? () => setConfigBayId(bay.id)
-                    : undefined
-                }
-                onClose={() => setBayMenu(null)}
-              />
-            );
-          })()}
-        {configBayId &&
-          (() => {
-            const idx = bays.findIndex((b) => b.id === configBayId);
-            const bay = bays[idx];
-            if (!bay) return null;
-            return (
-              <ArtukBayConfigDialog
-                bayName={bay.name}
-                currentId={effectiveBayConfig(idx)?.split("#")[0] ?? null}
-                misfitsFor={(c) =>
-                  configMisfits(c, bay, effectiveCableAccess, arrangement)
-                }
-                onApply={(c) => applyBayConfig(bay.id, c)}
-                onCustom={() => setCustomBayConfig(bay.id)}
-                onClose={() => setConfigBayId(null)}
-              />
-            );
-          })()}
 
         {readOnly && (
           <div className="flex items-center gap-2 border-b border-amber-200/80 bg-amber-50/60 px-4 py-2 text-xs text-amber-800">
@@ -2742,6 +2706,65 @@ export function GaCanvas({
           ref={fullscreenRef}
           className="flex flex-1 gap-4 overflow-hidden bg-surface p-4"
         >
+          {/* inside the fullscreen element, so they show in fullscreen too */}
+        {bayMenu &&
+          (() => {
+            const bay = bays.find((b) => b.id === bayMenu.bayId);
+            if (!bay) return null;
+            return (
+              <BayCableMenu
+                x={bayMenu.x}
+                y={bayMenu.y}
+                bayName={bay.name}
+                entry={bay.cable_entry ?? null}
+                exit={bay.cable_exit ?? null}
+                onSet={(field, value) => setBayCable(bay.id, field, value)}
+                onChooseConfig={
+                  isArtuk && !isAlley(bay.bay_type)
+                    ? () => setConfigBayId(bay.id)
+                    : undefined
+                }
+                onShowEnclosure={
+                  isArtuk ? () => setEnclosureBayId(bay.id) : undefined
+                }
+                onClose={() => setBayMenu(null)}
+              />
+            );
+          })()}
+        {configBayId &&
+          (() => {
+            const idx = bays.findIndex((b) => b.id === configBayId);
+            const bay = bays[idx];
+            if (!bay) return null;
+            return (
+              <ArtukBayConfigDialog
+                bayName={bay.name}
+                currentId={effectiveBayConfig(idx)?.split("#")[0] ?? null}
+                misfitsFor={(c) =>
+                  configMisfits(c, bay, effectiveCableAccess, arrangement)
+                }
+                onApply={(c) => applyBayConfig(bay.id, c)}
+                onCustom={() => setCustomBayConfig(bay.id)}
+                onClose={() => setConfigBayId(null)}
+              />
+            );
+          })()}
+        {enclosureBayId &&
+          sb &&
+          (() => {
+            const bay = bays.find((b) => b.id === enclosureBayId);
+            if (!bay) return null;
+            return (
+              <BayEnclosureDialog
+                switchboardId={sb.id}
+                bayId={bay.id}
+                bayName={bay.name}
+                bayNames={new Map(bays.map((b) => [b.id, b.name]))}
+                stale={dirty}
+                onClose={() => setEnclosureBayId(null)}
+              />
+            );
+          })()}
           <aside
             className={`shrink-0 overflow-y-auto rounded-xl border border-surface-container-high bg-surface-container-lowest shadow-xs transition-[width] ${
               sidebarCollapsed ? "w-11 p-2" : "w-80 p-3"
@@ -5022,6 +5045,7 @@ function BayCableMenu({
   exit,
   onSet,
   onChooseConfig,
+  onShowEnclosure,
   onClose,
 }: {
   x: number;
@@ -5035,6 +5059,8 @@ function BayCableMenu({
   ) => void;
   /** ArTu-K bays: open the bay config picker */
   onChooseConfig?: () => void;
+  /** ArTu-K bays: list this bay's enclosure parts, qty and cost */
+  onShowEnclosure?: () => void;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -5105,6 +5131,18 @@ function BayCableMenu({
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] font-medium text-primary hover:bg-surface-container-low"
           >
             <Icon name="view_column" size={16} /> Change bay config…
+          </button>
+        )}
+        {onShowEnclosure && (
+          <button
+            type="button"
+            onClick={() => {
+              onShowEnclosure();
+              onClose();
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] font-medium text-primary hover:bg-surface-container-low"
+          >
+            <Icon name="list_alt" size={16} /> Enclosure parts & cost…
           </button>
         )}
         {group("cable_entry", "Cable entry", entry, "bg-blue-600")}
