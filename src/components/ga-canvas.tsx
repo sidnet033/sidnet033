@@ -824,20 +824,76 @@ export function GaCanvas({
     });
   }
 
-  function downloadFileName(ext: string) {
-    return `${(sb?.tag || "switchboard").replace(/[^a-z0-9-]+/gi, "-")}-GA${rearView ? "-rear" : ""}.${ext}`;
+  function downloadFileName(ext: string, side?: Face | "both") {
+    const suffix =
+      side === "both" ? "" : side ? `-${side}` : rearView ? "-rear" : "";
+    return `${(sb?.tag || "switchboard").replace(/[^a-z0-9-]+/gi, "-")}-GA${suffix}.${ext}`;
+  }
+
+  // Shows one face (double front) and waits for the drawing to render it.
+  async function showFaceForExport(f: Face) {
+    faceRef.current = f;
+    setFace(f);
+    setSelectedBayId(null);
+    setSideBayId(null);
+    setSelectedPlacedId(null);
+    setSelectedSegmentKey(null);
+    setBusbarSelected(false);
+    await refreshGaData();
+    await new Promise<void>((r) =>
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => setTimeout(r, 250)),
+      ),
+    );
+  }
+
+  // The drawings to export: one per face on a double-front board (front
+  // first, then rear; back to the face being viewed afterwards), else the
+  // one on screen.
+  async function captureForExport(): Promise<
+    { canvas: HTMLCanvasElement; side?: Face }[] | null
+  > {
+    if (!isDoubleFront) {
+      const canvas = await captureDrawing();
+      return canvas ? [{ canvas }] : null;
+    }
+    if (dirty) {
+      alert(
+        "Save or cancel your changes first — a double-front export takes both the front and rear sides.",
+      );
+      return null;
+    }
+    const original = face;
+    const out: { canvas: HTMLCanvasElement; side: Face }[] = [];
+    try {
+      for (const f of ["front", "rear"] as const) {
+        if (f !== faceRef.current) await showFaceForExport(f);
+        else
+          await new Promise<void>((r) =>
+            requestAnimationFrame(() => setTimeout(r, 50)),
+          );
+        const canvas = await captureDrawing();
+        if (canvas) out.push({ canvas, side: f });
+      }
+    } finally {
+      if (faceRef.current !== original) await showFaceForExport(original);
+    }
+    return out.length ? out : null;
   }
 
   async function exportPng() {
     if (exporting) return;
     setExporting(true);
     try {
-      const canvas = await captureDrawing();
-      if (!canvas) return;
-      const link = document.createElement("a");
-      link.download = downloadFileName("png");
-      link.href = canvas.toDataURL("image/png");
-      link.click();
+      const shots = await captureForExport();
+      if (!shots) return;
+      for (const [i, { canvas, side }] of shots.entries()) {
+        if (i > 0) await new Promise((r) => setTimeout(r, 400));
+        const link = document.createElement("a");
+        link.download = downloadFileName("png", side);
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      }
     } catch (e) {
       alert(
         `Could not export the GA drawing as PNG.${e instanceof Error ? ` (${e.message})` : ""}`,
@@ -851,27 +907,34 @@ export function GaCanvas({
     if (exporting) return;
     setExporting(true);
     try {
-      const [canvas, { jsPDF }] = await Promise.all([
-        captureDrawing(),
+      const [shots, { jsPDF }] = await Promise.all([
+        captureForExport(),
         import("jspdf"),
       ]);
-      if (!canvas) return;
-      const orientation =
-        canvas.width >= canvas.height ? "landscape" : "portrait";
+      if (!shots) return;
+      const orient = (c: HTMLCanvasElement) =>
+        c.width >= c.height ? "landscape" : "portrait";
+      const first = shots[0].canvas;
       const pdf = new jsPDF({
-        orientation,
+        orientation: orient(first),
         unit: "pt",
-        format: [canvas.width, canvas.height],
+        format: [first.width, first.height],
       });
-      pdf.addImage(
-        canvas.toDataURL("image/png"),
-        "PNG",
-        0,
-        0,
-        canvas.width,
-        canvas.height,
+      // one page per face on a double-front board
+      shots.forEach(({ canvas }, i) => {
+        if (i > 0) pdf.addPage([canvas.width, canvas.height], orient(canvas));
+        pdf.addImage(
+          canvas.toDataURL("image/png"),
+          "PNG",
+          0,
+          0,
+          canvas.width,
+          canvas.height,
+        );
+      });
+      pdf.save(
+        downloadFileName("pdf", shots.length > 1 ? "both" : shots[0].side),
       );
-      pdf.save(downloadFileName("pdf"));
     } catch (e) {
       alert(
         `Could not export the GA drawing as PDF.${e instanceof Error ? ` (${e.message})` : ""}`,
