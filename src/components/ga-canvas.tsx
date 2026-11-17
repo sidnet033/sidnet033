@@ -14,7 +14,13 @@ import {
   type InnerLayout,
 } from "@/lib/artuk-bay-configs";
 import { useWarnOnUnload } from "@/lib/switchboard-presence";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   DndContext,
   DragOverlay,
@@ -5617,20 +5623,31 @@ function BayCableMenu({
   onSetAdapters?: (n: number) => void;
   onClose: () => void;
 }) {
+  const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    // scrolling the page closes the menu; scrolling inside it doesn't
+    const onScroll = (e: Event) => {
+      if (menuRef.current?.contains(e.target as Node)) return;
+      onClose();
+    };
     window.addEventListener("keydown", onKey);
-    window.addEventListener("scroll", onClose, true);
+    window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", onClose);
     return () => {
       window.removeEventListener("keydown", onKey);
-      window.removeEventListener("scroll", onClose, true);
+      window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", onClose);
     };
   }, [onClose]);
-  // keep the menu on screen
-  const left = Math.min(x, window.innerWidth - 240);
-  const top = Math.max(8, Math.min(y, window.innerHeight - 480));
+  // keep the menu on screen: measured once it's drawn, moved up as far as
+  // needed, and scrollable when it's taller than the window
+  const [top, setTop] = useState(y);
+  useLayoutEffect(() => {
+    const h = menuRef.current?.scrollHeight ?? 0;
+    setTop(Math.max(8, Math.min(y, window.innerHeight - h - 8)));
+  }, [y]);
+  const left = Math.max(8, Math.min(x, window.innerWidth - 240));
   const group = (
     field: "cable_entry" | "cable_exit" | "busduct",
     label: string,
@@ -5669,9 +5686,10 @@ function BayCableMenu({
         }}
       />
       <div
+        ref={menuRef}
         role="menu"
-        className="fixed z-50 w-56 divide-y divide-surface-container overflow-hidden rounded-lg border border-surface-container-high bg-surface-container-lowest shadow-lg"
-        style={{ left, top }}
+        className="fixed z-50 w-56 divide-y divide-surface-container overflow-y-auto overscroll-contain rounded-lg border border-surface-container-high bg-surface-container-lowest shadow-lg"
+        style={{ left, top, maxHeight: "calc(100vh - 16px)" }}
       >
         <p className="truncate px-3 py-1.5 text-[12px] font-bold text-on-surface">
           {bayName}
