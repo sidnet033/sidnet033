@@ -23,6 +23,11 @@ import {
   type BusbarPlan,
 } from "@/lib/busbar-plan";
 import { planBusbarSupports } from "@/lib/busbar-supports";
+import {
+  loadProjectOverrides,
+  loadRateMaster,
+  ratesFrom,
+} from "@/lib/enclosure-rates";
 import { faceOf, faceView } from "@/lib/faces";
 import {
   ARTUK_FIXED_MM,
@@ -315,6 +320,10 @@ export type EnclosureInput = {
   material: BusbarMaterial;
   ka: number | null;
   internalArc: boolean;
+  /** ISMC rate per kg (Enclosure Rates Master) and the plinth height:
+   * 100mm and up = ISMC 100 (9.56 kg/m), 75mm = ISMC 75 (7.8 kg/m) */
+  ismcRate?: number;
+  plinthHeightMm?: number | null;
   /** project busbar rate per kg (fish plates are priced like busbar) */
   busbarRates?: Record<BusbarMaterial, number>;
   doubleFront?: boolean;
@@ -524,13 +533,37 @@ export function artukEnclosureBom(input: EnclosureInput): {
   });
   const templated = new Set(matches.flatMap((m) => m.bays.map((b) => b.id)));
   const panelParts = new Map<string, ArtukTemplateLine>();
+  // Base frame of a bay (or adapter): perimeter 2 x (W + D) in metres x the
+  // ISMC channel's weight per metre x the ISMC rate.
+  const ismc100 = (input.plinthHeightMm ?? 100) >= 100;
+  const ismcKgPerM = ismc100 ? 9.56 : 7.8;
+  const ismcRate = input.ismcRate ?? 0;
+  let baseFrameUnpriced = false;
+  const addBaseFrame = (w: number, d: number, why: string) => {
+    if (w <= 0 || d <= 0) return;
+    if (!(ismcRate > 0)) baseFrameUnpriced = true;
+    const kg = ((2 * (w + d)) / 1000) * ismcKgPerM;
+    add(
+      `BASE FRAME ${w}x${d} ISMC${ismc100 ? 100 : 75}`,
+      1,
+      why,
+      ismcRate > 0 ? Math.round(kg * ismcRate * 100) / 100 : null,
+      `Base frame ${w}x${d}mm, ISMC ${ismc100 ? 100 : 75} (${kg.toFixed(1)} kg)`,
+    );
+  };
   for (const m of matches) {
     const names = m.bays.map((b) => b.name).join(" + ");
     const why = `${names}: ${m.template.title}${input.internalArc ? " (internal arc)" : ""}`;
+    // the workbook's fixed base frame cost gives way to the ISMC formula,
+    // one base frame per bay
+    const tLines = (
+      input.doubleFront ? doubleFrontLines(m.template, m.bays) : m.template.lines
+    ).filter((l) => !/^BASE\s*FRAME/i.test(l.code.trim()));
+    for (const b of m.bays) {
+      forBays = [b.id];
+      addBaseFrame(b.width_mm ?? 0, panelDepth, `${b.name}: base frame`);
+    }
     forBays = m.bays.map((b) => b.id);
-    const tLines = input.doubleFront
-      ? doubleFrontLines(m.template, m.bays)
-      : m.template.lines;
     for (const l of withArc(tLines, "vertical", input.internalArc))
       add(l.code, l.qty, why, l.unitCost, l.description);
     forBays = null;
@@ -594,6 +627,13 @@ export function artukEnclosureBom(input: EnclosureInput): {
   for (const bay of bays) {
     if (templated.has(bay.id)) continue;
     forBays = [bay.id];
+    addBaseFrame(
+      bay.width_mm ?? 0,
+      bay.bay_type === "dummy_bay" && bay.depth_mm
+        ? Number(bay.depth_mm)
+        : panelDepth,
+      `${bay.name}: base frame`,
+    );
     const w = bay.width_mm ?? 0;
     const name = bay.name;
     const prefix = WIDTH_PREFIX[w];
@@ -872,19 +912,13 @@ export function artukEnclosureBom(input: EnclosureInput): {
       add("APR14/20", 3, `${what}: rear cover screws`);
       for (const [code, qty, cost, label] of adapterHardware)
         add(code, qty, `${what}: frame hardware`, cost, label);
-      add(
-        `BASE FRAME ADAPTER ${w}x437`,
-        1,
-        `${what}: base frame`,
-        null,
-        `Base frame ${w}x437 (adapter)`,
-      );
+      addBaseFrame(w, 437, `${what}: base frame`);
     }
   }
   forBays = null;
   if (bays.some((b) => Number(b.adapters ?? 0) > 0))
     warnings.push(
-      'Adapters: each bay\'s rear door / cover goes on its rear-most adapter. Adapter base frames have no rate yet — add "BASE FRAME ADAPTER <width>x437" items to Item Master to price them.',
+      "Adapters: each bay's rear door / cover goes on its rear-most adapter.",
     );
   const maxAdapters = Math.max(0, ...bays.map((b) => Number(b.adapters ?? 0)));
   for (let k = 1; k <= maxAdapters; k++) {
@@ -939,6 +973,11 @@ export function artukEnclosureBom(input: EnclosureInput): {
   } else if (joints > 0)
     warnings.push(
       "Fish plates not counted: the main busbar has no size yet (open GA Builder).",
+    );
+
+  if (baseFrameUnpriced)
+    warnings.push(
+      "Base frames: set the ISMC rate (INR/kg) in the Enclosure Rates Master to price them.",
     );
 
   forBays = null;
@@ -1043,6 +1082,16 @@ export async function loadEnclosureTakeoff(
     Cu: Number(project?.busbar_rate_cu ?? 0),
     Al: Number(project?.busbar_rate_al ?? 0),
   };
+  const revProjectId =
+    (rev as unknown as { project_id: string | null } | null)?.project_id ??
+    null;
+  const [rateMaster, rateOverrides] = await Promise.all([
+    loadRateMaster(supabase).catch(() => []),
+    revProjectId
+      ? loadProjectOverrides(supabase, revProjectId).catch(() => ({}))
+      : Promise.resolve({}),
+  ]);
+  const ismcRate = ratesFrom(rateMaster, rateOverrides).ISMC;
   const chamber = sb.busbar_chamber_height_mm ?? BUSBAR_CHAMBER_HEIGHT_MM;
   const panel = effectivePanelHeight(sb, chamber);
   const plan = planForSwitchboard({
@@ -1070,6 +1119,8 @@ export async function loadEnclosureTakeoff(
     ka: sb.ka,
     internalArc: sb.internal_arc,
     busbarRates,
+    ismcRate,
+    plinthHeightMm: sb.plinth_height_mm,
     doubleFront: sb.arrangement === "double_front",
     templates,
   });

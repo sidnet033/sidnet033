@@ -13,7 +13,8 @@ export type RateKey =
   | "POWDER_COATING"
   | "PUNCHING_STROKE"
   | "GASKET_M"
-  | "PLATING";
+  | "PLATING"
+  | "ISMC";
 export type EnclosureRateRow = {
   key: RateKey;
   label: string;
@@ -34,6 +35,7 @@ export const FALLBACK_RATES: Rates = {
   PUNCHING_STROKE: 0.5,
   GASKET_M: 140,
   PLATING: 28,
+  ISMC: 0,
 };
 
 export async function loadRateMaster(
