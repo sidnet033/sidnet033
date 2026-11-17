@@ -287,6 +287,7 @@ function planOf(board: BoardData, densities: Densities) {
     densities,
     panelHeightMm: effectivePanelHeight(sb),
     chamberHeightMm: sb.busbar_chamber_height_mm ?? BUSBAR_CHAMBER_HEIGHT_MM,
+    site: board.site,
   });
 }
 

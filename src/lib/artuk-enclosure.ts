@@ -23,6 +23,7 @@ import {
   type BusbarPlan,
 } from "@/lib/busbar-plan";
 import { planBusbarSupports } from "@/lib/busbar-supports";
+import { siteOf } from "@/lib/busbar-derating";
 import {
   loadProjectOverrides,
   loadRateMaster,
@@ -327,8 +328,13 @@ export type EnclosureInput = {
   /** project busbar rate per kg (fish plates are priced like busbar) */
   busbarRates?: Record<BusbarMaterial, number>;
   doubleFront?: boolean;
-  /** workbook bay parts lists (loadBayTemplates); none = rules only */
+  /** workbook bay parts lists (loadBayTemplates) */
   templates?: ArtukBayTemplate[];
+  /** also list parts from the rules built on ABB's ArTuK PDFs (bays with
+   * no workbook BOM, busbar supports, adapter frames, line-up parts).
+   * Off: the enclosure BOM is the workbook BOMs only (plus base frames and
+   * fish plates, which follow the user's own formulas). */
+  pdfRules?: boolean;
 };
 
 // top/base sets ABB makes with an arc flap + gland plate (or flap only)
@@ -607,18 +613,18 @@ export function artukEnclosureBom(input: EnclosureInput): {
     internalArc: input.internalArc,
     poles: input.poles,
   });
-  warnings.push(...sup.warnings);
+  if (input.pdfRules) warnings.push(...sup.warnings);
   // Busbar supports are counted for every bay, including bays that take a
   // workbook parts list: the workbook lists carry no busbar support
   // insulators (ABB 551060 / MXM parts).
-  for (const s of sup.supports) {
+  for (const s of input.pdfRules ? sup.supports : []) {
     const what = `${s.bayName}: ${s.kind === "hbb" ? "main" : "vertical"} busbar support (span ≤${s.spanMm}mm)`;
     forBays = s.bayId ? [s.bayId] : null;
     add(s.code, 1, what);
     add(s.neutralCode, 1, what);
   }
   forBays = null;
-  if (input.internalArc && templated.size < bays.length) {
+  if (input.pdfRules && input.internalArc && templated.size < bays.length) {
     warnings.push(
       "Internal arc: use 2mm side panels and glass doors, recessed compartment doors (gap ≤3mm), APR14/20 + AD1090 fixings, M12 8.8 busbar bolts at 70Nm, and ACB/MCCB conductor anchoring per ABB ENGG/03 — confirm the 2mm door/side-panel part codes with ABB.",
     );
@@ -634,6 +640,12 @@ export function artukEnclosureBom(input: EnclosureInput): {
         : panelDepth,
       `${bay.name}: base frame`,
     );
+    if (!input.pdfRules) {
+      warnings.push(
+        `${bay.name}: no BOM in your workbook matches this bay (${bay.width_mm ?? "?"}W x ${panelDepth}D${bay.bay_config ? `, ${bay.bay_config}` : ""}) — only its base frame is listed. Add a BOM tab for it to the workbook.`,
+      );
+      continue;
+    }
     const w = bay.width_mm ?? 0;
     const name = bay.name;
     const prefix = WIDTH_PREFIX[w];
@@ -900,6 +912,8 @@ export function artukEnclosureBom(input: EnclosureInput): {
     forBays = [bay.id];
     for (let k = 1; k <= n; k++) {
       const what = `${bay.name}: adapter ${k}${n > 1 ? ` of ${n}` : ""} (${w}x437)`;
+      addBaseFrame(w, 437, `${what}: base frame`);
+      if (!input.pdfRules) continue;
       if (!prefix)
         warnings.push(
           `${bay.name}: ${w}mm isn't an ArTuK width — the adapter's top/base set isn't listed.`,
@@ -912,15 +926,18 @@ export function artukEnclosureBom(input: EnclosureInput): {
       add("APR14/20", 3, `${what}: rear cover screws`);
       for (const [code, qty, cost, label] of adapterHardware)
         add(code, qty, `${what}: frame hardware`, cost, label);
-      addBaseFrame(w, 437, `${what}: base frame`);
     }
   }
   forBays = null;
   if (bays.some((b) => Number(b.adapters ?? 0) > 0))
     warnings.push(
-      "Adapters: each bay's rear door / cover goes on its rear-most adapter.",
+      input.pdfRules
+        ? "Adapters: each bay's rear door / cover goes on its rear-most adapter."
+        : "Adapters: only their base frames are listed — your workbook has no adapter BOM.",
     );
-  const maxAdapters = Math.max(0, ...bays.map((b) => Number(b.adapters ?? 0)));
+  const maxAdapters = input.pdfRules
+    ? Math.max(0, ...bays.map((b) => Number(b.adapters ?? 0)))
+    : 0;
   for (let k = 1; k <= maxAdapters; k++) {
     let runs = 0;
     let inRun = false;
@@ -982,7 +999,7 @@ export function artukEnclosureBom(input: EnclosureInput): {
 
   forBays = null;
   // line-up (rule-based; a workbook bay type brings its own side panels)
-  if (bays.length > 0 && matches.length === 0) {
+  if (input.pdfRules && bays.length > 0 && matches.length === 0) {
     // side panels on the two line-up ends only (one N°2 pair), at the
     // panel's depth
     for (const d of depthSections(panelDepth))
@@ -1031,6 +1048,8 @@ type ProjectSettings = {
   busbar_density_al: number;
   busbar_rate_cu: number | null;
   busbar_rate_al: number | null;
+  site_ambient_temp_c: number | null;
+  site_altitude_m: number | null;
 };
 
 // Loads the GA and prices the ArTuK enclosure BOM from Item Master. Null
@@ -1051,7 +1070,7 @@ export async function loadEnclosureTakeoff(
       supabase
         .from("revisions")
         .select(
-          "project_id, project:projects(busbar_density_cu, busbar_density_al, busbar_rate_cu, busbar_rate_al)",
+          "project_id, project:projects(busbar_density_cu, busbar_density_al, busbar_rate_cu, busbar_rate_al, site_ambient_temp_c, site_altitude_m)",
         )
         .eq("id", sb.revision_id)
         .single(),
@@ -1104,6 +1123,7 @@ export async function loadEnclosureTakeoff(
     },
     panelHeightMm: panel,
     chamberHeightMm: chamber,
+    site: siteOf(project),
   });
   const bom = artukEnclosureBom({
     verticals: withFeeders,

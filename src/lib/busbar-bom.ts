@@ -1,3 +1,4 @@
+import { siteOf } from "@/lib/busbar-derating";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Feeder, PlacedFeeder, Switchboard, Vertical } from "@/types/database";
 import { MATERIAL_DENSITY, barArea, type BarSize, type BusbarMaterial, type BusbarPlan } from "@/lib/busbar-plan";
@@ -81,7 +82,7 @@ export function busbarTakeoff(plan: BusbarPlan, material: BusbarMaterial, rates:
   };
 }
 
-type ProjectBusbarSettings = { busbar_density_cu: number; busbar_density_al: number; busbar_rate_cu: number; busbar_rate_al: number };
+type ProjectBusbarSettings = { busbar_density_cu: number; busbar_density_al: number; busbar_rate_cu: number; busbar_rate_al: number; site_ambient_temp_c: number | null; site_altitude_m: number | null };
 
 // Loads what the plan needs (bays, placed feeders, overrides, project
 // densities/rates) and returns the busbar takeoff for one switchboard.
@@ -92,7 +93,7 @@ export async function loadBusbarTakeoff(supabase: SupabaseClient, sb: Switchboar
     supabase.from("busbar_overrides").select("*").eq("switchboard_id", sb.id),
     supabase
       .from("revisions")
-      .select("project:projects(busbar_density_cu, busbar_density_al, busbar_rate_cu, busbar_rate_al)")
+      .select("project:projects(busbar_density_cu, busbar_density_al, busbar_rate_cu, busbar_rate_al, site_ambient_temp_c, site_altitude_m)")
       .eq("id", sb.revision_id)
       .single(),
   ]);
@@ -112,6 +113,7 @@ export async function loadBusbarTakeoff(supabase: SupabaseClient, sb: Switchboar
     densities: { Cu: Number(project?.busbar_density_cu ?? 1.6), Al: Number(project?.busbar_density_al ?? 1.0) },
     panelHeightMm: effectivePanelHeight(sb),
     chamberHeightMm: sb.busbar_chamber_height_mm ?? BUSBAR_CHAMBER_HEIGHT_MM,
+    site: siteOf(project),
   });
   return busbarTakeoff(plan, material, { Cu: Number(project?.busbar_rate_cu ?? 0), Al: Number(project?.busbar_rate_al ?? 0) });
 }

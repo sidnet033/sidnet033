@@ -11,6 +11,11 @@ import {
   type BayFunction,
 } from "@/lib/artuk-sizing";
 import {
+  busbarDerating,
+  requiredBusbarRating,
+} from "@/lib/busbar-derating";
+import {
+  acbChartsFor,
   FIRST_JOINT_MM,
   formatJoints,
   pickAlMccbHbb,
@@ -266,6 +271,8 @@ export type BusbarPlanInput = {
   poles: number;
   neutralPct: number;
   switchboardAmps: number | null;
+  /** site conditions: the main busbar is derated for them */
+  site?: { ambientC: number | null; altitudeM: number | null } | null;
   defaultDepthMm: number;
   overrides: Record<string, BusbarOverride>;
   // set on ArTuK boards: bars come from ABB's charts
@@ -349,6 +356,18 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
     );
   }
 
+  // The main busbar (HBB) carries the panel's rating -- derated for the
+  // site, i.e. sized for rating / k at standard conditions.
+  const derating = busbarDerating(
+    input.site?.ambientC ?? null,
+    input.site?.altitudeM ?? null,
+  );
+  const hbbA = requiredBusbarRating(mainCurrent, derating);
+  const deratingNote =
+    mainCurrent != null && hbbA != null && hbbA > mainCurrent
+      ? `Derated for the site (${derating.reasons.join(", ")}; k = ${derating.factor.toFixed(2)}): sized for ${mainCurrent}A / ${derating.factor.toFixed(2)} = ${hbbA}A at standard conditions.`
+      : null;
+
   // ArTuK: ABB's chart for an ACB (by rating, kA, IP, bay width)
   const artuk = input.artuk ?? null;
   const matName = material === "Cu" ? "copper" : "aluminium";
@@ -405,13 +424,26 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
         ]
       : [];
 
-  // main busbar: the largest incomer's ACB chart; an MCCB-fed aluminium
-  // board uses ABB's lower-rating HBB table (copper MCCB-fed boards have no
-  // ABB HBB table and stay on current density)
+  // main busbar: ABB's ACB chart at the panel rating (the largest
+  // incomer's frame picks between charts of that rating); an MCCB-fed
+  // aluminium board uses ABB's lower-rating HBB table. Above ABB's largest
+  // chart (e.g. 6300A) it's sized on current density.
   let mainChart: SegmentChart | null = null;
-  const mainNotes: string[] = [];
+  const mainNotes: string[] = deratingNote ? [deratingNote] : [];
   const mainWarnings: string[] = [];
-  if (artuk) {
+  const largestChart = artuk
+    ? acbChartsFor(material).reduce<ArtukChart | null>(
+        (m, c) => (!m || c.maxA > m.maxA ? c : m),
+        null,
+      )
+    : null;
+  const aboveCharts =
+    !!largestChart && hbbA != null && hbbA > largestChart.maxA;
+  if (aboveCharts)
+    mainNotes.push(
+      `${hbbA}A is above ABB's largest ArTuK ${matName} chart (${largestChart!.ratingLabel}) — main busbar sized on current density (${densityAPerMm2} A/mm²) for ${hbbA}A; confirm with ABB.`,
+    );
+  if (artuk && !aboveCharts) {
     let best: Feeder | null = null;
     for (const bay of bays)
       for (const p of bay.placed)
@@ -421,7 +453,7 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
           (!best || p.feeder.rated_current > (best.rated_current ?? 0))
         )
           best = p.feeder;
-    const amps = best?.rated_current ?? mainCurrent;
+    const amps = hbbA;
     if (best?.device_type === "MCCB") {
       const hbb = material === "Al" ? pickAlMccbHbb(amps, artuk.ka) : null;
       if (hbb) {
@@ -446,7 +478,7 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
           earth: pick.chart.earth ?? null,
         };
         mainNotes.push(
-          `ArTuK ${matName} — size from ABB's chart "${pick.chart.sheet}" (largest incomer): ${formatJoints([pick.chart.main])}, ${neutralNote}.${pick.chart.earth ? ` Earth busbar ${formatBar(pick.chart.earth.bar, pick.chart.earth.runs)}.` : ""}`,
+          `ArTuK ${matName} — size from ABB's chart "${pick.chart.sheet}" for ${amps}A (${deratingNote ? "derated panel rating" : "panel rating"}): ${formatJoints([pick.chart.main])}, ${neutralNote}.${pick.chart.earth ? ` Earth busbar ${formatBar(pick.chart.earth.bar, pick.chart.earth.runs)}.` : ""}`,
         );
         mainWarnings.push(...pick.warnings);
       }
@@ -456,8 +488,8 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
   // ArTuK with no ABB main-bar chart for the way it's fed (copper MCCB-fed,
   // or no rated ACB incomer): ABB's main busbar size at the board's rating
   // still beats current density
-  if (artuk && !mainChart && mainCurrent != null) {
-    const pick = chartFor(mainCurrent, null, null);
+  if (artuk && !aboveCharts && !mainChart && hbbA != null) {
+    const pick = chartFor(hbbA, null, null);
     if (pick) {
       mainChart = {
         sheet: pick.chart.sheet,
@@ -489,7 +521,7 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
         { x: totalWidth, y: chamberMidY },
       ],
       side: null,
-      designCurrentA: mainCurrent,
+      designCurrentA: hbbA ?? mainCurrent,
       autoLengthMm: totalWidth,
       notes: [
         `Runs the full ${totalWidth}mm width of the switchboard in the busbar chamber.`,

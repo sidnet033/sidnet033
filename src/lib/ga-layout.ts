@@ -357,6 +357,8 @@ type PlanArgs = {
   densities: Record<BusbarMaterial, number>;
   panelHeightMm: number;
   chamberHeightMm: number;
+  /** site ambient / altitude: the main busbar is derated for them */
+  site?: { ambientC: number | null; altitudeM: number | null } | null;
 };
 
 // The busbar plan for a switchboard. A double-front board with feeders on
@@ -424,6 +426,7 @@ function planOneFace(args: PlanArgs): BusbarPlan {
     poles: args.params.poles ?? 4,
     neutralPct: args.params.neutral_size_pct ?? 100,
     switchboardAmps: args.params.amps,
+    site: args.site ?? null,
     defaultDepthMm: Math.max(0, ...bays.map((v) => v.depth_mm ?? 0)) || DEFAULT_BAY_DEPTH_MM,
     overrides: args.overrides,
     // ArTuK: bars from ABB's charts (copper and aluminium)

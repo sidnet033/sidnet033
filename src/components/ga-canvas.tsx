@@ -98,6 +98,7 @@ import {
   type VerticalWithFeeders,
 } from "@/lib/ga-layout";
 import { planBusbarSupports } from "@/lib/busbar-supports";
+import { siteOf } from "@/lib/busbar-derating";
 import {
   BusbarFrontOverlay,
   BusbarSchedule,
@@ -344,7 +345,7 @@ async function loadGaData(
   const { data: project } = revision
     ? await supabase
         .from("projects")
-        .select("busbar_density_cu, busbar_density_al")
+        .select("busbar_density_cu, busbar_density_al, site_ambient_temp_c, site_altitude_m")
         .eq("id", (revision as { project_id: string }).project_id)
         .single()
     : { data: null };
@@ -360,6 +361,8 @@ async function loadGaData(
   const densityRow = project as {
     busbar_density_cu: number;
     busbar_density_al: number;
+    site_ambient_temp_c: number | null;
+    site_altitude_m: number | null;
   } | null;
   return {
     switchboard: switchboard as Switchboard,
@@ -368,6 +371,7 @@ async function loadGaData(
       Cu: Number(densityRow?.busbar_density_cu ?? 1.6),
       Al: Number(densityRow?.busbar_density_al ?? 1.0),
     },
+    site: siteOf(densityRow),
     overrides,
   };
 }
@@ -635,6 +639,10 @@ export function GaCanvas({
     Cu: 1.6,
     Al: 1.0,
   });
+  const [site, setSite] = useState<{
+    ambientC: number | null;
+    altitudeM: number | null;
+  } | null>(null);
   const [showBusbars, setShowBusbars] = useState(true);
   // top view under the front view: bays from above, with their adapters
   const [showTopView, setShowTopView] = useState(true);
@@ -995,6 +1003,7 @@ export function GaCanvas({
         ARTUK_CHAMBER_HEIGHTS_MM.includes(busbar),
     );
     setDensities(data.densities);
+    setSite(data.site);
     setBusbarOverrides(data.overrides);
     setSavedBusbarOverrides(data.overrides);
   }
@@ -1036,6 +1045,7 @@ export function GaCanvas({
           ARTUK_CHAMBER_HEIGHTS_MM.includes(busbar),
       );
       setDensities(data.densities);
+    setSite(data.site);
       setBusbarOverrides(data.overrides);
       setSavedBusbarOverrides(data.overrides);
       setLoading(false);
@@ -1184,6 +1194,7 @@ export function GaCanvas({
         densities,
         panelHeightMm: panelHeight,
         chamberHeightMm: busbarHeight,
+        site,
       })
     : null;
   // the plan is laid out left-to-right as seen from the front; the rear view

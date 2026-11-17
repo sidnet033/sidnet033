@@ -134,7 +134,7 @@ function tempIndex(ambientC: number): number {
   return i < 0 ? T_COLS.length - 1 : i;
 }
 
-function altitudeFactor(altitudeM: number): number {
+export function altitudeFactor(altitudeM: number): number {
   const step = ALTITUDE.find(([m]) => altitudeM <= m);
   return step ? step[1] : ALTITUDE[ALTITUDE.length - 1][1];
 }
