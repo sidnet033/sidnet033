@@ -19,6 +19,8 @@ type ItemRow = {
   description: string;
   unit_cost: number;
   status: string;
+  list_price?: number | null;
+  discount_pct?: number | null;
 };
 const key = (s: string) => s.trim().toUpperCase();
 const n = (v: number, d = 2) =>
@@ -106,7 +108,7 @@ export function ArtukEnclosureMaster({
   subparts: initialSubparts,
   components: initialComponents,
   rates,
-  items,
+  items: initialItems,
   canEdit = false,
 }: {
   subparts: ArtukSubpart[];
@@ -118,6 +120,7 @@ export function ArtukEnclosureMaster({
   const supabase = useMemo(() => createClient(), []);
   const [subparts, setSubparts] = useState(initialSubparts);
   const [components, setComponents] = useState(initialComponents);
+  const [items, setItems] = useState(initialItems);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const flash = (ok: boolean, text: string) => {
     setMsg({ ok, text });
@@ -216,6 +219,18 @@ export function ArtukEnclosureMaster({
       list.map((c) => (c.id === lineId ? { ...c, qty } : c)),
     );
     flash(true, "Qty saved — the part's cost was recalculated.");
+  }
+  // a bought-out part with no sub-parts: its own Item Master cost
+  async function saveItemCost(sku: string, cost: number) {
+    const { error } = await supabase
+      .from("item_master")
+      .update({ unit_cost: cost, updated_at: new Date().toISOString() })
+      .eq("sku", sku);
+    if (error) return flash(false, error.message);
+    setItems((list) =>
+      list.map((i) => (key(i.sku) === key(sku) ? { ...i, unit_cost: cost } : i)),
+    );
+    flash(true, `Cost of ${sku} saved to Item Master.`);
   }
   async function saveRate(subId: string, rate: number) {
     const { error } = await supabase
@@ -525,10 +540,47 @@ export function ArtukEnclosureMaster({
                 </p>
               )}
               {part.rows.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-surface-container-high bg-surface-container-low px-4 py-6 text-center text-body-sm text-secondary">
-                  No sub-part breakdown for this part yet — it&apos;s priced at
-                  its Item Master cost.
-                </p>
+                (() => {
+                  const it = itemBySku.get(key(part.sku));
+                  return (
+                    <div className="rounded-lg border border-dashed border-surface-container-high bg-surface-container-low px-4 py-5 text-center text-body-sm text-secondary">
+                      <p>
+                        No sub-part breakdown — a bought-out part, priced at
+                        its Item Master cost.
+                      </p>
+                      {!it ? (
+                        <p className="mt-2 text-error">
+                          Not in Item Master yet — add it there to price it.
+                        </p>
+                      ) : it.list_price != null ? (
+                        <p className="mt-2">
+                          Priced from its list price ₹{n(it.list_price)}
+                          {it.discount_pct ? ` less ${it.discount_pct}%` : ""} —
+                          change that in Item Master.
+                        </p>
+                      ) : canEdit ? (
+                        <div className="mt-3 flex items-center justify-center gap-2 text-on-surface">
+                          <span className="text-[12px]">Cost</span>
+                          <NumberInput
+                            key={`ic-${part.sku}-${it.unit_cost}`}
+                            value={Number(it.unit_cost)}
+                            min={0}
+                            prefix="₹"
+                            title="Cost of this bought-out part — saves to Item Master"
+                            onCommit={(v) => saveItemCost(it.sku, v)}
+                          />
+                          <span className="text-[11px] text-secondary">
+                            Tab / click away to save (updates Item Master)
+                          </span>
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-on-surface">
+                          {formatMoney(Number(it.unit_cost))}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()
               ) : (
                 <div className="overflow-x-auto rounded-lg border border-surface-container-high">
                   <table className="w-full border-collapse text-[12px]">

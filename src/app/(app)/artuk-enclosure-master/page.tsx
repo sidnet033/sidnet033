@@ -35,10 +35,12 @@ export default async function ArtukEnclosureMasterPage() {
       description: string;
       unit_cost: number;
       status: string;
+      list_price: number | null;
+      discount_pct: number | null;
     }>((from, to) =>
       supabase
         .from("item_master")
-        .select("sku, description, unit_cost, status")
+        .select("sku, description, unit_cost, status, list_price, discount_pct")
         .eq("status", "active")
         .in("category", ["ArTuK Enclosure", "ARTUK"])
         .order("sku")
@@ -47,7 +49,7 @@ export default async function ArtukEnclosureMasterPage() {
     parentSkus.length
       ? supabase
           .from("item_master")
-          .select("sku, description, unit_cost, status")
+          .select("sku, description, unit_cost, status, list_price, discount_pct")
           .in("sku", parentSkus)
       : Promise.resolve({ data: [] }),
   ]);
