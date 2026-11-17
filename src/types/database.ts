@@ -254,6 +254,8 @@ export type Switchboard = {
   internal_arc: boolean;
   // takes busduct(s) in from the top as well as cables
   has_busduct: boolean;
+  /** free-text remarks for BOM Builder's busbar section */
+  busbar_remarks?: string | null;
   std: "ArTuK" | "61439" | "60439" | null;
   qty: number;
   sort_order: number;

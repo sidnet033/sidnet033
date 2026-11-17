@@ -25,6 +25,7 @@ import {
 } from "@/components/split-feeder-dialog";
 import type { PriceDecision, PricedLine } from "@/lib/price-changes";
 import { CreateItemDialog } from "@/components/create-item-dialog";
+import { Pk2025ImportDialog } from "@/components/pk2025-import-dialog";
 import { BulkAddItemsDialog } from "@/components/bulk-add-items-dialog";
 import { findDuplicateLibraryFeeder } from "@/lib/feeder-duplicate";
 import { ensureUnassignedVertical } from "@/lib/switchboard-bom";
@@ -466,6 +467,39 @@ export function BomBuilder({
   // in this same session, without waiting on a page reload.
   function handleItemCreated(item: ItemMaster) {
     setItems((prev) => [...prev, item]);
+  }
+
+  // after a PK2025 BOM import: new items + the freshly added feeders
+  async function handlePkImported(newItems: ItemMaster[]) {
+    if (newItems.length) setItems((prev) => [...prev, ...newItems]);
+    const fresh = await loadBomData(supabase, switchboardId);
+    if (fresh) {
+      setSb(fresh.switchboard);
+      const freshDraft = toDraft(fresh);
+      setSaved(freshDraft);
+      setDraft(freshDraft);
+      setLibraryFeedersAll(fresh.libraryFeedersAll);
+      setBusbarTakeoff(fresh.busbarTakeoff);
+      setEnclosureTakeoff(fresh.enclosureTakeoff);
+      setResetKey((k) => k + 1);
+    }
+    router.refresh();
+  }
+
+  // busbar section remarks: saved straight away (not part of the draft)
+  async function saveBusbarRemarks(value: string) {
+    if (!sb) return;
+    const v = value.trim() ? value : null;
+    if ((sb.busbar_remarks ?? null) === v) return;
+    const { error } = await supabase
+      .from("switchboards")
+      .update({ busbar_remarks: v })
+      .eq("id", sb.id);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    setSb({ ...sb, busbar_remarks: v });
   }
 
   // "Refresh items" compares these lines' item prices with Item Master and
@@ -1865,6 +1899,14 @@ export function BomBuilder({
             <span className="text-[12px] text-tertiary">Saved</span>
           )}
           {!readOnly && (
+            <Pk2025ImportDialog
+              switchboardId={sb.id}
+              items={items}
+              dirty={dirty}
+              onImported={handlePkImported}
+            />
+          )}
+          {!readOnly && (
             <button
               onClick={() => setPricePasteOpen(true)}
               title="Paste SKU / cat # with list price (and discount %) to update those items in every feeder of this switchboard"
@@ -2295,6 +2337,8 @@ export function BomBuilder({
         title="1. Busbars"
         lines={draft.busbars}
         autoLines={busbarTakeoff}
+        remarks={sb.busbar_remarks ?? ""}
+        onRemarksSave={saveBusbarRemarks}
         readOnly={readOnly}
         onAdd={addBusbar}
         onUpdate={updateBusbar}
@@ -3170,6 +3214,8 @@ function LineItemsSection<
   lines,
   autoLines,
   enclosureAuto,
+  remarks,
+  onRemarksSave,
   readOnly,
   onAdd,
   onUpdate,
@@ -3183,6 +3229,9 @@ function LineItemsSection<
   // Busbars only: lines computed from the GA busbar plan (read-only here --
   // sizes are changed in GA Builder, the per-kg rate in Project Detail).
   autoLines?: BusbarTakeoff | null;
+  /** free-text remarks under the lines (busbars), saved on blur */
+  remarks?: string;
+  onRemarksSave?: (value: string) => void;
   readOnly: boolean;
   onAdd: () => void;
   onUpdate: (id: string, patch: Partial<T>) => void;
@@ -3438,6 +3487,22 @@ function LineItemsSection<
             </tr>
           </tfoot>
         </table>
+      )}
+      {open && onRemarksSave && (
+        <div className="border-t border-surface-container px-3 py-2">
+          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-secondary">
+            Remarks
+          </label>
+          <textarea
+            key={remarks}
+            defaultValue={remarks ?? ""}
+            disabled={readOnly}
+            rows={Math.min(14, Math.max(2, (remarks ?? "").split("\n").length))}
+            onBlur={(e) => onRemarksSave(e.target.value)}
+            placeholder="Notes for this section (e.g. the busbar list from an imported BOM)"
+            className="w-full rounded border border-surface-container-high bg-surface-container-lowest px-2 py-1 font-mono text-[11px] disabled:bg-surface-container-low"
+          />
+        </div>
       )}
     </div>
   );

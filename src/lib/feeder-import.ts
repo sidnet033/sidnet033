@@ -289,6 +289,8 @@ export type MissingItemDraft = {
   frame: string;
   unitCost: string;
   create: boolean;
+  /** unit of measure (default "nos") */
+  uom?: string;
 };
 
 export function buildMissingItemDrafts(
@@ -341,7 +343,7 @@ function draftToItemRow(d: MissingItemDraft) {
     frame: d.frame.trim() || null,
     ka: d.ka.trim() ? Number(d.ka) : null,
     poles: d.poles.trim() ? Number(d.poles) : null,
-    uom: "nos",
+    uom: d.uom?.trim() || "nos",
     unit_cost: Number(d.unitCost) || 0,
     list_price: null,
     discount_pct: null,
