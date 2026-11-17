@@ -837,6 +837,67 @@ export function artukEnclosureBom(input: EnclosureInput): {
     }
   }
 
+  // Adapters: 437mm-deep sections stacked behind a bay (busducts, extra
+  // cables). Each is a frame of its own (430-deep top/base set, 4 uprights,
+  // 3-way joints, screws, hinges, gasket), joined to the section in front
+  // by depth-extension crosspieces, on its own base frame. The bay's rear
+  // door / cover is fitted on the rear-most adapter instead (same part, so
+  // the count doesn't change). Side covers: one N°2 pair per run of
+  // adapters side by side, at each stacking level.
+  const adapterHardware = BAY_HARDWARE.filter(
+    ([code]) => !/^M1[02] Hardware$/.test(code),
+  );
+  for (const bay of bays) {
+    const n = Math.max(0, Math.floor(Number(bay.adapters ?? 0)));
+    if (!n) continue;
+    const w = bay.width_mm ?? 0;
+    const prefix = WIDTH_PREFIX[w];
+    forBays = [bay.id];
+    for (let k = 1; k <= n; k++) {
+      const what = `${bay.name}: adapter ${k}${n > 1 ? ` of ${n}` : ""} (${w}x437)`;
+      if (!prefix)
+        warnings.push(
+          `${bay.name}: ${w}mm isn't an ArTuK width — the adapter's top/base set isn't listed.`,
+        );
+      add(prefix ? `${prefix}50-1` : null, 1, `${what}: top/base set ${w}x430`);
+      add(`SK${H}00-1`, 1, `${what}: uprights`);
+      add("TV1251-1", 2, `${what}: joining crosspieces`);
+      add("TV5101-1", 4, `${what}: joining crosspieces`);
+      add("AD1033-1", 5, `${what}: screws`);
+      add("APR14/20", 3, `${what}: rear cover screws`);
+      for (const [code, qty, cost, label] of adapterHardware)
+        add(code, qty, `${what}: frame hardware`, cost, label);
+      add(
+        `BASE FRAME ADAPTER ${w}x437`,
+        1,
+        `${what}: base frame`,
+        null,
+        `Base frame ${w}x437 (adapter)`,
+      );
+    }
+  }
+  forBays = null;
+  if (bays.some((b) => Number(b.adapters ?? 0) > 0))
+    warnings.push(
+      'Adapters: each bay\'s rear door / cover goes on its rear-most adapter. Adapter base frames have no rate yet — add "BASE FRAME ADAPTER <width>x437" items to Item Master to price them.',
+    );
+  const maxAdapters = Math.max(0, ...bays.map((b) => Number(b.adapters ?? 0)));
+  for (let k = 1; k <= maxAdapters; k++) {
+    let runs = 0;
+    let inRun = false;
+    for (const b of bays) {
+      const has = Number(b.adapters ?? 0) >= k;
+      if (has && !inRun) runs++;
+      inRun = has;
+    }
+    if (runs)
+      add(
+        `LF${H}50-1`,
+        runs,
+        `adapter side covers (2000x430, one N°2 pair per run of adapters${k > 1 ? `, level ${k}` : ""})`,
+      );
+  }
+
   forBays = null;
   // line-up (rule-based; a workbook bay type brings its own side panels)
   if (bays.length > 0 && matches.length === 0) {

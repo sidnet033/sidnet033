@@ -333,6 +333,8 @@ export type Vertical = {
   // among the rear units and height set by hand (null = fills what's left)
   rear_dummy_slot?: number | null;
   rear_dummy_height_mm?: number | null;
+  /** adapters (437mm-deep sections) stacked behind the bay */
+  adapters?: number;
 };
 
 // a feeder placed inside a bay, stacked into a tier

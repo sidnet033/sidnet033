@@ -629,6 +629,8 @@ export function GaCanvas({
     Al: 1.0,
   });
   const [showBusbars, setShowBusbars] = useState(true);
+  // top view under the front view: bays from above, with their adapters
+  const [showTopView, setShowTopView] = useState(true);
   // pink busbar-support markers on the front view (drawing only -- the BOM
   // still counts them)
   const [showSupports, setShowSupports] = useState(true);
@@ -1451,6 +1453,17 @@ export function GaCanvas({
     );
   }
 
+  // Adapters (437mm-deep sections behind a bay). On a double-front board
+  // only an ACB / bus coupler bay -- single-front -- has a back to add to.
+  const ADAPTER_DEPTH_MM = 437;
+  const canHaveAdapters = (v: VerticalWithFeeders) =>
+    !isDoubleFront || isAcbBay(v);
+  function setBayAdapters(id: string, n: number) {
+    setVerticals((vs) =>
+      vs.map((v) => (v.id === id ? { ...v, adapters: Math.max(0, n) } : v)),
+    );
+  }
+
   // right-click -> Busduct entry Top / Bottom / None
   function setBayBusduct(id: string, value: "Top" | "Bottom" | null) {
     setVerticals((vs) =>
@@ -2129,6 +2142,7 @@ export function GaCanvas({
             dummy_height_mm: v.dummy_height_mm,
             busduct_entries: v.busduct_entries ?? 0,
             busduct_entry: v.busduct_entry ?? null,
+            adapters: v.adapters ?? 0,
             cable_entry: v.cable_entry ?? null,
             cable_exit: v.cable_exit ?? null,
             bay_config: v.bay_config ?? null,
@@ -2162,6 +2176,8 @@ export function GaCanvas({
           fieldPatch.busduct_entries = v.busduct_entries ?? 0;
         if ((v.busduct_entry ?? null) !== (prev.busduct_entry ?? null))
           fieldPatch.busduct_entry = v.busduct_entry ?? null;
+        if ((v.adapters ?? 0) !== (prev.adapters ?? 0))
+          fieldPatch.adapters = v.adapters ?? 0;
         if ((v.cable_entry ?? null) !== (prev.cable_entry ?? null))
           fieldPatch.cable_entry = v.cable_entry ?? null;
         if ((v.cable_exit ?? null) !== (prev.cable_exit ?? null))
@@ -2940,6 +2956,12 @@ export function GaCanvas({
                 onSetBusduct={
                   (v) => setBayBusduct(bay.id, v)
                 }
+                adapters={bay.adapters ?? 0}
+                onSetAdapters={
+                  !readOnly && canHaveAdapters(bay)
+                    ? (n) => setBayAdapters(bay.id, n)
+                    : undefined
+                }
                 onChooseConfig={
                   isArtuk && !isAlley(bay.bay_type)
                     ? () => setConfigBayId(bay.id)
@@ -3448,6 +3470,18 @@ export function GaCanvas({
                     className={`btn btn-sm ${showBusbars ? "btn-primary" : "btn-outline"}`}
                   >
                     <Icon name="electric_bolt" size={14} /> Busbars
+                  </button>
+                  <button
+                    onClick={() => setShowTopView((v) => !v)}
+                    disabled={bays.length === 0}
+                    title={
+                      showTopView
+                        ? "Hide the top view"
+                        : "Show the top view (add adapters behind bays there)"
+                    }
+                    className={`btn btn-sm ${showTopView ? "btn-primary" : "btn-outline"}`}
+                  >
+                    <Icon name="view_quilt" size={14} /> Top view
                   </button>
                   {isArtuk && (
                     <button
@@ -3987,6 +4021,109 @@ export function GaCanvas({
                         label={`${totalWidth}mm`}
                       />
                     </div>
+                    {showTopView && !rearView && (
+                      <div className="mt-6">
+                        <div className="flex">
+                          <div
+                            style={{
+                              width: RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX,
+                            }}
+                          />
+                          <div style={{ width: Math.max(totalWidth * pxPerMm, 1) }}>
+                            <ViewLabel>Top View (front at the bottom)</ViewLabel>
+                          </div>
+                        </div>
+                        <div className="flex items-end">
+                          <div
+                            style={{
+                              width: RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX,
+                            }}
+                          />
+                          {bays.map((v) => {
+                            const wPx = (v.width_mm ?? 0) * pxPerMm;
+                            const depth =
+                              (v.bay_type === "dummy_bay"
+                                ? (v.depth_mm ?? panelDepthOf(bays))
+                                : (panelDepthOf(bays) ?? v.depth_mm)) ??
+                              DEFAULT_BAY_DEPTH_MM;
+                            const n = v.adapters ?? 0;
+                            const allowed = canHaveAdapters(v);
+                            const selected = v.id === selectedBayId;
+                            return (
+                              <div
+                                key={v.id}
+                                className="flex shrink-0 flex-col items-stretch"
+                                style={{ width: wPx }}
+                              >
+                                {!readOnly && allowed && (
+                                  <div
+                                    data-html2canvas-ignore=""
+                                    className="mb-0.5 flex items-center justify-center gap-0.5"
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() => setBayAdapters(v.id, n - 1)}
+                                      disabled={n === 0}
+                                      title="Remove the rear-most adapter"
+                                      className="rounded px-1 text-[11px] leading-4 text-secondary hover:bg-surface-container-low disabled:opacity-30"
+                                    >
+                                      −
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setBayAdapters(v.id, n + 1)}
+                                      title="Add an adapter (437mm deep) behind this bay"
+                                      className="rounded px-1 text-[11px] leading-4 text-primary hover:bg-primary/10"
+                                    >
+                                      + adapter
+                                    </button>
+                                  </div>
+                                )}
+                                {Array.from({ length: n }, (_, k) => n - k).map(
+                                  (level) => (
+                                    <div
+                                      key={level}
+                                      data-ga-tip={`${v.name}: adapter ${level}${n > 1 ? ` of ${n}` : ""} — ${v.width_mm}x${ADAPTER_DEPTH_MM}${level === n ? " (rear door here)" : ""}`}
+                                      className="flex items-center justify-center border border-dashed border-violet-500 bg-violet-50 font-mono text-[9px] text-violet-800"
+                                      style={{
+                                        height: ADAPTER_DEPTH_MM * pxPerMm,
+                                        marginTop: level === n ? 0 : -1,
+                                      }}
+                                    >
+                                      ADAPTER {ADAPTER_DEPTH_MM}
+                                    </div>
+                                  ),
+                                )}
+                                <div
+                                  onClick={() => {
+                                    setSelectedBayId(v.id);
+                                    setSideBayId(v.id);
+                                    setSelectedPlacedId(null);
+                                  }}
+                                  data-ga-tip={`${v.name}: ${v.width_mm}x${depth}${n ? ` + ${n}x${ADAPTER_DEPTH_MM} adapter${n > 1 ? "s" : ""} = ${depth + n * ADAPTER_DEPTH_MM}mm deep` : ""}`}
+                                  className={`flex cursor-pointer flex-col items-center justify-center border border-black/70 font-mono text-[9px] text-black ${selected ? "bg-primary/10" : "bg-white"} ${isAlley(v.bay_type) ? "bg-[repeating-linear-gradient(45deg,transparent,transparent_4px,rgba(0,0,0,0.06)_4px,rgba(0,0,0,0.06)_8px)]" : ""}`}
+                                  style={{
+                                    height: depth * pxPerMm,
+                                    marginTop: n ? -1 : 0,
+                                    marginLeft: -1,
+                                  }}
+                                >
+                                  <span className="max-w-full truncate px-0.5">
+                                    {bayNumbers.get(v.id) ?? v.name}
+                                  </span>
+                                  <span>{depth}</span>
+                                  {n > 0 && (
+                                    <span className="text-violet-800">
+                                      +{n * ADAPTER_DEPTH_MM}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="inline-block" data-ga-selectable="">
@@ -5456,6 +5593,8 @@ function BayCableMenu({
   onShowEnclosure,
   busduct,
   onSetBusduct,
+  adapters,
+  onSetAdapters,
   onClose,
 }: {
   x: number;
@@ -5473,6 +5612,9 @@ function BayCableMenu({
   onShowEnclosure?: () => void;
   busduct: "Top" | "Bottom" | null;
   onSetBusduct?: (value: "Top" | "Bottom" | null) => void;
+  /** adapters (437mm deep) stacked behind the bay */
+  adapters: number;
+  onSetAdapters?: (n: number) => void;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -5488,7 +5630,7 @@ function BayCableMenu({
   }, [onClose]);
   // keep the menu on screen
   const left = Math.min(x, window.innerWidth - 240);
-  const top = Math.min(y, window.innerHeight - 420);
+  const top = Math.max(8, Math.min(y, window.innerHeight - 480));
   const group = (
     field: "cable_entry" | "cable_exit" | "busduct",
     label: string,
@@ -5562,6 +5704,27 @@ function BayCableMenu({
         {group("cable_exit", "Cable exit", exit, "bg-purple-600")}
         {onSetBusduct &&
           group("busduct", "Busduct entry", busduct, "bg-violet-600")}
+        {onSetAdapters && (
+          <div className="flex items-center gap-2 px-3 py-2 text-[13px]">
+            <span className="flex-1">Adapters behind (437mm)</span>
+            <button
+              type="button"
+              onClick={() => onSetAdapters(adapters - 1)}
+              disabled={adapters === 0}
+              className="rounded border border-surface-container-high px-1.5 disabled:opacity-40"
+            >
+              −
+            </button>
+            <span className="w-4 text-center tabular-nums">{adapters}</span>
+            <button
+              type="button"
+              onClick={() => onSetAdapters(adapters + 1)}
+              className="rounded border border-surface-container-high px-1.5"
+            >
+              +
+            </button>
+          </div>
+        )}
       </div>
     </>
   );
