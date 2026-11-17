@@ -4028,7 +4028,7 @@ export function GaCanvas({
                         label={`${totalWidth}mm`}
                       />
                     </div>
-                    {/* shipping sections (~2m each); fish plates join the
+                    {/* shipping sections (up to 2.2m each); fish plates join the
                         main busbar between them */}
                     {(() => {
                       const secs = shippingSections(baysInOrder);

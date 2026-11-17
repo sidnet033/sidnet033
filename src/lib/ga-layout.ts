@@ -126,10 +126,10 @@ export function panelDepthOf(bays: Pick<VerticalWithFeeders, "bay_type" | "depth
   return ds.length ? Math.max(...ds) : null;
 }
 
-// Shipping sections: bays clubbed left to right into sections of about 2m
+// Shipping sections: bays clubbed left to right into sections of up to 2.2m
 // (a bay wider than that ships on its own). The main horizontal busbar is
 // joined between sections with fish plates.
-export const SHIPPING_SECTION_MAX_MM = 2100;
+export const SHIPPING_SECTION_MAX_MM = 2200;
 export function shippingSections<T extends { id: string; width_mm: number | null }>(bays: T[]): { bays: T[]; widthMm: number }[] {
   const out: { bays: T[]; widthMm: number }[] = [];
   for (const b of bays) {

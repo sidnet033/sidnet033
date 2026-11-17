@@ -904,7 +904,7 @@ export function artukEnclosureBom(input: EnclosureInput): {
   }
 
   // Fish plates: the main horizontal busbar is joined between shipping
-  // sections (bays clubbed into ~2m sections) with a pair of plates on every
+  // sections (bays clubbed into sections of up to 2.2m) with a pair of plates on every
   // bar -- each phase run, neutral run and earth bar -- 180mm long, the
   // bar's own width and thickness and material, priced by weight at the
   // project's busbar rate.
