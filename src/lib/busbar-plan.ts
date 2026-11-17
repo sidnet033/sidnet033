@@ -302,7 +302,7 @@ type DraftSegment = Omit<
 > & { chart?: SegmentChart | null };
 
 function isAlley(t: BayType | null) {
-  return t === "busbar_alley" || t === "cable_alley";
+  return t === "busbar_alley" || t === "cable_alley" || t === "dummy_bay";
 }
 
 export function planBusbars(input: BusbarPlanInput): BusbarPlan {

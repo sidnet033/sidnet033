@@ -124,7 +124,7 @@ export async function getRevisionContext(revisionId: string): Promise<RevisionCo
       .filter((v) => v.bay_type !== "unassigned")
       .sort((a, b) => a.sort_order - b.sort_order)
       .map((v) => {
-        const alley = v.bay_type === "cable_alley" || v.bay_type === "busbar_alley";
+        const alley = v.bay_type === "cable_alley" || v.bay_type === "busbar_alley" || v.bay_type === "dummy_bay";
         return {
           name: v.name,
           number: alley ? null : ++n,

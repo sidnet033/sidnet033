@@ -130,6 +130,7 @@ const BAY_TEMPLATES: {
     label: "+ Busbar Alley",
     namePrefix: "Busbar Alley",
   },
+  { bay_type: "dummy_bay", label: "+ Dummy Bay", namePrefix: "Dummy Bay" },
 ];
 
 const PLINTH_OPTIONS = [75, 100, 150, 200];
@@ -182,6 +183,10 @@ function explainBay(v: VerticalWithFeeders): string[] {
           `Narrower than the ${ALLEY_MIN_WIDTH_MM}mm minimum (300mm opening + 60mm each side) — widen it.`,
         ]
       : [];
+  if (v.bay_type === "dummy_bay")
+    return [
+      "Dummy Bay — an empty bay like a cable alley; any width, and its own depth (it doesn't change the panel's depth).",
+    ];
   if (v.bay_type === "cable_alley")
     return [
       "Cable Alley — structural bay for cable routing; width/depth set by hand, minimum " +
@@ -1116,7 +1121,7 @@ export function GaCanvas({
   const faceLetter = face === "rear" ? "R" : "F";
   const bayNumbers = new Map<string, string>();
   for (const v of baysInOrder) {
-    if (v.bay_type === "cable_alley" || v.bay_type === "busbar_alley") continue;
+    if (isAlley(v.bay_type)) continue;
     bayNumbers.set(v.id, `${bayNumbers.size + 1}${faceLetter}`);
   }
   const standardPxPerMm = computePxPerMm(totalHeightMm);
@@ -1331,8 +1336,7 @@ export function GaCanvas({
       bay_type: template.bay_type,
       // a 600mm feeder + 60mm each side; alleys a 300mm opening + 60mm each side
       width_mm:
-        template.bay_type === "cable_alley" ||
-        template.bay_type === "busbar_alley"
+        isAlley(template.bay_type)
           ? ALLEY_MIN_WIDTH_MM
           : 600 + 2 * FEEDER_SIDE_GAP_MM,
       depth_mm: null,
@@ -1465,11 +1469,20 @@ export function GaCanvas({
     value: string,
   ) {
     const num = value ? Number(value) : null;
-    // the whole panel has one depth -- a depth typed on any bay applies to all
+    // the whole panel has one depth -- a depth typed on any bay applies to
+    // all (a dummy bay's depth is its own)
     if (field === "depth_mm") {
+      const dummy =
+        verticals.find((v) => v.id === id)?.bay_type === "dummy_bay";
       setVerticals(
         verticals.map((v) =>
-          v.bay_type === "unassigned" ? v : { ...v, depth_mm: num },
+          dummy
+            ? v.id === id
+              ? { ...v, depth_mm: num }
+              : v
+            : v.bay_type === "unassigned" || v.bay_type === "dummy_bay"
+              ? v
+              : { ...v, depth_mm: num },
         ),
       );
       return;
@@ -1479,7 +1492,10 @@ export function GaCanvas({
         if (v.id !== id) return v;
         // alleys keep the 60mm side gaps: never narrower than 420mm
         const val =
-          field === "width_mm" && num != null && isAlley(v.bay_type)
+          field === "width_mm" &&
+          num != null &&
+          isAlley(v.bay_type) &&
+          v.bay_type !== "dummy_bay"
             ? Math.max(num, ALLEY_MIN_WIDTH_MM)
             : num;
         // a width typed off the chosen standard config makes the bay Custom
@@ -1645,7 +1661,7 @@ export function GaCanvas({
         })
         // one depth for the whole panel: the deepest bay's, alleys included
         .map((v, _i, all) =>
-          v.bay_type === "unassigned"
+          v.bay_type === "unassigned" || v.bay_type === "dummy_bay"
             ? v
             : { ...v, depth_mm: panelDepthOf(all) ?? v.depth_mm },
         ),
@@ -1756,7 +1772,7 @@ export function GaCanvas({
       : panelDepthOf(next);
     setVerticals(
       next.map((v) =>
-        v.bay_type === "unassigned"
+        v.bay_type === "unassigned" || v.bay_type === "dummy_bay"
           ? v
           : { ...v, depth_mm: depth ?? v.depth_mm },
       ),
@@ -2061,7 +2077,9 @@ export function GaCanvas({
     const depthToSave = (v: VerticalWithFeeders) =>
       v.bay_type === "unassigned" || boardDepth == null
         ? v.depth_mm
-        : boardDepth;
+        : v.bay_type === "dummy_bay"
+          ? (v.depth_mm ?? boardDepth)
+          : boardDepth;
     if (!sb || readOnly) return;
     const noConfig = bays.filter(
       (v, i) => needsBayConfig(v) && !effectiveBayConfig(i),

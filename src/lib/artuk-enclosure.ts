@@ -152,7 +152,7 @@ const BAY_HARDWARE: [string, number, number, string][] = [
 const innerWidth = (w: number) => w - 120;
 
 function isAlley(t: BayType | null) {
-  return t === "cable_alley" || t === "busbar_alley";
+  return t === "cable_alley" || t === "busbar_alley" || t === "dummy_bay";
 }
 
 // A bay's depth as ArTuK structures: 1467 = 1030 + 437, otherwise one set
@@ -594,7 +594,12 @@ export function artukEnclosureBom(input: EnclosureInput): {
     const prefix = WIDTH_PREFIX[w];
     const inner = innerWidth(w);
     // the whole panel is built at one depth -- its deepest bay's
-    const sections = depthSections(panelDepth);
+    // a dummy bay is built at its own depth
+    const sections = depthSections(
+      bay.bay_type === "dummy_bay" && bay.depth_mm
+        ? Number(bay.depth_mm)
+        : panelDepth,
+    );
     const alley = isAlley(bay.bay_type as BayType | null);
     if (!prefix) {
       warnings.push(

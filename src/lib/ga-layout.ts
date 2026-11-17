@@ -120,13 +120,14 @@ export function deviceDepthFor(feeder: Feeder): number {
 
 // A switchboard has one depth: its deepest bay's. Every bay -- alleys
 // included -- is built (and drawn, costed) at that depth.
+// Dummy bays keep their own depth and don't set the panel's.
 export function panelDepthOf(bays: Pick<VerticalWithFeeders, "bay_type" | "depth_mm">[]): number | null {
-  const ds = bays.filter((v) => v.bay_type !== "unassigned").map((v) => Number(v.depth_mm ?? 0)).filter((d) => d > 0);
+  const ds = bays.filter((v) => v.bay_type !== "unassigned" && v.bay_type !== "dummy_bay").map((v) => Number(v.depth_mm ?? 0)).filter((d) => d > 0);
   return ds.length ? Math.max(...ds) : null;
 }
 
 export function isAlley(bayType: BayType | null): boolean {
-  return bayType === "cable_alley" || bayType === "busbar_alley";
+  return bayType === "cable_alley" || bayType === "busbar_alley" || bayType === "dummy_bay";
 }
 
 // Standard ArTuK bay widths, smallest first.
@@ -158,6 +159,7 @@ export type Compartment = { id: string; label: string; heightMm: number; topMm: 
 
 export function blankCompartmentLabel(bayType: BayType | null): string {
   if (bayType === "cable_alley") return "CABLE ALLEY";
+  if (bayType === "dummy_bay") return "DUMMY BAY";
   if (bayType === "busbar_alley") return "BUSBAR ALLEY";
   return "DUMMY";
 }
@@ -252,7 +254,7 @@ export function mccBayDepth(opts: ArtukBayOptions = {}): number {
 export const DOUBLE_FRONT_MCC_EXTRA_MM = 200;
 
 export function artukBaySize(v: VerticalWithFeeders, opts: ArtukBayOptions = {}): { widthMm: number; depthMm: number } | null {
-  if (v.bay_type === "cable_alley" || v.bay_type === "busbar_alley" || v.bay_type === "unassigned") return null;
+  if (isAlley(v.bay_type as BayType | null) || v.bay_type === "unassigned") return null;
   const acbUnits = v.placed.filter((p) => p.feeder.device_type === "ACB");
   if (acbUnits.length > 0) {
     const p = acbUnits[0];

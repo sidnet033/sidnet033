@@ -301,7 +301,9 @@ export type BayType =
   | "unassigned"
   | "bay"
   | "cable_alley"
-  | "busbar_alley";
+  | "busbar_alley"
+  // like a cable alley, but any width and its own depth
+  | "dummy_bay";
 
 // a "vertical" is one bay/column of a switchboard's GA
 export type Vertical = {

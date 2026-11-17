@@ -26,7 +26,10 @@ export function frontAccessPairLayouts(
 ): Map<string, InnerLayout> {
   const out = new Map<string, InnerLayout>();
   const alley = (t: BayType | null) =>
-    t === "cable_alley" || t === "busbar_alley" || t === "unassigned";
+    t === "cable_alley" ||
+    t === "busbar_alley" ||
+    t === "dummy_bay" ||
+    t === "unassigned";
   const front = (d: number | null) => d != null && d <= 837;
   for (let i = 0; i < bays.length - 1; i++) {
     const a = bays[i];
@@ -100,6 +103,7 @@ export function doubleFrontMccLayouts(
       b.acbBay ||
       b.bay_type === "cable_alley" ||
       b.bay_type === "busbar_alley" ||
+      b.bay_type === "dummy_bay" ||
       b.bay_type === "unassigned" ||
       w < 2 * 60 + DF_BUSBAR_CHAMBER_MM + 300
     )

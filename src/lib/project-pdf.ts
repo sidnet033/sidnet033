@@ -449,7 +449,9 @@ export async function buildProjectPdf(
           ? "Cable alley"
           : bay.kind === "busbar_alley"
             ? "Busbar chamber"
-            : null;
+            : bay.kind === "dummy_bay"
+              ? "Dummy bay"
+              : null;
       return [
         bay.number != null
           ? `${b.doubleFront ? `${bay.number}F / ${bay.number}R` : `${bay.number}F`}  ${bay.name}`
