@@ -134,6 +134,8 @@ const BAY_TEMPLATES: {
 ];
 
 const PLINTH_OPTIONS = [75, 100, 150, 200];
+// zoom: standard, 3 steps in between, then fit-the-whole-width
+const ZOOM_STEPS = 4;
 const PANEL_HEIGHT_OPTIONS = [1800, 2000, 2100, 2200];
 
 // Elevation drawing scale. BUSBAR_CHAMBER_HEIGHT_MM is only the default
@@ -731,9 +733,9 @@ export function GaCanvas({
   const fullscreenRef = useRef<HTMLDivElement>(null);
   const drawingRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
-  // Two zoom levels: "standard" (fits the panel height) and "fit" (zooms out
-  // so the whole panel width, front + side view, fits the canvas).
-  const [zoomMode, setZoomMode] = useState<"standard" | "fit">("standard");
+  // 0 = standard (fits the panel height) ... ZOOM_STEPS = fit the whole
+  // width; the steps between zoom out evenly (same ratio each step)
+  const [zoomLevel, setZoomLevel] = useState(0);
   const [canvasEl, setCanvasEl] = useState<HTMLDivElement | null>(null);
   // Hover tooltip with dimensions: anything in the drawing carrying a
   // data-ga-tip shows it after a short pause (faster than the browser's
@@ -1140,13 +1142,17 @@ export function GaCanvas({
   // rulers, dimension columns, gap and padding) fill the canvas width. The
   // side column is never narrower than the summary table under it.
   let pxPerMm = standardPxPerMm;
-  if (zoomMode === "fit" && canvasWidthPx > 0 && totalWidth > 0) {
+  if (zoomLevel > 0 && canvasWidthPx > 0 && totalWidth > 0) {
     const fixedPx = RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX + 40 + 32 + 8;
     let fit = (canvasWidthPx - fixedPx) / (totalWidth + sideViewDepthMm);
     if (sideViewDepthMm * fit < SUMMARY_TABLE_MIN_PX)
       fit = (canvasWidthPx - fixedPx - SUMMARY_TABLE_MIN_PX) / totalWidth;
-    pxPerMm = Math.max(0.02, Math.min(standardPxPerMm, fit));
+    const fitPx = Math.max(0.02, Math.min(standardPxPerMm, fit));
+    pxPerMm =
+      standardPxPerMm *
+      Math.pow(fitPx / standardPxPerMm, Math.min(zoomLevel, ZOOM_STEPS) / ZOOM_STEPS);
   }
+  const zoomPct = Math.round((pxPerMm / standardPxPerMm) * 100);
   const sideViewWidthPx = Math.max(sideViewDepthMm * pxPerMm, 1);
 
   // Physically, the busbar chamber sits away from wherever cables enter the
@@ -3396,28 +3402,38 @@ export function GaCanvas({
                     <Icon name="download" size={14} />{" "}
                     {exporting ? "Exporting..." : "Export PDF"}
                   </button>
-                  <button
-                    onClick={() =>
-                      setZoomMode((z) =>
-                        z === "standard" ? "fit" : "standard",
-                      )
-                    }
-                    disabled={bays.length === 0}
-                    title={
-                      zoomMode === "standard"
-                        ? "Zoom out to see the whole panel width"
-                        : "Back to the standard zoom"
-                    }
-                    className="btn btn-outline btn-sm"
-                  >
-                    <Icon
-                      name={zoomMode === "standard" ? "zoom_out" : "zoom_in"}
-                      size={14}
-                    />{" "}
-                    {zoomMode === "standard"
-                      ? "Zoom out (fit width)"
-                      : "Zoom in (standard)"}
-                  </button>
+                  <div className="flex items-center rounded-md border border-surface-container-high">
+                    <button
+                      onClick={() => setZoomLevel((z) => Math.min(ZOOM_STEPS, z + 1))}
+                      disabled={bays.length === 0 || zoomLevel >= ZOOM_STEPS}
+                      title="Zoom out (5 steps down to the whole panel width)"
+                      className="px-2 py-1 text-on-surface-variant hover:bg-surface-container-low disabled:opacity-40"
+                    >
+                      <Icon name="zoom_out" size={16} />
+                    </button>
+                    <button
+                      onClick={() =>
+                        setZoomLevel((z) => (z === 0 ? ZOOM_STEPS : 0))
+                      }
+                      disabled={bays.length === 0}
+                      title={
+                        zoomLevel === 0
+                          ? "Jump to the whole panel width"
+                          : "Back to the standard zoom"
+                      }
+                      className="min-w-[3.5rem] border-x border-surface-container-high px-2 py-1 text-[12px] tabular-nums text-on-surface hover:bg-surface-container-low"
+                    >
+                      {zoomLevel === ZOOM_STEPS ? "Fit" : `${zoomPct}%`}
+                    </button>
+                    <button
+                      onClick={() => setZoomLevel((z) => Math.max(0, z - 1))}
+                      disabled={bays.length === 0 || zoomLevel <= 0}
+                      title="Zoom in (back towards the standard zoom)"
+                      className="px-2 py-1 text-on-surface-variant hover:bg-surface-container-low disabled:opacity-40"
+                    >
+                      <Icon name="zoom_in" size={16} />
+                    </button>
+                  </div>
                   <button
                     onClick={() => {
                       setShowBusbars((v) => !v);
