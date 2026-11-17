@@ -901,10 +901,24 @@ export function HowItWorks() {
             <ShortcutGroup
               title="GA Builder"
               rows={[
-                [["←"], ["→"], "Selected bay: move it left / right."],
                 [
                   ["↑"],
                   ["↓"],
+                  "Select the feeder above / below in the bay.",
+                ],
+                [
+                  ["←"],
+                  ["→"],
+                  "Select the feeder at about the same height in the bay to the left / right.",
+                ],
+                [
+                  ["Ctrl", "←"],
+                  ["Ctrl", "→"],
+                  "Selected bay: move it left / right.",
+                ],
+                [
+                  ["Ctrl", "↑"],
+                  ["Ctrl", "↓"],
                   "Selected feeder: move that one unit up / down in its bay.",
                 ],
                 [

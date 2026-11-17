@@ -2368,10 +2368,78 @@ export function GaCanvas({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // Arrow keys reposition whatever's selected: Left/Right moves the
-  // selected bay, Up/Down moves the selected feeder within its bay (same
+  // Ctrl (Cmd) + arrow keys reposition whatever's selected: Left/Right moves
+  // the selected bay, Up/Down moves the selected feeder within its bay (same
   // action as the overlay arrow buttons on the drawing). Ignored while
   // typing in a text field, and while read-only.
+  // Arrow keys (no Ctrl): step the selection between feeder units --
+  // up / down within the bay, left / right to the unit at about the same
+  // height in the neighbouring bay (as drawn, so the rear view steps the
+  // way it looks).
+  function navigateSelection(dir: "up" | "down" | "left" | "right") {
+    if (bays.length === 0) return;
+    const unitsOf = (bay: VerticalWithFeeders) =>
+      computeCompartments(bay, panelHeight, blankFirst)
+        .filter((c) => !c.isBlank && c.placedId)
+        .map((c) => ({
+          placedId: c.placedId!,
+          unitIndex: c.unitIndex ?? 0,
+          mid: c.topMm + c.heightMm / 2,
+        }));
+    const select = (
+      bay: VerticalWithFeeders,
+      unit: { placedId: string; unitIndex: number } | null,
+    ) => {
+      setSelectedBayId(bay.id);
+      setSideBayId(bay.id);
+      setSelectedPlacedId(unit?.placedId ?? null);
+      setSelectedUnitIndex(unit?.unitIndex ?? 0);
+      setBusbarSelected(false);
+      setSelectedSegmentKey(null);
+      requestAnimationFrame(() =>
+        document
+          .querySelector(`[data-bay-id="${bay.id}"]`)
+          ?.scrollIntoView({ block: "nearest", inline: "nearest" }),
+      );
+    };
+    const bi = bays.findIndex((b) => b.id === selectedBayId);
+    if (bi < 0) {
+      const first = bays.find((b) => unitsOf(b).length) ?? bays[0];
+      select(first, unitsOf(first)[0] ?? null);
+      return;
+    }
+    const bay = bays[bi];
+    const units = unitsOf(bay);
+    const ui = units.findIndex(
+      (u) =>
+        u.placedId === selectedPlacedId && u.unitIndex === selectedUnitIndex,
+    );
+    if (dir === "up" || dir === "down") {
+      if (units.length === 0) return;
+      const next =
+        ui < 0
+          ? dir === "down"
+            ? 0
+            : units.length - 1
+          : Math.max(0, Math.min(units.length - 1, ui + (dir === "down" ? 1 : -1)));
+      select(bay, units[next]);
+      return;
+    }
+    const nb = bays[bi + (dir === "right" ? 1 : -1)];
+    if (!nb) return;
+    const nUnits = unitsOf(nb);
+    const at = ui >= 0 ? units[ui].mid : null;
+    const nearest =
+      at == null
+        ? (nUnits[0] ?? null)
+        : (nUnits.reduce<(typeof nUnits)[number] | null>(
+            (best, u) =>
+              !best || Math.abs(u.mid - at) < Math.abs(best.mid - at) ? u : best,
+            null,
+          ) ?? null);
+    select(nb, nearest);
+  }
+
   const keyboardMoveRef = useRef({
     readOnly,
     selectedBayId,
@@ -2380,6 +2448,7 @@ export function GaCanvas({
     moveBay,
     moveFeeder,
     removeUnitFromBay,
+    navigateSelection,
   });
   useEffect(() => {
     keyboardMoveRef.current = {
@@ -2390,6 +2459,7 @@ export function GaCanvas({
       moveBay,
       moveFeeder,
       removeUnitFromBay,
+      navigateSelection,
     };
   });
 
@@ -2411,8 +2481,27 @@ export function GaCanvas({
         moveBay,
         moveFeeder,
         removeUnitFromBay,
+        navigateSelection,
       } = keyboardMoveRef.current;
+      // plain arrows: move the selection between feeders (works read-only)
+      const arrow = e.key.startsWith("Arrow");
+      const withCtrl = e.ctrlKey || e.metaKey;
+      if (arrow && !withCtrl && !e.altKey && !e.shiftKey) {
+        e.preventDefault();
+        navigateSelection(
+          e.key === "ArrowUp"
+            ? "up"
+            : e.key === "ArrowDown"
+              ? "down"
+              : e.key === "ArrowLeft"
+                ? "left"
+                : "right",
+        );
+        return;
+      }
       if (readOnly || !selectedBayId) return;
+      // Ctrl (Cmd) + arrows: move the selected bay / feeder
+      if (arrow && !withCtrl) return;
       // Delete / Backspace: send the selected feeder unit back to the available list
       if (e.key === "Delete" || e.key === "Backspace") {
         if (selectedPlacedId && !selectedPlacedId.endsWith("::dummy")) {
@@ -4589,6 +4678,7 @@ function BayColumn({
   return (
     <div
       ref={setNodeRef}
+      data-bay-id={vertical.id}
       onClick={onSelectBay}
       onContextMenu={
         onContextMenu
@@ -5182,8 +5272,8 @@ function BayDetailsPanel({
       <p className="font-body-sm text-body-sm text-on-surface-variant">
         Click a bay in the drawing to edit its name, type, and dimensions here,
         and to reposition it (drag arrows appear on the bay, or use the
-        Left/Right arrow keys). Click a feeder within a bay to reorder it
-        (Up/Down arrow keys).
+        Ctrl + Left/Right arrow keys). Click a feeder within a bay to reorder it
+        (Ctrl + Up/Down). The plain arrow keys step between feeders.
       </p>
     );
   }
