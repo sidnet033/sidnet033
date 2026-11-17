@@ -331,9 +331,9 @@ export type EnclosureInput = {
   /** workbook bay parts lists (loadBayTemplates) */
   templates?: ArtukBayTemplate[];
   /** also list parts from the rules built on ABB's ArTuK PDFs (bays with
-   * no workbook BOM, busbar supports, adapter frames, line-up parts).
-   * Off: the enclosure BOM is the workbook BOMs only (plus base frames and
-   * fish plates, which follow the user's own formulas). */
+   * no workbook BOM, adapter frames, line-up parts). Off: the enclosure BOM
+   * is the workbook BOMs only, plus base frames, fish plates and busbar
+   * supports (priced from the workbook's Part Costs). */
   pdfRules?: boolean;
 };
 
@@ -613,11 +613,11 @@ export function artukEnclosureBom(input: EnclosureInput): {
     internalArc: input.internalArc,
     poles: input.poles,
   });
-  if (input.pdfRules) warnings.push(...sup.warnings);
+  warnings.push(...sup.warnings);
   // Busbar supports are counted for every bay, including bays that take a
   // workbook parts list: the workbook lists carry no busbar support
   // insulators (ABB 551060 / MXM parts).
-  for (const s of input.pdfRules ? sup.supports : []) {
+  for (const s of sup.supports) {
     const what = `${s.bayName}: ${s.kind === "hbb" ? "main" : "vertical"} busbar support (span ≤${s.spanMm}mm)`;
     forBays = s.bayId ? [s.bayId] : null;
     add(s.code, 1, what);
