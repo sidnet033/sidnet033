@@ -80,6 +80,7 @@ import {
   bayWidthFor,
   DOUBLE_FRONT_MCC_EXTRA_MM,
   panelDepthOf,
+  shippingSections,
   sharedBreakerBay,
   nextBayWidth,
   deviceDepthFor,
@@ -4027,6 +4028,36 @@ export function GaCanvas({
                         label={`${totalWidth}mm`}
                       />
                     </div>
+                    {/* shipping sections (~2m each); fish plates join the
+                        main busbar between them */}
+                    {(() => {
+                      const secs = shippingSections(baysInOrder);
+                      if (secs.length < 2) return null;
+                      const shown = rearView ? [...secs].reverse() : secs;
+                      return (
+                        <div className="flex">
+                          <div
+                            style={{
+                              width: RULER_WIDTH_PX + 2 * VERTICAL_DIM_WIDTH_PX,
+                            }}
+                          />
+                          {shown.map((sec) => {
+                            const n = secs.indexOf(sec) + 1;
+                            return (
+                              <div
+                                key={n}
+                                data-ga-tip={`Shipping section ${n}: ${sec.bays.map((b) => b.name).join(" + ")} — ${sec.widthMm}mm`}
+                              >
+                                <HorizontalDimension
+                                  widthPx={sec.widthMm * pxPerMm}
+                                  label={`${sec.widthMm} (SHIPPING SECTION-${n})`}
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                     {showTopView && !rearView && (
                       <div className="mt-6">
                         <div className="flex">

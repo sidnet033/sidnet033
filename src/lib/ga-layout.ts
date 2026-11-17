@@ -126,6 +126,23 @@ export function panelDepthOf(bays: Pick<VerticalWithFeeders, "bay_type" | "depth
   return ds.length ? Math.max(...ds) : null;
 }
 
+// Shipping sections: bays clubbed left to right into sections of about 2m
+// (a bay wider than that ships on its own). The main horizontal busbar is
+// joined between sections with fish plates.
+export const SHIPPING_SECTION_MAX_MM = 2100;
+export function shippingSections<T extends { id: string; width_mm: number | null }>(bays: T[]): { bays: T[]; widthMm: number }[] {
+  const out: { bays: T[]; widthMm: number }[] = [];
+  for (const b of bays) {
+    const w = Number(b.width_mm ?? 0);
+    const cur = out[out.length - 1];
+    if (cur && cur.widthMm + w <= SHIPPING_SECTION_MAX_MM) {
+      cur.bays.push(b);
+      cur.widthMm += w;
+    } else out.push({ bays: [b], widthMm: w });
+  }
+  return out;
+}
+
 export function isAlley(bayType: BayType | null): boolean {
   return bayType === "cable_alley" || bayType === "busbar_alley" || bayType === "dummy_bay";
 }

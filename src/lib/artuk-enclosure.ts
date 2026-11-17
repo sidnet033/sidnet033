@@ -15,8 +15,10 @@ import {
 } from "@/lib/artuk-bay-templates";
 import { effectiveNetRate } from "@/lib/feeder-cost";
 import {
+  MATERIAL_DENSITY,
   bayFunctionOf,
   breakerFrameOf,
+  type BarSize,
   type BusbarMaterial,
   type BusbarPlan,
 } from "@/lib/busbar-plan";
@@ -31,6 +33,7 @@ import {
   overridesFromRows,
   panelDepthOf,
   planForSwitchboard,
+  shippingSections,
   type BusbarOverrideRow,
   type VerticalWithFeeders,
 } from "@/lib/ga-layout";
@@ -312,6 +315,8 @@ export type EnclosureInput = {
   material: BusbarMaterial;
   ka: number | null;
   internalArc: boolean;
+  /** project busbar rate per kg (fish plates are priced like busbar) */
+  busbarRates?: Record<BusbarMaterial, number>;
   doubleFront?: boolean;
   /** workbook bay parts lists (loadBayTemplates); none = rules only */
   templates?: ArtukBayTemplate[];
@@ -898,6 +903,44 @@ export function artukEnclosureBom(input: EnclosureInput): {
       );
   }
 
+  // Fish plates: the main horizontal busbar is joined between shipping
+  // sections (bays clubbed into ~2m sections) with a pair of plates on every
+  // bar -- each phase run, neutral run and earth bar -- 180mm long, the
+  // bar's own width and thickness and material, priced by weight at the
+  // project's busbar rate.
+  const sections = shippingSections(bays);
+  const joints = sections.length - 1;
+  const main = input.plan?.segments.find((sg) => sg.kind === "main") ?? null;
+  if (joints > 0 && main?.bar) {
+    const phMat = main.chart?.joints[0]?.phMaterial ?? input.material;
+    const groups: { bar: BarSize; bars: number; mat: BusbarMaterial; what: string }[] = [
+      { bar: main.bar, bars: main.runs * 3, mat: phMat, what: "phase" },
+    ];
+    if (main.neutral && input.poles >= 4)
+      groups.push({ bar: main.neutral.bar, bars: main.neutral.runs, mat: phMat, what: "neutral" });
+    if (main.chart?.earth)
+      groups.push({ bar: main.chart.earth.bar, bars: main.chart.earth.runs, mat: input.material, what: "earth" });
+    for (const g of groups) {
+      const { widthMm: w, thicknessMm: t } = g.bar;
+      const kg = 180 * w * t * MATERIAL_DENSITY[g.mat];
+      const rate = input.busbarRates?.[g.mat] ?? 0;
+      add(
+        `FISH PLATE ${g.mat} ${w}x${t}x180`,
+        joints * g.bars * 2,
+        `fish plates: ${joints} shipping-section joint${joints > 1 ? "s" : ""} × ${g.bars} ${g.what} bar${g.bars > 1 ? "s" : ""} × 2`,
+        rate > 0 ? Math.round(kg * rate * 100) / 100 : null,
+        `Fish plate ${g.mat === "Cu" ? "copper" : "aluminium"} ${w}x${t}x180mm (${kg.toFixed(2)} kg each)`,
+      );
+    }
+    if (groups.some((g) => !(input.busbarRates?.[g.mat] ?? 0)))
+      warnings.push(
+        "Fish plates: no busbar rate per kg set for this project — set it in Project Details to price them.",
+      );
+  } else if (joints > 0)
+    warnings.push(
+      "Fish plates not counted: the main busbar has no size yet (open GA Builder).",
+    );
+
   forBays = null;
   // line-up (rule-based; a workbook bay type brings its own side panels)
   if (bays.length > 0 && matches.length === 0) {
@@ -947,6 +990,8 @@ export type EnclosureTakeoff = {
 type ProjectSettings = {
   busbar_density_cu: number;
   busbar_density_al: number;
+  busbar_rate_cu: number | null;
+  busbar_rate_al: number | null;
 };
 
 // Loads the GA and prices the ArTuK enclosure BOM from Item Master. Null
@@ -967,7 +1012,7 @@ export async function loadEnclosureTakeoff(
       supabase
         .from("revisions")
         .select(
-          "project_id, project:projects(busbar_density_cu, busbar_density_al)",
+          "project_id, project:projects(busbar_density_cu, busbar_density_al, busbar_rate_cu, busbar_rate_al)",
         )
         .eq("id", sb.revision_id)
         .single(),
@@ -994,6 +1039,10 @@ export async function loadEnclosureTakeoff(
   const project =
     (rev as unknown as { project: ProjectSettings | null } | null)?.project ??
     null;
+  const busbarRates = {
+    Cu: Number(project?.busbar_rate_cu ?? 0),
+    Al: Number(project?.busbar_rate_al ?? 0),
+  };
   const chamber = sb.busbar_chamber_height_mm ?? BUSBAR_CHAMBER_HEIGHT_MM;
   const panel = effectivePanelHeight(sb, chamber);
   const plan = planForSwitchboard({
@@ -1020,6 +1069,7 @@ export async function loadEnclosureTakeoff(
     material: sb.busbar ?? "Cu",
     ka: sb.ka,
     internalArc: sb.internal_arc,
+    busbarRates,
     doubleFront: sb.arrangement === "double_front",
     templates,
   });

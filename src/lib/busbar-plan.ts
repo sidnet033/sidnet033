@@ -232,6 +232,8 @@ export type SegmentChart = {
   sheet: string;
   joints: ChartJoint[];
   pieces: { bar: BarSize; lengthMm: number }[] | null;
+  /** main busbar: ABB's earth bar for this rating, when the chart has one */
+  earth?: { bar: BarSize; runs: number } | null;
 };
 
 export type PlanCompartment = {
@@ -427,6 +429,7 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
           sheet: `Al MCCB HBB ${hbb.row.ratingLabel}`,
           joints: [hbb.row.main],
           pieces: null,
+          earth: hbb.row.earth,
         };
         mainNotes.push(
           `ArTuK aluminium, MCCB-fed — size from ABB's lower-rating HBB table (${hbb.row.ratingLabel}, ${hbb.row.frame}): ${formatJoints([hbb.row.main])}; neutral taken the same. Earth busbar ${formatBar(hbb.row.earth.bar, hbb.row.earth.runs)}.`,
@@ -440,6 +443,7 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
           sheet: pick.chart.sheet,
           joints: [pick.chart.main],
           pieces: null,
+          earth: pick.chart.earth ?? null,
         };
         mainNotes.push(
           `ArTuK ${matName} — size from ABB's chart "${pick.chart.sheet}" (largest incomer): ${formatJoints([pick.chart.main])}, ${neutralNote}.${pick.chart.earth ? ` Earth busbar ${formatBar(pick.chart.earth.bar, pick.chart.earth.runs)}.` : ""}`,
@@ -459,6 +463,7 @@ export function planBusbars(input: BusbarPlanInput): BusbarPlan {
         sheet: pick.chart.sheet,
         joints: [pick.chart.main],
         pieces: null,
+        earth: pick.chart.earth ?? null,
       };
       mainNotes.push(
         `ArTuK ${matName} — ABB has no main busbar table for how this board is fed, so ABB's main busbar size for ${pick.chart.ratingLabel} ("${pick.chart.sheet}") is used: ${formatJoints([pick.chart.main])}, ${neutralNote}.`,
